@@ -26,12 +26,14 @@ define([
 		///////
 		express: null,
 		loadExpress: function(){
+			//this is the app directory, which will be 
+			var appPath = path.resolve(__dirname, '..', 'app'); 
 			
 			// Create/configure the app
 			server.express = express();
 			server.express.configure(function(){
 				server.express.set('port', 80);
-				server.express.set('views', path.resolve('app'));
+				server.express.set('views', appPath);
 				server.express.set('view engine', 'ejs'); //ejs: html templates
 				
 				server.express.use(express.favicon());
@@ -40,9 +42,7 @@ define([
 				server.express.use(express.methodOverride());
 				
 				server.express.use(server.express.router); //not needed for socket.io only setup
-				server.express.use( express.static(path.resolve(__dirname, '..', 'app')) ); //domain.com/css/main.css = assets/css/main.css
-				
-				console.log('test: ', path.resolve(__dirname, '..', 'app'));
+				server.express.use( express.static(appPath) ); //domain.com/css/main.css = assets/css/main.css
 			});
 			server.express.configure('development', function(){
 				server.express.use(express.errorHandler());
