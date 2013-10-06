@@ -30,8 +30,8 @@ define([
 			// Create/configure the app
 			server.express = express();
 			server.express.configure(function(){
-				server.express.set('port', 8002);
-				server.express.set('views', __dirname + '/templates');
+				server.express.set('port', 80);
+				server.express.set('views', '../app');
 				server.express.set('view engine', 'html');
 				
 				server.express.use(express.favicon());
