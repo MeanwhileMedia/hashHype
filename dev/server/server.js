@@ -33,8 +33,8 @@ define([
 			server.express = express();
 			server.express.configure(function(){
 				server.express.set('port', 80);
-				server.express.set('views', appPath);
-				server.express.set('view engine', 'ejs'); //ejs: html templates
+				//server.express.set('views', appPath);
+				//server.express.set('view engine', 'ejs'); //ejs: html templates
 				
 				server.express.use(express.favicon());
 				server.express.use(express.logger('dev'));
