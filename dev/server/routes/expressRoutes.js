@@ -9,7 +9,7 @@ define([
 		init: function(express){
 			
 			//////////
-			//render main app
+			//render main backbone app
 			express.get('/', function(req, res){
 				
 				var htmlPath = path.resolve(__dirname, '..', '..', 'app/index.html');

@@ -33,15 +33,13 @@ define([
 			server.express = express();
 			server.express.configure(function(){
 				server.express.set('port', 80);
-				//server.express.set('views', appPath);
-				//server.express.set('view engine', 'ejs'); //ejs: html templates
-				
-				server.express.use(express.favicon());
+
 				server.express.use(express.logger('dev'));
 				server.express.use(express.bodyParser());
 				server.express.use(express.methodOverride());
+				server.express.use(server.express.router);
 				
-				server.express.use(server.express.router); //not needed for socket.io only setup
+				//Set the static path to that of our backbone app
 				server.express.use( express.static(appPath) ); //domain.com/css/main.css = assets/css/main.css
 			});
 			server.express.configure('development', function(){
