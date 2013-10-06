@@ -43,10 +43,10 @@ define([
 				server.express.use(express.static(path.join(__dirname, 'assets'))); //domain.com/css/main.css = assets/css/main.css
 			});
 			server.express.configure('development', function(){
-				app.use(express.errorHandler());
+				server.express.use(express.errorHandler());
 			});
 			server.express.configure('production', function(){
-				app.use(express.errorHandler()); 
+				server.express.use(express.errorHandler()); 
 			});
 			
 			//ititialize server
