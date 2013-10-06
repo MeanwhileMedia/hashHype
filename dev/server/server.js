@@ -31,10 +31,8 @@ define([
 			server.express = express();
 			server.express.configure(function(){
 				server.express.set('port', 80);
-				server.express.set('views', path.resolve('../app'));
+				server.express.set('views', path.resolve('app'));
 				server.express.set('view engine', 'ejs'); //ejs: html templates
-				
-				console.log('TEST: ', path.resolve('app'));
 				
 				server.express.use(express.favicon());
 				server.express.use(express.logger('dev'));
@@ -42,7 +40,7 @@ define([
 				server.express.use(express.methodOverride());
 				
 				server.express.use(server.express.router); //not needed for socket.io only setup
-				server.express.use(express.static(path.resolve('../app'))); //domain.com/css/main.css = assets/css/main.css
+				server.express.use( express.static(path.resolve('app')) ); //domain.com/css/main.css = assets/css/main.css
 			});
 			server.express.configure('development', function(){
 				server.express.use(express.errorHandler());
