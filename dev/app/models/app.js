@@ -8,11 +8,11 @@ define([
 		//update the apps hashBackSocket property with an active connection. 
 		//Individual views will bind to .on events on the socket
 		if ( this.hashBackSocket == null ){
-			this.hashBackSocket = io.connect('http://lyle.mean.to');
-			console.log( 'Connection opened to hashBack via socket.io:', this.hashBackSocket );
+			console.log( 'Attempting a connection to hashBack via socket.io.');
+			this.hashBackSocket = io.connect('https://hashBack.hashHype.com');
 			
 			this.hashBackSocket.on('connectResponse', function (data) {
-				console.log('hashBack connection response: ', data);
+				console.log('hashBack connection response: ', data, this.hashBackSocket );
 			});
 		}
 	}

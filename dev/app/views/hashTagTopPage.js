@@ -20,7 +20,7 @@ define([
 			console.log( 'HashHype top tags requested. App: ', app );
 			
 			//connect to hashBack via socket.io using the method stored in the app model
-			app.hashBackSocket = app.get('connectHashBack')();
+			//app.hashBackSocket = app.get('connectHashBack')();
 			
 			// Use Underscore to pass data to fill the html template with data
 			var templateData = {};
