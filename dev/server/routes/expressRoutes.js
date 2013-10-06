@@ -13,7 +13,7 @@ define([
 				
 				console.log( 'path: ', path.resolve(__dirname, '..', '..', 'app') );
 				
-				fs.readFile(path.resolve(__dirname, '..', '..', 'app'), function (err, data) {
+				fs.readFile(path.resolve(__dirname, '..', '..', 'app/index.html'), function (err, data) {
 					res.send(200, data);
 					
 					console.log(data);
