@@ -2,7 +2,8 @@ if (typeof define !== 'function') { var define = require('amdefine')(module) } /
 
 define([
 	'fs',
-], function (fs){
+	'path'
+], function (fs, path){
 	
 	var routes = {
 		init: function(express){
