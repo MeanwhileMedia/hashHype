@@ -40,7 +40,9 @@ define([
 				server.express.use(express.methodOverride());
 				
 				server.express.use(server.express.router); //not needed for socket.io only setup
-				server.express.use( express.static(path.resolve('app')) ); //domain.com/css/main.css = assets/css/main.css
+				server.express.use( express.static(path.resolve(__dirname, '..', 'app')) ); //domain.com/css/main.css = assets/css/main.css
+				
+				console.log('test: ', path.resolve(__dirname, '..', 'app'));
 			});
 			server.express.configure('development', function(){
 				server.express.use(express.errorHandler());
