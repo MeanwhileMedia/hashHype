@@ -11,9 +11,9 @@ define([
 			//render main app
 			express.get('/', function(req, res){
 				
-				console.log( 'path: ', path.resolve(__dirname, '..', '..', 'app') );
+				var htmlPath = path.resolve(__dirname, '..', '..', 'app/index.html');
 				
-				fs.readFile(path.resolve(__dirname, '..', '..', 'app/index.html'), 'String', function (err, data) {
+				fs.readFile(htmlPath, 'utf8', function (err, data) {
 					res.send(200, data);
 					
 					console.log(data);
