@@ -34,7 +34,7 @@ define([
 				server.express.set('views', path.resolve('../app'));
 				server.express.set('view engine', 'ejs'); //ejs: html templates
 				
-				console.log('TEST: ', path.resolve('../app'));
+				console.log('TEST: ', path.resolve('..', 'app'));
 				
 				server.express.use(express.favicon());
 				server.express.use(express.logger('dev'));
