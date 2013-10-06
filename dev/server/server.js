@@ -66,6 +66,8 @@ define([
 			server.openPort = http.createServer(server.express);
 			server.openPort.listen( server.express.get('port') );
 			
+			console.log("hashHype server listening on port " + server.express.get('port') + ' in ' + process.env.NODE_ENV + ' mode.');
+			
 		}, //end listenServerPort
 		
 		
