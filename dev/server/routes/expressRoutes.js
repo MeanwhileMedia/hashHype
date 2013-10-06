@@ -2,7 +2,10 @@ if (typeof define !== 'function') { var define = require('amdefine')(module) } /
 
 define([
 	//'express',
-], function (){
+	'../../app/index.ejs'
+], function (test){
+	
+	console.log(test);
 	
 	var routes = {
 		init: function(express){
@@ -18,7 +21,8 @@ define([
 				//res.send(200, 'some html');
 				//console.log('App index served to client');
 				
-				res.render("index", function(){
+				console('Attempting to render app/index.html');
+				res.render('index', function(){
 					res.send(200);
 				});
 				
