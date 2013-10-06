@@ -10,8 +10,6 @@ define([
 			//render main app
 			express.get('/', function(req, res){
 				
-				res.send(200);
-				
 //				fs.readFile('/etc/passwd', function (err, data) {
 //					if (err) throw err;
 //					console.log(data);
@@ -20,13 +18,9 @@ define([
 				//res.send(200, 'some html');
 				//console.log('App index served to client');
 				
-//				res.render("index", {
-//				  	appData: { 'sampleData': 'Test' }
-//				}, function(){
-//					
-//					res.send(200);
-//					
-//				});
+				res.render("index", function(){
+					res.send(200);
+				});
 				
 			});
 			
