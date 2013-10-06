@@ -10,6 +10,8 @@ define([
 			//render main app
 			express.get('/', function(req, res){
 				
+				res.send(200);
+				
 //				fs.readFile('/etc/passwd', function (err, data) {
 //					if (err) throw err;
 //					console.log(data);
