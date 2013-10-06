@@ -32,7 +32,7 @@ define([
 			server.express.configure(function(){
 				server.express.set('port', 80);
 				server.express.set('views', '../app');
-				server.express.set('view engine', 'html');
+				server.express.set('view engine', 'ejs'); //ejs: html templates
 				
 				server.express.use(express.favicon());
 				server.express.use(express.logger('dev'));
