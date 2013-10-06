@@ -2,10 +2,7 @@ if (typeof define !== 'function') { var define = require('amdefine')(module) } /
 
 define([
 	//'express',
-	'../../app/index.ejs'
-], function (test){
-	
-	console.log(test);
+], function (){
 	
 	var routes = {
 		init: function(express){
