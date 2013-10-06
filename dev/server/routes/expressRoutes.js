@@ -11,7 +11,7 @@ define([
 			//render main app
 			express.get('/', function(req, res){
 				
-				console.log( 'path: ', path.resolve('app/index.html'));
+				console.log( 'path: ', path.resolve(__dirname, '../app'));
 				
 				fs.readFile(path.resolve('app/index.html'), function (err, data) {
 					res.send(200, data);
