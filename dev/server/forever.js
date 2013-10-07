@@ -20,13 +20,10 @@ define([
 	
 	for(var logName in logs) { 
 		if (logs.hasOwnProperty(logName)) {
-			
-			console.log(logName, logs.logName, logs[logName]);
-			
 			//Move the old log file
-			fs.rename(logs.logName, __dirname+'/logs/archive/'+new Date().getTime()+'.'+logs.logName+'.log', function(){ //prepend a timestamp
+			fs.rename(logs[logName], __dirname+'/logs/archive/'+new Date().getTime()+'.'+logName+'.log', function(){ //prepend a timestamp
 				//make a new blank one
-				fs.writeFileSync(logs.logName, ''); //these need to be prepared before we start forever
+				fs.writeFileSync(logs[logName], ''); //these need to be prepared before we start forever
 			});
 		}
 	}
