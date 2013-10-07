@@ -15,6 +15,9 @@ define([
 		outFile: __dirname+'/logs/out.log', 
 		errFile: __dirname+'/logs/err.log'
 	}
+	
+	console.log(__dirname+'/logs/archive/'+new Date().getTime()+'.'+logs.logName+'.log');
+	
 	for(var logName in logs) { 
 		if (logs.hasOwnProperty(logName)) {
 			//Move the old log file
