@@ -16,8 +16,6 @@ define([
 		errFile: __dirname+'/logs/err.log'
 	}
 	
-	console.log(__dirname+'/logs/archive/'+new Date().getTime()+'.'+logName+'.log');
-	
 	for(var logName in logs) { 
 		if (logs.hasOwnProperty(logName)) {
 			//Move the old log file
@@ -35,8 +33,8 @@ define([
 		'errFile': logs.errFile,// Path to log output from hashBack stderr]
 	});
 	
-	console.log('Started: ', hashBack);
-	
+	console.log('hashBack daemon started by Forever.');
+	//console.log(hashBack);
 	
 	
 	

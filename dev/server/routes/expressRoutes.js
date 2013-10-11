@@ -2,8 +2,9 @@ if (typeof define !== 'function') { var define = require('amdefine')(module) } /
 
 define([
 	'fs',
-	'path'
-], function (fs, path){
+	'path',
+	'forever'
+], function (fs, path, forever){
 	
 	var routes = {
 		init: function(express){
@@ -21,8 +22,13 @@ define([
 			});
 			
 			/////////
-			//another route
-			//express.post('/:reqType', reqAction);
+			//github auto restart app on changes
+			express.get('/gotHub/:pass', function(req, res){
+				//var pass = req.params.pass; //TODO
+				
+				console.log('New github updates available. Pulling, and restarting hashHype.');
+				forever.stopAll();
+			});
 			
 		}
 	};
