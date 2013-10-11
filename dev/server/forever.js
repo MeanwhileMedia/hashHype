@@ -11,9 +11,9 @@ define([
 	
 	//first, move existing log files into archive so we don't keep appending into a massive log file
 	var logs = {
-		logFile: __dirname+'/logs/forever.log',
-		outFile: __dirname+'/logs/out.log', 
-		errFile: __dirname+'/logs/err.log'
+		forever: __dirname+'/logs/forever.log',
+		out: __dirname+'/logs/out.log', 
+		err: __dirname+'/logs/err.log'
 	}
 	
 	for(var logName in logs) { 
@@ -28,9 +28,9 @@ define([
 	
 	//Start up our forever Daemon
 	var hashBack = forever.startDaemon (__dirname+'/server.js', {
-		'logFile': logs.logFile, // Path to log output from forever process (when daemonized)
-		'outFile': logs.outFile, // Path to log output from hashBack stdout
-		'errFile': logs.errFile,// Path to log output from hashBack stderr]
+		'logFile': logs.forever, // Path to log output from forever process (when daemonized)
+		'outFile': logs.out, // Path to log output from hashBack stdout
+		'errFile': logs.err,// Path to log output from hashBack stderr]
 	});
 	
 	console.log('hashBack daemon started by Forever.');
