@@ -186,7 +186,7 @@ define([
 		//For auto pull/forever restart upon new github commits
 		gotHubPass: 'd8Syd3M',
 		gotHubPullOrigin: path.resolve(__dirname, '..', '..'), //when a gotHub request comes in, pull to this directory
-		gotHubPullOrigin: 'master',
+		gotHubPullBranch: 'master',
 		scriptPath: path.resolve(__dirname, __filename), //make restarting the server with express easier
 		
 		
