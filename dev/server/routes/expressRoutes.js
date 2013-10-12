@@ -46,7 +46,7 @@ define([
 					pullCmd.stdout.on('data', function (data) {
 					  	pullCmdOut = pullCmdOut + data;
 					});
-					
+					//
 					pullCmd.stdout.on('data', function (data) {
 					  console.log('stdout: ' + data);
 					});
