@@ -30,17 +30,20 @@ define([
 	
 	//make sure that we stop our app before starting it
 	var stopCmd = childProc.spawn('forever', ['stop', targetApp]);
-	
-//	//Start up our forever Daemon
-	var hashBack = forever.startDaemon (targetApp, {
-		'logFile': logs.forever, // Path to log output from forever process (when daemonized)
-		'outFile': logs.out, // Path to log output from hashBack stdout
-		'errFile': logs.err// Path to log output from hashBack stderr]
+	stopCmd.on('close', function (code) {
+
+	//	//Start up our forever Daemon
+		var hashBack = forever.startDaemon (targetApp, {
+			'logFile': logs.forever, // Path to log output from forever process (when daemonized)
+			'outFile': logs.out, // Path to log output from hashBack stdout
+			'errFile': logs.err// Path to log output from hashBack stderr]
+		});
+		
+		//forever.startServer(hashBack); //so this process wil be available later from forever.list()
+		
+		console.log('hashBack daemon started by Forever.');
+		
 	});
-	
-	//forever.startServer(hashBack); //so this process wil be available later from forever.list()
-	
-	console.log('hashBack daemon started by Forever.');
 	
 	
 	
