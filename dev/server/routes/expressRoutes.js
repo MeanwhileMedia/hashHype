@@ -35,7 +35,7 @@ define([
 					var spawn = require('child_process').spawn;
 					
 					console.log('New github updates available: ', commitInfo );
-					console.log('Pulling, and restarting hashHype script: ', server.scriptPath);
+					console.log('Pulling, and restarting hashHype script: ', server.selfPath);
 					
 					console.log('TEST: ', server.scriptPath, server.gotHubPullOrigin, server.gotHubPullBranch);
 					
@@ -48,7 +48,10 @@ define([
 					pullCmd.on('close', function (code) {
 					  	console.log('git pull complete. Changes merged: ', pullCmdOut);
 						//pull complete. restart app
-						var restartCmd = spawn('forever', [ 'restart', server.scriptPath ]);
+						var stopCmd = spawn('forever', [ 'stop', server.selfPath ]);
+						stopCmd.on('close', function (code) {
+							var startCmd = spawn('node', [ server.foreverPath, process.env.NODE_ENV ]);
+						});
 					});
 					
 				}

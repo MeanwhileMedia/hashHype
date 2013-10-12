@@ -187,8 +187,10 @@ define([
 		gotHubPass: 'd8Syd3M',
 		gotHubPullOrigin: path.resolve(__dirname, '..', '..'), //when a gotHub request comes in, pull to this directory
 		gotHubPullBranch: 'master',
-		scriptPath: path.resolve(__dirname, __filename), //make restarting the server with express easier
 		
+		//make restarting the server with forever easier
+		selfPath: path.resolve(__dirname, __filename),
+		foreverPath: path.resolve(__dirname, 'forever.js')
 		
 	}
 	
