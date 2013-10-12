@@ -30,19 +30,14 @@ define([
 				//Add some security
 				var pass = req.params.pass;
 				var commitInfo = JSON.parse(req.body.payload); //see https://help.github.com/articles/post-receive-hooks
+				console.log('New github updates available: ', commitInfo );
 				
 				if ( pass == server.gotHubPass ){
 					var spawn = require('child_process').spawn;
-					var exec = require('child_process').exec;
-					
-					console.log('New github updates available: ', commitInfo );
+
 					console.log('Pulling, and restarting hashHype script: ', server.selfPath);
 					
-					console.log('TEST: ', server.selfPath, server.gotHubPullOrigin, server.gotHubPullBranch, server.foreverPath, process.env.NODE_ENV);
-					
 					//Only pulls from specified branch, changes to other branches will not be applied to running app
-					//var pullCmd = spawn('cd '+server.gotHubPullOrigin+' && git pull origin '+server.gotHubPullBranch);
-					
 					var pullCmd = spawn('git', ['pull', 'origin', server.gotHubPullBranch], {cwd: server.gotHubPullOrigin});
 					var pullCmdOut = '';
 					pullCmd.stdout.on('data', function (data) {
@@ -53,32 +48,6 @@ define([
 						
 						//pull complete. restart app
 						var startCmd = spawn('node '+server.foreverPath+' '+process.env.NODE_ENV);
-						
-						
-						
-//						var stopCmd = spawn('forever', ['stop', server.selfPath]);
-//						
-//						stopCmd.stdout.on('data', function (data) {
-//						  console.log('stdout: ' + data);
-//						});
-//						
-//						stopCmd.stderr.on('data', function (data) {
-//						  console.log('stderr: ' + data);
-//						});
-//						
-//						stopCmd.on('close', function (code) {
-//						  console.log('child process exited with code ' + code);
-//						});
-						
-//						var stopCmd = exec('forever stop '+server.selfPath , function (error, stdout, stderr) {
-//							var startCmd = exec('node '+server.foreverPath+' '+process.env.NODE_ENV);
-//						});
-
-
-						//stopCmd.on('close', function (code) {
-//							console.log('Forever stopped: ', server.selfPath);
-//							var startCmd = spawn('node '+server.foreverPath+' '+process.env.NODE_ENV);
-//						});
 					});
 					
 				}
