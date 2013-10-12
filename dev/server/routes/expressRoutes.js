@@ -26,13 +26,12 @@ define([
 			//github auto restart app on changes
 			express.get('/gotHub/:pass', function(req, res){
 				//var pass = req.params.pass; //TODO
-				
-				console.log('New github updates available. Pulling, and restarting hashHype.');
+				var scriptPath = path.dirname(process.mainModule.filename);
+				console.log('New github updates available. Pulling, and restarting hashHype script: ', scriptPath);
 				
 				
 				var spawn = require('child_process').spawn;
-		
-				var cmd = spawn('forever', [ 'stop', path.resolve(__dirname, '..', 'server.js') ]);
+				var cmd = spawn('forever', [ 'restart', scriptPath ]); //path.resolve(__dirname, '..', 'server.js')
 
 				//console.log(forever.list);
 				//console.log(forever.list());
