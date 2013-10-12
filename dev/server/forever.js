@@ -6,6 +6,7 @@ define([
 	'fs',
 	'child_process'
 ], function (forever, nodemailer, fs, childProc){
+	
 	//What app are we going to monitor?
 	var targetApp = __dirname+'/server.js';
 	
@@ -28,38 +29,22 @@ define([
 		}
 	}
 	
-	//make sure that we stop our app before starting it
+	//make sure that we stop our app before starting it. If it is not yet running, the 'close' event will still be thrown.
 	var stopCmd = childProc.spawn('forever', ['stop', targetApp]);
 	stopCmd.on('close', function (code) {
 
-	//	//Start up our forever Daemon
+		//Start up our forever Daemon
 		var hashBack = forever.startDaemon (targetApp, {
 			'logFile': logs.forever, // Path to log output from forever process (when daemonized)
 			'outFile': logs.out, // Path to log output from hashBack stdout
 			'errFile': logs.err// Path to log output from hashBack stderr]
 		});
-		
-		//forever.startServer(hashBack); //so this process wil be available later from forever.list()
-		
 		console.log('hashBack daemon started by Forever.');
 		
 	});
 	
 	
-	
-//	//Start with forever
-//	var hashBack = new (forever.Monitor)(__dirname+'/server.js', {
-//		max: 100,
-//		silent: false,
-//		'logFile': __dirname+'/logs/forever.log', // Path to log output from forever process (when daemonized)
-//		'outFile': __dirname+'/logs/out.log', // Path to log output from hashBack stdout
-//		'errFile': __dirname+'/logs/err.log',// Path to log output from hashBack stderr]
-//		'watch': false,
-//		'append': true //append logs
-//		//'watchDirectory': __dirname, //for auto restart on changes
-//		//'watchIgnoreDotFiles': '.foreverignore'
-//	});
-//	
+
 //	hashBack.on('error', function(err){
 //		//send a log email
 //
@@ -93,8 +78,6 @@ define([
 //	});
 //	//hashBack.on('restart', function(forever){
 //	//});
-//	
-//	hashBack.start();
 	
 	
 });

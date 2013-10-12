@@ -34,8 +34,6 @@ define([
 				
 				if ( pass == server.gotHubPass ){
 					var spawn = require('child_process').spawn;
-
-					console.log('Pulling, and restarting hashHype script: ', server.selfPath);
 					
 					//Only pulls from specified branch, changes to other branches will not be applied to running app
 					var pullCmd = spawn('git', ['pull', 'origin', server.gotHubPullBranch], {cwd: server.gotHubPullOrigin});
