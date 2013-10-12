@@ -28,7 +28,7 @@ define([
 				
 				console.log('New github updates available. Pulling, and restarting hashHype.');
 				
-				console.log(forever.list());
+				console.log(forever);
 				
 				forever.stopAll();
 			});
