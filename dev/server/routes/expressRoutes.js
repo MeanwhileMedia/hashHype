@@ -47,7 +47,7 @@ define([
 					});
 					pullCmd.on('close', function (code) {
 					  	console.log('git pull complete. Changes merged: ', pullCmdOut);
-						//pull complete. restart app/
+						//pull complete. restart app
 						var stopCmd = child.spawn('forever stop '+server.selfPath);
 						stopCmd.on('close', function (code) {
 							var startCmd = child.spawn('node '+server.foreverPath+' '+process.env.NODE_ENV);
