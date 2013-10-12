@@ -30,12 +30,16 @@ define([
 				var pass = req.params.pass;
 				var commitInfo = JSON.parse(req.body.payload); //see https://help.github.com/articles/post-receive-hooks
 				
-				if ( pass == 'd8Syd3M' && commitInfo.repository.name == 'hashHype' ){
+				if ( pass == server.gotHubPass ){
+					var spawn = require('child_process').spawn;
+					
 					console.log('New github updates available: ', commitInfo );
 					console.log('Pulling, and restarting hashHype script: ', server.scriptPath);
 					
-					var spawn = require('child_process').spawn;
-					var cmd = spawn('forever', [ 'restart', server.scriptPath ]); //path.resolve(__dirname, '..', 'server.js')
+					//Only pulls from specified branch, changes to other branches will not be applied to running app
+					var pullCmd = spawn('git', [ 'pull', server.gotHubPullOrigin, server.gotHubPullBranch ]);
+					
+					var restartCmd = spawn('forever', [ 'restart', server.scriptPath ]);
 				}
 
 			});

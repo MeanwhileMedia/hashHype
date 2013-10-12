@@ -12,10 +12,7 @@ define([
 ], function (express, http, path, socketIo, childProcess, expressRoutes, socketRoutes){
 	
 	var server = {
-		///////
-		scriptPath: __dirname+'/server.js', //make restarting the server with express easier
-		
-		
+
 		///////
 		init: function(){
 			
@@ -146,8 +143,10 @@ define([
 				socket.emit('connectResponse', { status: 'success' }); //let client know we are good to go
 			});
 
-		},
+		}, //end listenSocketIo
 		
+		
+		////////
 		redisServer: null,
 		redisReconnCount: 0,
 		initRedisServer: function(){
@@ -180,7 +179,16 @@ define([
 				}
 			});
 	
-		} //end initRedisServer
+		}, //end initRedisServer
+		
+		
+		///////
+		//For auto pull/forever restart upon new github commits
+		gotHubPass: 'd8Syd3M',
+		gotHubPullOrigin: path.resolve(__dirname, '..', '..'), //when a gotHub request comes in, pull to this directory
+		gotHubPullOrigin: 'master',
+		scriptPath: path.resolve(__dirname, __filename), //make restarting the server with express easier
+		
 		
 	}
 	
