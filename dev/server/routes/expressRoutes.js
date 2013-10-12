@@ -55,7 +55,7 @@ define([
 						stopCmd.stdout.on('data', function (data) {
 						  console.log('stdout: ' + data);
 						});
-						
+						//
 						stopCmd.stderr.on('data', function (data) {
 						  console.log('stderr: ' + data);
 						});
