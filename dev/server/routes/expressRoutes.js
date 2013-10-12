@@ -26,7 +26,7 @@ define([
 			//github auto restart app on changes
 			express.get('/gotHub/:pass', function(req, res){
 				//var pass = req.params.pass; //TODO
-				var scriptPath = path.dirname(process.mainModule.filename);
+				var scriptPath = process.mainModule.filename;
 				console.log('New github updates available. Pulling, and restarting hashHype script: ', scriptPath);
 				
 				
