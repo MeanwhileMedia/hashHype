@@ -30,10 +30,11 @@ define([
 		'logFile': logs.forever, // Path to log output from forever process (when daemonized)
 		'outFile': logs.out, // Path to log output from hashBack stdout
 		'errFile': logs.err,// Path to log output from hashBack stderr]
+		
+		'pidFile': __dirname+'/this.pid' //so we can stop/restart the process later
 	});
 	
-	console.log('hashBack daemon started by Forever.');
-	console.log(hashBack);
+	console.log('hashBack daemon started by Forever. Pid: ', hashBack.pid);
 	
 	
 	
