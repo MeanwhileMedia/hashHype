@@ -33,6 +33,7 @@ define([
 				
 				if ( pass == server.gotHubPass ){
 					var spawn = require('child_process').spawn;
+					var exec = require('child_process').exec;
 					
 					console.log('New github updates available: ', commitInfo );
 					console.log('Pulling, and restarting hashHype script: ', server.selfPath);
@@ -50,20 +51,26 @@ define([
 					pullCmd.on('close', function (code) {
 					  	console.log('git pull complete. Changes merged: ', pullCmdOut);
 						//pull complete. restart app/
-						var stopCmd = spawn('forever', ['stop', server.selfPath]);
 						
-						stopCmd.stdout.on('data', function (data) {
-						  console.log('stdout: ' + data);
-						});
-						//
-						stopCmd.stderr.on('data', function (data) {
-						  console.log('stderr: ' + data);
-						});
+//						var stopCmd = spawn('forever', ['stop', server.selfPath]);
+//						
+//						stopCmd.stdout.on('data', function (data) {
+//						  console.log('stdout: ' + data);
+//						});
+//						//
+//						stopCmd.stderr.on('data', function (data) {
+//						  console.log('stderr: ' + data);
+//						});
+//						
+//						stopCmd.on('close', function (code) {
+//						  console.log('child process exited with code ' + code);
+//						});
 						
-						stopCmd.on('close', function (code) {
-						  console.log('child process exited with code ' + code);
+						var stopCmd = exec('forever stop '+server.selfPath , function (error, stdout, stderr) {
+							var startCmd = exec('node '+server.foreverPath+' '+process.env.NODE_ENV);
 						});
-						
+
+
 						//stopCmd.on('close', function (code) {
 //							console.log('Forever stopped: ', server.selfPath);
 //							var startCmd = spawn('node '+server.foreverPath+' '+process.env.NODE_ENV);
