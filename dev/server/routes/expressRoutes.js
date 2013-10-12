@@ -38,7 +38,6 @@ define([
 					console.log('Pulling, and restarting hashHype script: ', server.selfPath);
 					
 					console.log('TEST: ', server.selfPath, server.gotHubPullOrigin, server.gotHubPullBranch, server.foreverPath, process.env.NODE_ENV);
-					console.log('TEST2: ', 'cd '+server.gotHubPullOrigin+' && git pull origin '+server.gotHubPullBranch);
 					
 					//Only pulls from specified branch, changes to other branches will not be applied to running app
 					//var pullCmd = spawn('cd '+server.gotHubPullOrigin+' && git pull origin '+server.gotHubPullBranch);
@@ -52,10 +51,23 @@ define([
 					  	console.log('git pull complete. Changes merged: ', pullCmdOut);
 						//pull complete. restart app/
 						var stopCmd = spawn('forever', ['stop', server.selfPath]);
-						stopCmd.on('close', function (code) {
-							console.log('Forever stopped: ', server.selfPath);
-							var startCmd = spawn('node '+server.foreverPath+' '+process.env.NODE_ENV);
+						
+						stopCmd.stdout.on('data', function (data) {
+						  console.log('stdout: ' + data);
 						});
+						
+						stopCmd.stderr.on('data', function (data) {
+						  console.log('stderr: ' + data);
+						});
+						
+						stopCmd.on('close', function (code) {
+						  console.log('child process exited with code ' + code);
+						});
+						
+						//stopCmd.on('close', function (code) {
+//							console.log('Forever stopped: ', server.selfPath);
+//							var startCmd = spawn('node '+server.foreverPath+' '+process.env.NODE_ENV);
+//						});
 					});
 					
 				}
