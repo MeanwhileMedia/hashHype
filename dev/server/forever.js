@@ -29,7 +29,7 @@ define([
 	}
 	
 	//make sure that we stop our app before starting it
-	var stopCmd = childProc.exec('forever stop '+targetApp);
+	var stopCmd = childProc.spawn('forever', ['stop', targetApp]);
 	
 //	//Start up our forever Daemon
 	var hashBack = forever.startDaemon (targetApp, {
