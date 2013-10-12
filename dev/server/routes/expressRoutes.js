@@ -32,7 +32,7 @@ define([
 				var commitInfo = JSON.parse(req.body.payload); //see https://help.github.com/articles/post-receive-hooks
 				
 				if ( pass == server.gotHubPass ){
-					var spawn = require('child_process').spawn;
+					var child = require('child_process');
 					
 					console.log('New github updates available: ', commitInfo );
 					console.log('Pulling, and restarting hashHype script: ', server.selfPath);
@@ -40,17 +40,17 @@ define([
 					console.log('TEST: ', server.selfPath, server.gotHubPullOrigin, server.gotHubPullBranch, server.foreverPath, process.env.NODE_ENV);
 					
 					//Only pulls from specified branch, changes to other branches will not be applied to running app
-					var pullCmd = spawn('cd '+server.gotHubPullOrigin+' && git pull origin '+server.gotHubPullBranch);
-					var pullCmdOut = ''
+					var pullCmd = child.spawn('cd '+server.gotHubPullOrigin+' && git pull origin '+server.gotHubPullBranch);
+					var pullCmdOut = '';
 					pullCmd.stdout.on('data', function (data) {
 					  	pullCmdOut = pullCmdOut + data;
 					});
 					pullCmd.on('close', function (code) {
 					  	console.log('git pull complete. Changes merged: ', pullCmdOut);
 						//pull complete. restart app/
-						var stopCmd = spawn('forever stop '+server.selfPath);
+						var stopCmd = child.spawn('forever stop '+server.selfPath);
 						stopCmd.on('close', function (code) {
-							var startCmd = spawn('node '+server.foreverPath+' '+process.env.NODE_ENV);
+							var startCmd = child.spawn('node '+server.foreverPath+' '+process.env.NODE_ENV);
 						});
 					});
 					
