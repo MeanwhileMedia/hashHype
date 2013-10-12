@@ -12,6 +12,9 @@ define([
 ], function (express, http, path, socketIo, childProcess, expressRoutes, socketRoutes){
 	
 	var server = {
+		///////
+		scriptPath: __dirname+'server.js', //make restarting the server with express easier
+		
 		
 		///////
 		init: function(){
@@ -54,7 +57,7 @@ define([
 			//server.enableCors(); //optional
 			
 			//Set up all of our express get/post requests routes
-			expressRoutes.init(server.express); //required by define
+			expressRoutes.init(server); //required by define
 			
 		}, //end loadExpress
 		

@@ -3,16 +3,15 @@ if (typeof define !== 'function') { var define = require('amdefine')(module) } /
 define([
 	'fs',
 	'path',
-	'forever',
-	
+	'forever'
 ], function (fs, path, forever){
 	
 	var routes = {
-		init: function(express){
+		init: function(server){
 			
 			//////////
 			//render main backbone app
-			express.get('/', function(req, res){
+			server.express.get('/', function(req, res){
 				
 				var htmlPath = path.resolve(__dirname, '..', '..', 'app/index.html');
 				
@@ -24,14 +23,12 @@ define([
 			
 			/////////
 			//github auto restart app on changes
-			express.get('/gotHub/:pass', function(req, res){
+			server.express.get('/gotHub/:pass', function(req, res){
 				//var pass = req.params.pass; //TODO
-				var scriptPath = process.mainModule.filename;
-				console.log('New github updates available. Pulling, and restarting hashHype script: ', scriptPath);
-				
+				console.log('New github updates available. Pulling, and restarting hashHype script: ', server.scriptPath);
 				
 				var spawn = require('child_process').spawn;
-				var cmd = spawn('forever', [ 'restart', scriptPath ]); //path.resolve(__dirname, '..', 'server.js')
+				var cmd = spawn('forever', [ 'restart', server.scriptPath ]); //path.resolve(__dirname, '..', 'server.js')
 
 				//console.log(forever.list);
 				//console.log(forever.list());
