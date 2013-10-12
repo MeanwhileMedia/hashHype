@@ -33,7 +33,7 @@ define([
 //	});
 	
 	console.log('hashBack daemon started by Forever.');
-	//console.log(hashBack);
+	console.log(hashBack);
 	
 	
 	
