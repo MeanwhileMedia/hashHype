@@ -26,11 +26,11 @@ define([
 	}
 	
 //	//Start up our forever Daemon
-//	var hashBack = forever.startDaemon (__dirname+'/server.js', {
-//		'logFile': logs.forever, // Path to log output from forever process (when daemonized)
-//		'outFile': logs.out, // Path to log output from hashBack stdout
-//		'errFile': logs.err,// Path to log output from hashBack stderr]
-//	});
+	var hashBack = forever.startDaemon (__dirname+'/server.js', {
+		'logFile': logs.forever, // Path to log output from forever process (when daemonized)
+		'outFile': logs.out, // Path to log output from hashBack stdout
+		'errFile': logs.err,// Path to log output from hashBack stderr]
+	});
 	
 	console.log('hashBack daemon started by Forever.');
 	console.log(hashBack);
