@@ -13,7 +13,7 @@ define([
 	
 	var server = {
 		///////
-		scriptPath: __dirname+'server.js', //make restarting the server with express easier
+		scriptPath: __dirname+'/server.js', //make restarting the server with express easier
 		
 		
 		///////
