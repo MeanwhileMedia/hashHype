@@ -27,7 +27,9 @@ define([
 				//var pass = req.params.pass; //TODO
 				res.send(200);
 				
-				console.log('New github updates available: ', req.body.payload );
+				var commitInfo = JSON.parse(req.body.payload); //see https://help.github.com/articles/post-receive-hooks
+				
+				console.log('New github updates available: ', commitInfo );
 				console.log('Pulling, and restarting hashHype script: ', server.scriptPath);
 				
 				var spawn = require('child_process').spawn;
