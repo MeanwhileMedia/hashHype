@@ -47,7 +47,7 @@ define([
 					});
 					pullCmd.on('close', function (code) {
 					  	console.log('git pull complete. Changes merged: ', pullCmdOut);
-						//pull complete. restart app/
+						//pull complete. restart app
 						var restartCmd = spawn('forever', [ 'restart', server.scriptPath ]);
 					});
 					
