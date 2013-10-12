@@ -184,6 +184,7 @@ define([
 		
 		///////
 		//For auto pull/forever restart upon new github commits
+		gotHubEnabled: true,
 		gotHubPass: 'd8Syd3M',
 		gotHubPullOrigin: path.resolve(__dirname, '..', '..'), //when a gotHub request comes in, pull to this directory
 		gotHubPullBranch: 'master',

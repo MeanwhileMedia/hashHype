@@ -22,35 +22,38 @@ define([
 			});
 			
 			
+			
 			/////////
 			//github auto restart app on changes
-			server.express.post('/gotHub/:pass', function(req, res){
-				res.send(200);
-				
-				//Add some security
-				var pass = req.params.pass;
-				var commitInfo = JSON.parse(req.body.payload); //see https://help.github.com/articles/post-receive-hooks
-				console.log('New github updates available: ', commitInfo );
-				
-				if ( pass == server.gotHubPass ){
-					var spawn = require('child_process').spawn;
+			if ( server.gotHubEnabled ){
+				server.express.post('/gotHub/:pass', function(req, res){
+					res.send(200);
 					
-					//Only pulls from specified branch, changes to other branches will not be applied to running app
-					var pullCmd = spawn('git', ['pull', 'origin', server.gotHubPullBranch], {cwd: server.gotHubPullOrigin});
-					var pullCmdOut = '';
-					pullCmd.stdout.on('data', function (data) {
-					  	pullCmdOut = pullCmdOut + data;
-					});
-					pullCmd.on('close', function (code) {
-					  	console.log('git pull complete. Changes merged: ', pullCmdOut);
+					//Add some security
+					var pass = req.params.pass;
+					var commitInfo = JSON.parse(req.body.payload); //see https://help.github.com/articles/post-receive-hooks
+					console.log('New github updates available: ', commitInfo );
+					
+					if ( pass == server.gotHubPass ){
+						var spawn = require('child_process').spawn;
 						
-						//pull complete. restart app
-						var startCmd = spawn('node '+server.foreverPath+' '+process.env.NODE_ENV);
-					});
-					
-				}
-
-			});
+						//Only pulls from specified branch, changes to other branches will not be applied to running app
+						var pullCmd = spawn('git', ['pull', 'origin', server.gotHubPullBranch], {cwd: server.gotHubPullOrigin});
+						var pullCmdOut = '';
+						pullCmd.stdout.on('data', function (data) {
+							pullCmdOut = pullCmdOut + data;
+						});
+						pullCmd.on('close', function (code) {
+							console.log('git pull complete. Changes merged: ', pullCmdOut);
+							
+							//pull complete. restart app
+							var startCmd = spawn('node '+server.foreverPath+' '+process.env.NODE_ENV);
+						});
+						
+					}
+	
+				});
+			} //end if server.gotHubEnabled
 			
 		}
 	};
