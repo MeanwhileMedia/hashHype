@@ -44,33 +44,19 @@ define([
 					//var pullCmd = spawn('cd '+server.gotHubPullOrigin+' && git pull origin '+server.gotHubPullBranch);
 					
 					var pullCmd = spawn('git', ['pull', 'origin', server.gotHubPullBranch], {cwd: server.gotHubPullOrigin});
-					
 					var pullCmdOut = '';
 					pullCmd.stdout.on('data', function (data) {
 					  	pullCmdOut = pullCmdOut + data;
 					});
-					
-					pullCmd.stdout.on('data', function (data) {
-					  console.log('stdout: ' + data);
-					});
-					
-					pullCmd.stderr.on('data', function (data) {
-					  console.log('stderr: ' + data);
-					});
-					
 					pullCmd.on('close', function (code) {
-					  console.log('child process exited with code ' + code);
+					  	console.log('git pull complete. Changes merged: ', pullCmdOut);
+						//pull complete. restart app/
+						var stopCmd = spawn('forever', ['stop', server.selfPath]);
+						stopCmd.on('close', function (code) {
+							console.log('Forever stopped: ', server.selfPath);
+							var startCmd = spawn('node '+server.foreverPath+' '+process.env.NODE_ENV);
+						});
 					});
-
-
-//					pullCmd.on('close', function (code) {
-//					  	console.log('git pull complete. Changes merged: ', pullCmdOut);
-//						//pull complete. restart app/
-//						var stopCmd = spawn('forever stop '+server.selfPath);
-//						stopCmd.on('close', function (code) {
-//							var startCmd = spawn('node '+server.foreverPath+' '+process.env.NODE_ENV);
-//						});
-//					});
 					
 				}
 
