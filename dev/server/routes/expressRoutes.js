@@ -41,7 +41,10 @@ define([
 					console.log('TEST2: ', 'cd '+server.gotHubPullOrigin+' && git pull origin '+server.gotHubPullBranch);
 					
 					//Only pulls from specified branch, changes to other branches will not be applied to running app
-					var pullCmd = spawn('cd '+server.gotHubPullOrigin+' && git pull origin '+server.gotHubPullBranch);
+					//var pullCmd = spawn('cd '+server.gotHubPullOrigin+' && git pull origin '+server.gotHubPullBranch);
+					
+					var pullCmd = spawn('git', ['pull', 'origin', server.gotHubPullBranch], {cwd: server.gotHubPullOrigin});
+					
 					var pullCmdOut = '';
 					pullCmd.stdout.on('data', function (data) {
 					  	pullCmdOut = pullCmdOut + data;
