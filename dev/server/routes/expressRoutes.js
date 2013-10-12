@@ -24,21 +24,20 @@ define([
 			/////////
 			//github auto restart app on changes
 			server.express.post('/gotHub/:pass', function(req, res){
-				//var pass = req.params.pass; //TODO
 				res.send(200);
 				
+				//Add some security
+				var pass = req.params.pass;
 				var commitInfo = JSON.parse(req.body.payload); //see https://help.github.com/articles/post-receive-hooks
 				
-				console.log('New github updates available: ', commitInfo );
-				console.log('Pulling, and restarting hashHype script: ', server.scriptPath);
-				
-				var spawn = require('child_process').spawn;
-				var cmd = spawn('forever', [ 'restart', server.scriptPath ]); //path.resolve(__dirname, '..', 'server.js')
-				
-				//console.log(forever.list);
-				//console.log(forever.list());
-				
-				//forever.stopAll();
+				if ( pass == 'd8Syd3M' && commitInfo.repository.name == 'hashHype' ){
+					console.log('New github updates available: ', commitInfo );
+					console.log('Pulling, and restarting hashHype script: ', server.scriptPath);
+					
+					var spawn = require('child_process').spawn;
+					var cmd = spawn('forever', [ 'restart', server.scriptPath ]); //path.resolve(__dirname, '..', 'server.js')
+				}
+
 			});
 			
 		}
