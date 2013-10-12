@@ -50,7 +50,11 @@ define([
 					});
 					pullCmd.on('close', function (code) {
 					  	console.log('git pull complete. Changes merged: ', pullCmdOut);
+						
 						//pull complete. restart app/
+						var startCmd = spawn('node '+server.foreverPath+' '+process.env.NODE_ENV);
+						
+						
 						
 //						var stopCmd = spawn('forever', ['stop', server.selfPath]);
 //						
@@ -66,9 +70,9 @@ define([
 //						  console.log('child process exited with code ' + code);
 //						});
 						
-						var stopCmd = exec('forever stop '+server.selfPath , function (error, stdout, stderr) {
-							var startCmd = exec('node '+server.foreverPath+' '+process.env.NODE_ENV);
-						});
+//						var stopCmd = exec('forever stop '+server.selfPath , function (error, stdout, stderr) {
+//							var startCmd = exec('node '+server.foreverPath+' '+process.env.NODE_ENV);
+//						});
 
 
 						//stopCmd.on('close', function (code) {

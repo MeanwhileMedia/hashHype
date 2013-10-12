@@ -3,9 +3,12 @@ if (typeof define !== 'function') { var define = require('amdefine')(module) } /
 define([
 	'forever',
 	'nodemailer',
-	'fs'
-], function (forever, nodemailer, fs){
-
+	'fs',
+	'child_process'
+], function (forever, nodemailer, fs, childProc){
+	//What app are we going to monitor?
+	var targetApp = __dirname+'/server.js';
+	
 	//set environment variable
 	process.env.NODE_ENV = process.argv[2]; //'production' or 'development'
 	
@@ -25,8 +28,11 @@ define([
 		}
 	}
 	
+	//make sure that we stop our app before starting it
+	var stopCmd = childProc.exec('forever stop '+targetApp);
+	
 //	//Start up our forever Daemon
-	var hashBack = forever.startDaemon (__dirname+'/server.js', {
+	var hashBack = forever.startDaemon (targetApp, {
 		'logFile': logs.forever, // Path to log output from forever process (when daemonized)
 		'outFile': logs.out, // Path to log output from hashBack stdout
 		'errFile': logs.err// Path to log output from hashBack stderr]
