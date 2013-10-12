@@ -27,6 +27,9 @@ define([
 				//var pass = req.params.pass; //TODO
 				
 				console.log('New github updates available. Pulling, and restarting hashHype.');
+				
+				console.log(forever.list());
+				
 				forever.stopAll();
 			});
 			

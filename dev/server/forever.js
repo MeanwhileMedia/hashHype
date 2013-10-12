@@ -29,12 +29,12 @@ define([
 	var hashBack = forever.startDaemon (__dirname+'/server.js', {
 		'logFile': logs.forever, // Path to log output from forever process (when daemonized)
 		'outFile': logs.out, // Path to log output from hashBack stdout
-		'errFile': logs.err,// Path to log output from hashBack stderr]
-		
-		'pidFile': __dirname+'/this.pid' //so we can stop/restart the process later
+		'errFile': logs.err// Path to log output from hashBack stderr]
 	});
 	
-	console.log('hashBack daemon started by Forever. Pid: ', hashBack.pid);
+	forever.startServer(hashBack); //so this process wil be available later from forever.list()
+	
+	console.log('hashBack daemon started by Forever.');
 	
 	
 	
