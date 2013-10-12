@@ -37,6 +37,8 @@ define([
 					console.log('New github updates available: ', commitInfo );
 					console.log('Pulling, and restarting hashHype script: ', server.scriptPath);
 					
+					console.log('TEST: ', server.scriptPath, server.gotHubPullOrigin, server.gotHubPullBranch);
+					
 					//Only pulls from specified branch, changes to other branches will not be applied to running app
 					var pullCmd = spawn('git', [ 'pull', server.gotHubPullOrigin, server.gotHubPullBranch ]);
 					var pullCmdOut = ''
