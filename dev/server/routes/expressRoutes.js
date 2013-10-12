@@ -27,7 +27,7 @@ define([
 				//var pass = req.params.pass; //TODO
 				res.send(200);
 				
-				console.log('New github updates available: ', req);
+				console.log('New github updates available: ', req.body.payload );
 				console.log('Pulling, and restarting hashHype script: ', server.scriptPath);
 				
 				var spawn = require('child_process').spawn;
