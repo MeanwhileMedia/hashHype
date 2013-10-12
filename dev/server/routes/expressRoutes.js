@@ -21,6 +21,7 @@ define([
 				
 			});
 			
+			
 			/////////
 			//github auto restart app on changes
 			server.express.post('/gotHub/:pass', function(req, res){
@@ -38,8 +39,16 @@ define([
 					
 					//Only pulls from specified branch, changes to other branches will not be applied to running app
 					var pullCmd = spawn('git', [ 'pull', server.gotHubPullOrigin, server.gotHubPullBranch ]);
+					var pullCmdOut = ''
+					pullCmd.stdout.on('data', function (data) {
+					  	pullCmdOut = pullCmdOut + data;
+					});
+					pullCmd.on('close', function (code) {
+					  	console.log('git pull complete. Changes merged: ', pullCmdOut);
+						//pull complete. restart app
+						var restartCmd = spawn('forever', [ 'restart', server.scriptPath ]);
+					});
 					
-					var restartCmd = spawn('forever', [ 'restart', server.scriptPath ]);
 				}
 
 			});
