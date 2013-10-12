@@ -32,7 +32,7 @@ define([
 		'errFile': logs.err// Path to log output from hashBack stderr]
 	});
 	
-	forever.startServer(hashBack); //so this process wil be available later from forever.list()
+	//forever.startServer(hashBack); //so this process wil be available later from forever.list()
 	
 	console.log('hashBack daemon started by Forever.');
 	

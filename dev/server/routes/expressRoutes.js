@@ -3,7 +3,8 @@ if (typeof define !== 'function') { var define = require('amdefine')(module) } /
 define([
 	'fs',
 	'path',
-	'forever'
+	'forever',
+	
 ], function (fs, path, forever){
 	
 	var routes = {
@@ -28,10 +29,15 @@ define([
 				
 				console.log('New github updates available. Pulling, and restarting hashHype.');
 				
-				console.log(forever.list);
-				console.log(forever.list());
 				
-				forever.stopAll();
+				var spawn = require('child_process').spawn;
+		
+				var cmd = spawn('forever', [ 'stop', path.resolve(__dirname, '..', 'server.js') ]);
+
+				//console.log(forever.list);
+				//console.log(forever.list());
+				
+				//forever.stopAll();
 			});
 			
 		}
