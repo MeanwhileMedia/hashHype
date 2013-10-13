@@ -2,10 +2,9 @@ if (typeof define !== 'function') { var define = require('amdefine')(module) } /
 
 define([
 	'forever',
-	'nodemailer',
 	'fs',
 	'child_process'
-], function (forever, nodemailer, fs, childProc){
+], function (forever, fs, childProc){
 	
 	//What app are we going to monitor?
 	var targetApp = __dirname+'/server.js';
@@ -14,16 +13,17 @@ define([
 	process.env.NODE_ENV = process.argv[2]; //'production' or 'development'
 	
 	//first, move existing log files into archive so we don't keep appending into a massive log file
+	var logsDir = __dirname+'/misc/logs/';
 	var logs = {
-		forever: __dirname+'/logs/forever.log',
-		out: __dirname+'/logs/out.log', 
-		err: __dirname+'/logs/err.log'
+		forever: logsDir+'forever.log',
+		out: logsDir+'out.log', 
+		err: logsDir+'err.log'
 	}
 	
 	for(var logName in logs) { 
 		if (logs.hasOwnProperty(logName)) {
 			//Move the old log file
-			fs.renameSync(logs[logName], __dirname+'/logs/archive/'+new Date().getTime()+'.'+logName+'.log'); //prepend a timestamp
+			fs.renameSync(logs[logName], logsDir+'archive/'+new Date().getTime()+'.'+logName+'.log'); //prepend a timestamp
 			//make a new blank one
 			fs.writeFileSync(logs[logName], ''); //these need to be prepared before we start forever
 		}
@@ -42,42 +42,5 @@ define([
 		console.log('hashBack daemon started by Forever.');
 		
 	});
-	
-	
 
-//	hashBack.on('error', function(err){
-//		//send a log email
-//
-//		// Create a SMTP transport object
-//		var transport = nodemailer.createTransport("SMTP", {
-//			service: 'Gmail', // use well known service
-//			auth: {
-//				user: "hashHype.logs@gmail.com",
-//				pass: "c5Upubru"
-//			}
-//		});
-//		
-//		// Message object
-//		var message = {
-//			// sender info
-//			from: "hashHype.logs@gmail.com",
-//			to: "hashHype.logs@gmail.com",
-//			subject: 'hashBack Error',
-//			text: err,
-//		};
-//		
-//		transport.sendMail(message, function(error){
-//			if(error){
-//				console.log('Error occured: ' + error.message);
-//				return;
-//			}
-//			console.log('Log email sent successfully.');
-//			transport.close(); // close the connection pool
-//		});
-//		
-//	});
-//	//hashBack.on('restart', function(forever){
-//	//});
-	
-	
 });
