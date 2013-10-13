@@ -3,25 +3,48 @@ if (typeof define !== 'function') { var define = require('amdefine')(module) } /
 define([
 	'express',
 	'http',
+	'https',
 	'path',
 	'socket.io',
 	'child_process',
 	
 	'./routes/expressRoutes',
 	'./routes/socketRoutes',
-], function (express, http, path, socketIo, childProcess, expressRoutes, socketRoutes){
+], function (express, http, https, path, socketIo, childProcess, expressRoutes, socketRoutes){
 	
 	var server = {
-
+		
+		/////////
+		///Config
+		
+		enableSsl: true, //if enabled 443 must be unblocked
+		sslCertsPath: __dirname+'/misc/ssl/', //the location of our ssl certificates
+		
+		enableCors: false,
+		allowCorsWith: 'https://otherDomain.com', //cross origin domain that we allow in
+		
+		enableSocketIo: false,
+		
+		enableRedis: false,
+		
+		enableMongoDb: false, //TODO: no yet implemented
+		
+		enableGotHub: true, //autoupdate/restart server when there are new github commits
+		
+		
+		
+		//////////////
+		///Init functions/stored created objects
+		
 		///////
 		init: function(){
 			
-			server.loadExpress();
-			//server.listenSocketIo(); //optional
-			//server.initRedisServer(); //optional
+			server.loadExpress(); //create express server
+			server.listenSocketIo();
+			server.initMongoDb();
+			server.initRedisServer();
 			
 		},
-		
 		
 		///////
 		express: null,
@@ -51,7 +74,6 @@ define([
 			
 			//ititialize server
 			server.listenServerPort();
-			//server.enableCors(); //optional
 			
 			//Set up all of our express get/post requests routes
 			expressRoutes.init(server); //required by define
@@ -63,19 +85,50 @@ define([
 		openPort: null,
 		listenServerPort: function(){
 			
-			server.openPort = http.createServer(server.express);
-			server.openPort.listen( server.express.get('port') );
+			if ( server.enableSsl ){
+				var sslCert = server.getSslCert();
+				server.openPort = https.createServer(sslCert, server.express);
+				console.log('SSL enabled.');
+			} else {
+				server.openPort = http.createServer(server.express);
+			}
 			
+			server.openPort.listen( server.express.get('port') );
 			console.log("hashHype server listening on port " + server.express.get('port') + ' in ' + process.env.NODE_ENV + ' mode.');
 			
+			if ( server.enableCors ){
+				server.initCors();
+			}
+			
 		}, //end listenServerPort
+		getSslCert: function(){
+			
+			function bundleCa(caFiles){
+				var _i, _len, _results;
+				_results = [];
+				for (_i = 0, _len = caFiles.length; _i < _len; _i++) {
+					file = caFiles[_i];
+					_results.push(fs.readFileSync(file));
+				}
+				return _results;
+			}
+			
+			var sslCert = {
+				key : fs.readFileSync(server.sslCertsPath+'private.key'),
+				cert : fs.readFileSync(server.sslCertsPath+'server.crt'),
+				ca: bundleCa([server.sslCertsPath+'PositiveSSLCA2.crt', server.sslCertsPath+'AddTrustExternalCARoot.crt']),
+			};
+			
+			return sslCert;
+			
+		}, //end getSslCert
 		
 		
 		///////
-		enableCors: function(){
+		initCors: function(){
 			
 			//configure express router to allow cors for all incoming requests that match our 'Allow-Origin'
-			//express.router MUST be enabled, and enableCors() MUST be called begore any other routes are defined
+			//express.router MUST be enabled, and openCors() MUST be called before any other routes are defined
 			server.express.all('*', function(req, res, next){
 				console.log('New incoming request: ', req);
 				
@@ -102,18 +155,18 @@ define([
 				</cross-domain-policy>\n");
 			});
 			
-			
+			console.log('CORS enabled.');
 		}, //end enableCors
 		
 		
 		//////
 		socketIo: null,
 		listenSocketIo: function(){
+			if (!enableSocketIo){ return; }
 			
 			// Start up socket.io, condigure environments
 			server.socketIo = socketIo.listen( server.openPort );
-			console.log("hashBack server listening on port " + server.express.get('port') + ' in ' + process.env.NODE_ENV + ' mode.');
-			
+
 			server.socketIo.configure('development', function(){ //define development environment for io
 				io.set('transports', ['websocket']);
 			});
@@ -142,14 +195,24 @@ define([
 				
 				socket.emit('connectResponse', { status: 'success' }); //let client know we are good to go
 			});
-
+			
+			console.log('socket.io enabled.');
 		}, //end listenSocketIo
+		
+		
+		////////
+		MongoDb: null,
+		initMongoDb: function(){
+			if (!enableMongoDb){ return; }
+		},
 		
 		
 		////////
 		redisServer: null,
 		redisReconnCount: 0,
 		initRedisServer: function(){
+			if(!enableRedis){ return; }
+			
 			
 			server.redisServer = childProcess.spawn('/etc/progs/redis-2.4.2/src/redis-server', ['/etc/progs/redis-2.4.2/redis.conf']);
 	
@@ -178,21 +241,19 @@ define([
 					console.log('Could not reconnect redis server.');
 				}
 			});
-	
+			
+			console.log('Redis enabled.');
 		}, //end initRedisServer
 		
 		
 		///////
-		//For auto pull/forever restart upon new github commits
-		gotHubEnabled: true,
 		gotHubPass: 'd8Syd3M',
 		gotHubPullOrigin: path.resolve(__dirname, '..', '..'), //when a gotHub request comes in, pull to this directory
 		gotHubPullBranch: 'master',
-		
 		//make restarting the server with forever easier
 		selfPath: path.resolve(__dirname, __filename),
 		foreverPath: path.resolve(__dirname, 'forever.js')
-		
+	
 	}
 	
 	server.init();
