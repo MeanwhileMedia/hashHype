@@ -87,6 +87,7 @@ define([
 		///////
 		activeHttpPort: null,
 		activeHttpsPort: null,
+		requestedHttps: false,
 		listenServerPort: function(){
 			
 			console.log("Starting hashHype server.");
@@ -95,9 +96,10 @@ define([
 				console.log("SSL enabled.");
 				//listen on 443, serve credentials, then use bouncy to forward to 80 which is the port server operates on.
 				//This means that if the user does not specify https:// in their browser, a non ssl version of the site will be served.
-				//To force SSL only, a exress route redirect is required. Set forceSsl above to enable.
+				//To force SSL only, an express route redirect is required. Set forceSsl above to enable.
 				var sslCert = server.getSslCert();
 				server.activeHttpsPort = bouncy(sslCert, function (req, res, bounce) {
+					server.requestedHttps = true;
 					bounce(80);
 				});
 				server.activeHttpsPort.listen(443)
