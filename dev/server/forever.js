@@ -5,7 +5,7 @@ define([
 	'fs',
 	'child_process'
 ], function (forever, fs, childProc){
-	
+	console.log('test1')
 	//What app are we going to monitor?
 	var targetApp = __dirname+'/server.js';
 	
@@ -30,7 +30,9 @@ define([
 	}
 	
 	//make sure that we stop our app before starting it. If it is not yet running, the 'close' event will still be thrown.
+	console.log('test2');
 	var stopCmd = childProc.spawn('forever', ['stop', targetApp]);
+	console.log('test3')
 	stopCmd.on('close', function (code) {
 
 		////Start up our forever Daemon
