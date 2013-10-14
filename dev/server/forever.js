@@ -12,8 +12,7 @@ define([
 	//set environment variable
 	process.env.NODE_ENV = process.argv[2]; //'production' or 'development'
 	
-	
-		
+
 	function resetLogs(){
 		var logsDir = __dirname+'/misc/logs/';
 		var logs = {
@@ -45,7 +44,6 @@ define([
 	console.log('hashBack daemon started by Forever.');
 	
 	hashBack.on('restart', function(){
-		console.log('hashBack daemon restarted by Forever.');
 		resetLogs();
 	});
 	

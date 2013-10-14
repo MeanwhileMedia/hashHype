@@ -95,7 +95,7 @@ define([
 							console.log('Restarting server...');
 							///var startCmd = spawn('forever', ['restart', server.selfPath]);
 							
-							forever.restart(server.selfPath, true);
+							forever.restart(server.selfPath);
 							
 						});
 						
