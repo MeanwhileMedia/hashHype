@@ -21,6 +21,7 @@ define([
 		
 		enableSsl: true, //if enabled 443 must be unblocked
 		sslCertsPath: __dirname+'/misc/ssl/', //the location of our ssl certificates
+		forceSsl: true, //redirect all http requests to https (set false to serve both versions)
 		
 		enableCors: false,
 		allowCorsWith: 'https://otherDomain.com', //cross origin domain that we allow in
@@ -88,27 +89,22 @@ define([
 		activeHttpsPort: null,
 		listenServerPort: function(){
 			
+			console.log("Starting hashHype server.");
+			
 			if ( server.enableSsl ){
-				//listen on 80, and 443, then use bouncy to forward 80 requests
+				console.log("SSL enabled.");
+				//listen on 443, serve credentials, then use bouncy to forward to 80 which is the port server operates on.
+				//This means that if the user does not specify https:// in their browser, a non ssl version of the site will be served.
+				//To force SSL only, a exress route redirect is required. Set forceSsl above to enable.
 				var sslCert = server.getSslCert();
-//				server.activeHttpsPort = https.createServer(sslCert, server.express);
-//				server.activeHttpsPort.listen( 443 );
-//				console.log('SSL enabled.');
-				
 				server.activeHttpsPort = bouncy(sslCert, function (req, res, bounce) {
 					bounce(80);
 				});
 				server.activeHttpsPort.listen(443)
-
-//				bouncy(function (req, res, bounce) {
-//					bounce(443);
-//				}).listen(80);
 			}
 			
 			server.activeHttpPort = http.createServer(server.express);
 			server.activeHttpPort.listen( 80 );
-			
-			console.log("hashHype server listening in " + process.env.NODE_ENV + ' mode.');
 			
 			if ( server.enableCors ){
 				server.initCors();

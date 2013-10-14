@@ -12,7 +12,10 @@ define([
 			//////////
 			//render main backbone app
 			server.express.get('/', function(req, res){
-				
+				if( server.forceSsl && !req.secure) {
+					return res.redirect('https://' + req.get('Host') + req.url);
+				}
+  
 				var htmlPath = path.resolve(__dirname, '..', '..', 'app/index.html');
 				
 				fs.readFile(htmlPath, 'utf8', function (err, appHtml) {
