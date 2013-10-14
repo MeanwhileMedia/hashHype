@@ -13,7 +13,7 @@ define([
 			//Auto redirect http-->https
 			if ( server.forceSsl ){
 				console.log("Redirecting all http requests to https.");
-				server.express.get('*',function(req,res){ 
+				server.express.get('*',function(req, res, next){ 
 					console.log('Secure: ', req.secure);
 					if ( !req.secure ) {
 						console.log('Incoming request was http, redirecting to https.');
