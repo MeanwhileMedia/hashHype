@@ -93,9 +93,9 @@ define([
 						pullCmd.on('close', function (code) {
 							console.log('git pull complete. Changes merged: ', pullCmdOut);
 							console.log('Restarting server...');
-							//var startCmd = spawn('forever', ['restart', server.selfPath]);
+							///var startCmd = spawn('forever', ['restart', server.selfPath]);
 							
-							forever.restart(server.selfPath);
+							forever.restart(server.selfPath, true);
 							
 						});
 						
