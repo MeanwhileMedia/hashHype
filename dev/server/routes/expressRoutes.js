@@ -51,8 +51,10 @@ define([
 						pullCmd.on('close', function (code) {
 							console.log('git pull complete. Changes merged: ', pullCmdOut);
 							
+							console.log();
+							
 							//pull complete. restart app
-							var startCmd = spawn('node '+server.foreverPath+' '+process.env.NODE_ENV);
+							var startCmd = spawn('node', [server.foreverPath, process.env.NODE_ENV]);
 						});
 						
 					}
