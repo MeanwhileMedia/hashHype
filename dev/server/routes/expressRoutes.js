@@ -95,7 +95,7 @@ define([
 							console.log('git pull complete. Changes merged: ', pullCmdOut);
 							console.log('Restarting server...');
 							
-							//first archive our logs, so our current logs don't get too long
+							///first archive our logs, so our current logs don't get too long
 							logMan.archive();
 							logMan.reSetForeverLogs();
 							
