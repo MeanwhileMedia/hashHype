@@ -33,6 +33,18 @@ define([
 	console.log('test2');
 	var stopCmd = childProc.spawn('forever', ['stop', targetApp]);
 	console.log('test3', targetApp)
+	
+	
+	stopCmd.stdout.on('data', function (data) {
+	  console.log('stdout: ' + data);
+	});
+	
+	stopCmd.stderr.on('data', function (data) {
+	  console.log('stderr: ' + data);
+	});
+
+
+
 	stopCmd.on('close', function (code) {
 		
 		console.log('test4');
