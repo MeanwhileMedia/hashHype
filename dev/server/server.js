@@ -4,7 +4,6 @@ define([
 	'express',
 	'http',
 	'https',
-	'bouncy',
 	'path',
 	'fs',
 	'socket.io',
@@ -12,7 +11,7 @@ define([
 	
 	'./routes/expressRoutes',
 	'./routes/socketRoutes',
-], function (express, http, https, bouncy, path, fs, socketIo, childProcess, expressRoutes, socketRoutes){
+], function (express, http, https, path, fs, socketIo, childProcess, expressRoutes, socketRoutes){
 	
 	var server = {
 		
@@ -94,25 +93,19 @@ define([
 			
 			if ( server.enableSsl ){
 				console.log("SSL enabled.");
-				//listen on 443, serve credentials, then use bouncy to forward to 80 which is the port server operates on.
-				//This means that if the user does not specify https:// in their browser, a non ssl version of the site will be served.
+				//listen on 443, serve credentials
 				//To force SSL only, an express route redirect is required. Set forceSsl above to enable.
 				var sslCert = server.getSslCert();
-				server.activeHttpsPort = bouncy(sslCert, function (req, res, bounce) {
-					server.requestWasHttps = true;
-					req.testVar = 'TEST';
-					bounce(80);
-				});
+				server.activeHttpsPort = https.createServer(server.express);
+//				server.activeHttpsPort = bouncy(sslCert, function (req, res, bounce) {
+//					server.requestWasHttps = true;
+//					bounce(80);
+//				});
 				server.activeHttpsPort.listen(443)
 			}
 			
 			server.activeHttpPort = http.createServer(server.express);
 			server.activeHttpPort.listen( 80 );
-//			if ( server.forceSsl ){
-//				server.activeHttpPort.on('request', function(){
-//					
-//				});
-//			}
 			
 			if ( server.enableCors ){
 				server.initCors();

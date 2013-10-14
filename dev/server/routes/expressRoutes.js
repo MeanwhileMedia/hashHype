@@ -9,14 +9,22 @@ define([
 	var routes = {
 		init: function(server){
 			
+			////////
+			//Auto redirect http-->https
+			if ( server.forceSsl ){
+				console.log("Redirecting all http requests to https.");
+				server.express.get('*',function(req,res){ 
+					if ( !req.secure ) {
+						console.log('Incoming request was http, redirecting to https.', req);
+						return res.redirect('https://' + req.get('Host') + req.url);
+					}
+				});
+			} //end if server.forceSsl
+			
+			
 			//////////
 			//render main backbone app
 			server.express.get('/', function(req, res){
-				if( server.forceSsl && !server.requestWasHttps ) {
-					console.log('Incoming request was http, redirecting to https.', req.testVar);
-					return res.redirect('https://' + req.get('Host') + req.url);
-				}
-  
 				var htmlPath = path.resolve(__dirname, '..', '..', 'app/index.html');
 				
 				fs.readFile(htmlPath, 'utf8', function (err, appHtml) {
@@ -24,7 +32,6 @@ define([
 				});
 				
 			});
-			
 			
 			
 			/////////
@@ -59,7 +66,8 @@ define([
 	
 				});
 			} //end if server.gotHubEnabled
-			
+
+						
 		}
 	};
 	
