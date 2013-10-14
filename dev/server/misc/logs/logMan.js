@@ -1,0 +1,45 @@
+if (typeof define !== 'function') { var define = require('amdefine')(module) } //required for node.js to use define
+
+define([
+	'fs'
+], function (fs){
+
+	var logMan = {
+		
+		/////////
+		getLogPaths: function(){
+			
+			var logsDir = __dirname+'/';
+			var logs = {
+				forever: logsDir+'forever.log',
+				out: logsDir+'out.log', 
+				err: logsDir+'err.log'
+			}
+			return logs;
+			
+		}, //end getLogPaths
+		
+		
+		//////////
+		archive: function(){
+			
+			var logs = archiveLogs.getLogPaths();
+		
+			//first, move existing log files into archive so we don't keep appending into one massive log file
+			for(var logName in logs) { 
+				if (logs.hasOwnProperty(logName)) {
+					//Move the old log file
+					fs.renameSync(logs[logName], logsDir+'archive/'+new Date().getTime()+'.'+logName+'.log'); //prepend a timestamp
+					//make a new blank one
+					fs.writeFileSync(logs[logName], ''); //these need to be prepared before we start forever
+				}
+			}
+			
+		} //end archive
+		
+		
+	} //end archiveLogs
+	
+	return logMan;
+	
+});
