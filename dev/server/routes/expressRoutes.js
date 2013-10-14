@@ -13,8 +13,7 @@ define([
 			//Auto redirect http-->https
 			if ( server.forceSsl ){
 				console.log("Redirecting all http requests to https.");
-				server.express.get('*',function(req, res, next){ 
-					console.log('Secure: ', req.secure);
+				server.express.all('*',function(req, res, next){ 
 					if ( !req.secure ) {
 						console.log('Incoming request was http, redirecting to https.');
 						return res.redirect('https://' + req.get('Host') + req.url);
@@ -23,6 +22,39 @@ define([
 					}
 				});
 			} //end if server.forceSsl
+			
+			
+			///////
+			//Set Cors headers
+			if ( server.enableCors ){
+				console.log('CORS enabled.');
+				server.express.all('*', function(req, res, next){
+					res.header("Access-Control-Allow-Origin", server.allowCorsWith ); //will need to specify https here
+					res.header("Access-Control-Allow-Headers", "X-Requested-With");
+					
+					if (req.method.toUpperCase() === "OPTIONS"){
+						console.log('Incoming CORS request: ', req);
+						res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+						res.header("Access-Control-Max-Age", 3600); // Seconds.
+						res.writeHead(200, { 'content-type' : 'text/plain' } ); //Send success code					
+						res.end();
+					} else {
+						next();
+					}
+					
+				});
+				//also serve crossdomain.xml if necc (flash).
+				server.express.get('/crossdomain.xml', function(req, res){
+					console.log('Incoming CORS request (flash): ', req);
+					res.send("<?xml version='1.0' ?>\n\
+					<!DOCTYPE cross-domain-policy SYSTEM 'http://www.macromedia.com/xml/dtds/cross-domain-policy.dtd'>\n\
+					<cross-domain-policy>\n\
+					<allow-access-from domain='"+server.allowCorsWith+"' />\n\
+					</cross-domain-policy>\n");
+				});
+				
+			} //end if server.enableCors
+			
 			
 			
 			//////////

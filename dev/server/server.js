@@ -23,13 +23,13 @@ define([
 		forceSsl: true, //redirect all http requests to https (set false to serve both versions)
 		
 		enableCors: false,
-		allowCorsWith: 'https://otherDomain.com', //cross origin domain that we allow in
+		allowCorsWith: 'otherDomain.com', //cross origin domain that we allow in
 		
 		enableSocketIo: false,
 		
 		enableRedis: false,
 		
-		enableMongoDb: false, //TODO: no yet implemented
+		enableMongoDb: false, //TODO: not yet implemented
 		
 		enableGotHub: true, //autoupdate/restart server when there are new github commits
 		
@@ -96,19 +96,11 @@ define([
 				//To force SSL only, an express route redirect is required. Set forceSsl above to enable.
 				var sslCert = server.getSslCert();
 				server.activeHttpsPort = https.createServer(sslCert, server.express);
-//				server.activeHttpsPort = bouncy(sslCert, function (req, res, bounce) {
-//					server.requestWasHttps = true;
-//					bounce(80);
-//				});
 				server.activeHttpsPort.listen(443)
 			}
 			
 			server.activeHttpPort = http.createServer(server.express);
 			server.activeHttpPort.listen(80);
-			
-			if ( server.enableCors ){
-				server.initCors();
-			}
 			
 		}, //end listenServerPort
 		getSslCert: function(){
@@ -132,41 +124,6 @@ define([
 			return sslCert;
 			
 		}, //end getSslCert
-		
-		
-		///////
-		initCors: function(){
-			
-			//configure express router to allow cors for all incoming requests that match our 'Allow-Origin'
-			//express.router MUST be enabled, and openCors() MUST be called before any other routes are defined
-			server.express.all('*', function(req, res, next){
-				console.log('New incoming request: ', req);
-				
-				res.header("Access-Control-Allow-Origin", "https://hashhype.com");
-				res.header("Access-Control-Allow-Headers", "X-Requested-With");
-				
-				if (req.method.toUpperCase() === "OPTIONS"){
-					res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-					res.header("Access-Control-Max-Age", 3600); // Seconds.
-					res.writeHead(200, { 'content-type' : 'text/plain' } ); //Send success code					
-					res.end();
-				} else {
-					next();
-				}
-				
-			});
-			//also serve crossdomain.xml if necc (flash).
-			server.express.get('/crossdomain.xml', function(req, res){
-				console.log('Crossdomain.xml requested.');
-				res.send("<?xml version='1.0' ?>\n\
-				<!DOCTYPE cross-domain-policy SYSTEM 'http://www.macromedia.com/xml/dtds/cross-domain-policy.dtd'>\n\
-				<cross-domain-policy>\n\
-				<allow-access-from domain='hashhype.com' />\n\
-				</cross-domain-policy>\n");
-			});
-			
-			console.log('CORS enabled.');
-		}, //end enableCors
 		
 		
 		//////
@@ -215,6 +172,8 @@ define([
 		initMongoDb: function(){
 			if (!server.enableMongoDb){ return; }
 			
+			//TODO
+			
 			console.log('MongoDb enabled.');
 		},
 		
@@ -224,7 +183,6 @@ define([
 		redisReconnCount: 0,
 		initRedisServer: function(){
 			if(!server.enableRedis){ return; }
-			
 			
 			server.redisServer = childProcess.spawn('/etc/progs/redis-2.4.2/src/redis-server', ['/etc/progs/redis-2.4.2/redis.conf']);
 	
