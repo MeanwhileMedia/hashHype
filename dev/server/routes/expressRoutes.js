@@ -51,6 +51,7 @@ define([
 						pullCmd.on('close', function (code) {
 							console.log('git pull complete. Changes merged: ', pullCmdOut);
 							
+							console.log(server.foreverPath, process.env.NODE_ENV);
 							//pull complete. restart app
 							var startCmd = spawn('node', [server.foreverPath, process.env.NODE_ENV]);
 							startCmd.stdout.on('data', function (data) {
