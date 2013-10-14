@@ -260,7 +260,7 @@ define([
 		}, //end initRedisServer
 		
 		
-		///////
+		////////
 		gotHubPass: 'd8Syd3M',
 		gotHubPullOrigin: path.resolve(__dirname, '..', '..'), //when a gotHub request comes in, pull to this directory
 		gotHubPullBranch: 'master',
