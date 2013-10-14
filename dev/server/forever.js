@@ -35,7 +35,7 @@ define([
 		return logs;
 	}
 	
-	///Start up our forever Daemon
+	//Start up our forever Daemon
 	var logPaths = resetLogs();
 	var hashBack = forever.startDaemon (targetApp, {
 		'logFile': logPaths.forever, // Path to log output from forever process (when daemonized)
