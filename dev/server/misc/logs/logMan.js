@@ -22,7 +22,7 @@ define([
 		}, //end getLogPaths
 		
 		
-		////////
+		/////////
 		reSetForeverLogs: function(){
 			var logs = logMan.getLogPaths();
 			//forever.config.set('root', options.path);
