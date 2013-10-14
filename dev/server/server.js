@@ -171,7 +171,7 @@ define([
 		//////
 		socketIo: null,
 		listenSocketIo: function(){
-			if (!enableSocketIo){ return; }
+			if (!server.enableSocketIo){ return; }
 			
 			// Start up socket.io, condigure environments
 			server.socketIo = socketIo.listen( server.openPort );
@@ -212,7 +212,7 @@ define([
 		////////
 		MongoDb: null,
 		initMongoDb: function(){
-			if (!enableMongoDb){ return; }
+			if (!server.enableMongoDb){ return; }
 			
 			console.log('MongoDb enabled.');
 		},
@@ -222,7 +222,7 @@ define([
 		redisServer: null,
 		redisReconnCount: 0,
 		initRedisServer: function(){
-			if(!enableRedis){ return; }
+			if(!server.enableRedis){ return; }
 			
 			
 			server.redisServer = childProcess.spawn('/etc/progs/redis-2.4.2/src/redis-server', ['/etc/progs/redis-2.4.2/redis.conf']);
