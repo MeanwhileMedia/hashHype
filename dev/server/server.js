@@ -91,13 +91,17 @@ define([
 			if ( server.enableSsl ){
 				//listen on 80, and 443, then use bouncy to forward 80 requests
 				var sslCert = server.getSslCert();
-				server.activeHttpsPort = https.createServer(sslCert, server.express);
-				server.activeHttpsPort.listen( 443 );
-				console.log('SSL enabled.');
+//				server.activeHttpsPort = https.createServer(sslCert, server.express);
+//				server.activeHttpsPort.listen( 443 );
+//				console.log('SSL enabled.');
 				
-				bouncy(function (req, res, bounce) {
-					bounce(443);
-				}).listen(80);
+				bouncy(sslCert, function (req, res, bounce) {
+					bounce(80);
+				}).listen(443)
+
+//				bouncy(function (req, res, bounce) {
+//					bounce(443);
+//				}).listen(80);
 			} else {
 				server.activeHttpPort = http.createServer(server.express);
 				server.activeHttpPort.listen( 80 );
