@@ -100,6 +100,7 @@ define([
 				var sslCert = server.getSslCert();
 				server.activeHttpsPort = bouncy(sslCert, function (req, res, bounce) {
 					server.requestWasHttps = true;
+					req.testVar = 'TEST';
 					bounce(80);
 				});
 				server.activeHttpsPort.listen(443)

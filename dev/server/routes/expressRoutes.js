@@ -13,7 +13,7 @@ define([
 			//render main backbone app
 			server.express.get('/', function(req, res){
 				if( server.forceSsl && !server.requestWasHttps ) {
-					console.log('Incoming request was http, redirecting to https.', req);
+					console.log('Incoming request was http, redirecting to https.', req.testVar);
 					return res.redirect('https://' + req.get('Host') + req.url);
 				}
   
