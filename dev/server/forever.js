@@ -5,7 +5,7 @@ define([
 	'fs',
 	'child_process'
 ], function (forever, fs, childProc){
-	console.log('test1')
+
 	//What app are we going to monitor?
 	var targetApp = __dirname+'/server.js';
 	
