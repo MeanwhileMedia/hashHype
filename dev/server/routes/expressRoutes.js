@@ -12,7 +12,8 @@ define([
 			//////////
 			//render main backbone app
 			server.express.get('/', function(req, res){
-				if( server.forceSsl && !req.secure) {
+				console.log('TEST: ', req.connection.encrypted);
+				if( server.forceSsl && !req.connection.encrypted ) {
 					return res.redirect('https://' + req.get('Host') + req.url);
 				}
   
