@@ -26,6 +26,7 @@ define([
 			/////////
 			//github auto restart app on changes
 			if ( server.enableGotHub ){
+				console.log('gotHub enabled.');
 				server.express.post('/gotHub/:pass', function(req, res){
 					res.send(200);
 					

@@ -4,13 +4,14 @@ define([
 	'express',
 	'http',
 	'https',
+	'bouncy',
 	'path',
 	'socket.io',
 	'child_process',
 	
 	'./routes/expressRoutes',
 	'./routes/socketRoutes',
-], function (express, http, https, path, socketIo, childProcess, expressRoutes, socketRoutes){
+], function (express, http, https, bouncy, path, socketIo, childProcess, expressRoutes, socketRoutes){
 	
 	var server = {
 		
@@ -55,7 +56,7 @@ define([
 			// Create/configure the app
 			server.express = express();
 			server.express.configure(function(){
-				server.express.set('port', 80);
+				//server.express.set('port', 80);
 
 				server.express.use(express.logger('dev'));
 				server.express.use(express.bodyParser());
@@ -82,19 +83,26 @@ define([
 		
 		
 		///////
-		openPort: null,
+		activeHttpPort: null,
+		activeHttpsPort: null,
 		listenServerPort: function(){
 			
 			if ( server.enableSsl ){
+				//listen on 80, and 443, then use bouncy to forward 80 requests
 				var sslCert = server.getSslCert();
-				server.openPort = https.createServer(sslCert, server.express);
+				server.activeHttpsPort = https.createServer(sslCert, server.express);
+				server.activeHttpsPort.listen( 443 );
 				console.log('SSL enabled.');
+				
+				bouncy(function (req, res, bounce) {
+					bounce(443);
+				}).listen(80);
 			} else {
-				server.openPort = http.createServer(server.express);
+				server.activeHttpPort = http.createServer(server.express);
+				server.activeHttpPort.listen( 80 );
 			}
 			
-			server.openPort.listen( server.express.get('port') );
-			console.log("hashHype server listening on port " + server.express.get('port') + ' in ' + process.env.NODE_ENV + ' mode.');
+			console.log("hashHype server listening in " + process.env.NODE_ENV + ' mode.');
 			
 			if ( server.enableCors ){
 				server.initCors();
@@ -204,6 +212,8 @@ define([
 		MongoDb: null,
 		initMongoDb: function(){
 			if (!enableMongoDb){ return; }
+			
+			console.log('MongoDb enabled.');
 		},
 		
 		
