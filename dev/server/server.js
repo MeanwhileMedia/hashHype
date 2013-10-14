@@ -96,7 +96,7 @@ define([
 				//listen on 443, serve credentials
 				//To force SSL only, an express route redirect is required. Set forceSsl above to enable.
 				var sslCert = server.getSslCert();
-				server.activeHttpsPort = https.createServer(server.express);
+				server.activeHttpsPort = https.createServer(sslCert, server.express);
 //				server.activeHttpsPort = bouncy(sslCert, function (req, res, bounce) {
 //					server.requestWasHttps = true;
 //					bounce(80);
