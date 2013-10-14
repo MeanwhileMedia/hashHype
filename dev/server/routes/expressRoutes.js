@@ -53,7 +53,7 @@ define([
 							
 							console.log();
 							
-							//pull complete. restart app
+							///pull complete. restart app
 							var startCmd = spawn('node', [server.foreverPath, process.env.NODE_ENV]);
 						});
 						
