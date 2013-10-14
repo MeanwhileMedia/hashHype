@@ -107,6 +107,11 @@ define([
 			
 			server.activeHttpPort = http.createServer(server.express);
 			server.activeHttpPort.listen( 80 );
+//			if ( server.forceSsl ){
+//				server.activeHttpPort.on('request', function(){
+//					
+//				});
+//			}
 			
 			if ( server.enableCors ){
 				server.initCors();

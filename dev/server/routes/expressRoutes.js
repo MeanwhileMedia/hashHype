@@ -13,7 +13,7 @@ define([
 			//render main backbone app
 			server.express.get('/', function(req, res){
 				if( server.forceSsl && !server.requestWasHttps ) {
-					console.log('Incoming request was http, redirecting to https.');
+					console.log('Incoming request was http, redirecting to https.', req);
 					return res.redirect('https://' + req.get('Host') + req.url);
 				}
   
@@ -52,20 +52,6 @@ define([
 							console.log('git pull complete. Changes merged: ', pullCmdOut);
 							console.log('Restarting server...');
 							var startCmd = spawn('forever', ['restart', server.selfPath]);
-							
-//							//pull complete. restart app
-//							var startCmd = spawn('node', [server.foreverPath, process.env.NODE_ENV]);
-//							startCmd.stdout.on('data', function (data) {
-//							  console.log('stdout: ' + data);
-//							});
-//							
-//							startCmd.stderr.on('data', function (data) {
-//							  console.log('stderr: ' + data);
-//							});
-//							
-//							startCmd.on('close', function (code) {
-//							  console.log('child process exited with code ' + code);
-//							});
 
 						});
 						
