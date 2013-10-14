@@ -6,12 +6,13 @@ define([
 	'https',
 	'bouncy',
 	'path',
+	'fs',
 	'socket.io',
 	'child_process',
 	
 	'./routes/expressRoutes',
 	'./routes/socketRoutes',
-], function (express, http, https, bouncy, path, socketIo, childProcess, expressRoutes, socketRoutes){
+], function (express, http, https, bouncy, path, fs, socketIo, childProcess, expressRoutes, socketRoutes){
 	
 	var server = {
 		
