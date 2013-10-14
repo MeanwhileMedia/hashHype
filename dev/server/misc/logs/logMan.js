@@ -26,9 +26,9 @@ define([
 		reSetForeverLogs: function(){
 			var logs = logMan.getLogPaths();
 			//forever.config.set('root', options.path);
-			forever.set('logFile', logs.forever);
-			forever.set('outFile', logs.out);
-			forever.set('errFile', logs.err);
+			forever.config.set('logFile', logs.forever);
+			forever.config.set('outFile', logs.out);
+			forever.config.set('errFile', logs.err);
 		},
 		
 		
