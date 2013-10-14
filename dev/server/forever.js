@@ -35,7 +35,7 @@ define([
 	console.log('test3')
 	stopCmd.on('close', function (code) {
 
-		////Start up our forever Daemon
+		///Start up our forever Daemon
 		var hashBack = forever.startDaemon (targetApp, {
 			'logFile': logs.forever, // Path to log output from forever process (when daemonized)
 			'outFile': logs.out, // Path to log output from hashBack stdout
