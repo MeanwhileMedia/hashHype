@@ -44,7 +44,7 @@ define([
 	console.log('hashBack daemon started by Forever.');
 	
 	hashBack.on('restart', function(){
-		//resetLogs();
+		///resetLogs();
 		fs.writeFileSync( __dirname+'/misc/logs/restarted.log', '');
 	});
 	
