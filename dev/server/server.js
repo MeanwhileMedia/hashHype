@@ -95,17 +95,18 @@ define([
 //				server.activeHttpsPort.listen( 443 );
 //				console.log('SSL enabled.');
 				
-				bouncy(sslCert, function (req, res, bounce) {
+				server.activeHttpsPort = bouncy(sslCert, function (req, res, bounce) {
 					bounce(80);
-				}).listen(443)
+				});
+				server.activeHttpsPort.listen(443)
 
 //				bouncy(function (req, res, bounce) {
 //					bounce(443);
 //				}).listen(80);
-			} else {
-				server.activeHttpPort = http.createServer(server.express);
-				server.activeHttpPort.listen( 80 );
 			}
+			
+			server.activeHttpPort = http.createServer(server.express);
+			server.activeHttpPort.listen( 80 );
 			
 			console.log("hashHype server listening in " + process.env.NODE_ENV + ' mode.');
 			
