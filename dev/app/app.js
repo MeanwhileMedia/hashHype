@@ -76,7 +76,7 @@ require([
 						console.log('hashBack connection response: ', data, this.hashBackSocket );
 						
 						//Init our socket listener routes
-						socketRoutes_hashBack.init(app.hashBackSocket); //required at define
+						socketRoutes_hashBack.init(self.hashBackSocket); //required at define
 					});
 				}
 				
