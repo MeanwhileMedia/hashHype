@@ -46,7 +46,7 @@ define([
 	
 	hashBack.on('restart', function(){
 		console.log('hashBack daemon restarted by Forever.');
-		///resetLogs();
+		resetLogs();
 	});
 	
 
