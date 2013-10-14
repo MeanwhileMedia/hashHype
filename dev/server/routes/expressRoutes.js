@@ -96,9 +96,7 @@ define([
 							console.log('Restarting server...');
 							
 							///first archive our logs, so our current logs don't get too long
-							logMan.archive();
-							forever.cleanlogs();
-							///logMan.reSetForeverLogs();
+							//logMan.archive(); //does not work because forever's writeable stream will follow it to new location
 							
 							///var startCmd = spawn('forever', ['restart', server.selfPath]);
 							forever.restart(server.selfPath, true);

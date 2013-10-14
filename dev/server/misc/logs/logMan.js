@@ -20,17 +20,7 @@ define([
 			return logs;
 			
 		}, //end getLogPaths
-		
-		
-		/////////
-		reSetForeverLogs: function(){
-			var logs = logMan.getLogPaths();
-			//forever.config.set('root', options.path);
-			forever.config.set('logFile', logs.forever);
-			forever.config.set('outFile', logs.out);
-			forever.config.set('errFile', logs.err);
-		},
-		
+
 		
 		//////////
 		archive: function(){
