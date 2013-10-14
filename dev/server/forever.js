@@ -12,17 +12,16 @@ define([
 	//set environment variable
 	process.env.NODE_ENV = process.argv[2]; //'production' or 'development'
 	
-	
+	var logsDir = __dirname+'/misc/logs/';
+	var logs = {
+		forever: logsDir+'forever.log',
+		out: logsDir+'out.log', 
+		err: logsDir+'err.log'
+	}
+		
 	function resetLogs(){
 		
 		//first, move existing log files into archive so we don't keep appending into one massive log file
-		var logsDir = __dirname+'/misc/logs/';
-		var logs = {
-			forever: logsDir+'forever.log',
-			out: logsDir+'out.log', 
-			err: logsDir+'err.log'
-		}
-		
 		for(var logName in logs) { 
 			if (logs.hasOwnProperty(logName)) {
 				//Move the old log file
