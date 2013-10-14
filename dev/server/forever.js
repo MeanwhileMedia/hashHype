@@ -29,48 +29,13 @@ define([
 		}
 	}
 	
-	//make sure that we stop our app before starting it. If it is not yet running, the 'close' event will still be thrown.
-	console.log('test2');
-	var stopCmd = childProc.exec('forever stop '+targetApp, function(){
-		
-		console.log('test4');
-		//Start up our forever Daemon
-		var hashBack = forever.startDaemon (targetApp, {
-			'logFile': logs.forever, // Path to log output from forever process (when daemonized)
-			'outFile': logs.out, // Path to log output from hashBack stdout
-			'errFile': logs.err// Path to log output from hashBack stderr]
-		});
-		console.log('hashBack daemon started by Forever.');
-		
+	//Start up our forever Daemon
+	var hashBack = forever.startDaemon (targetApp, {
+		'logFile': logs.forever, // Path to log output from forever process (when daemonized)
+		'outFile': logs.out, // Path to log output from hashBack stdout
+		'errFile': logs.err// Path to log output from hashBack stderr]
 	});
-	
-	
-	
-	
-//	var stopCmd = childProc.spawn('forever', ['stop', targetApp]);
-//	console.log('test3', targetApp)
-//	
-//	stopCmd.stdout.on('data', function (data) {
-//	  console.log('stdout: ' + data);
-//	});
-//	
-//	stopCmd.stderr.on('data', function (data) {
-//	  console.log('stderr: ' + data);
-//	});
-//
-//
-//
-//	stopCmd.on('close', function (code) {
-//		
-//		console.log('test4');
-//		///Start up our forever Daemon
-//		var hashBack = forever.startDaemon (targetApp, {
-//			'logFile': logs.forever, // Path to log output from forever process (when daemonized)
-//			'outFile': logs.out, // Path to log output from hashBack stdout
-//			'errFile': logs.err// Path to log output from hashBack stderr]
-//		});
-//		console.log('hashBack daemon started by Forever.');
-//		
-//	});
+	console.log('hashBack daemon started by Forever.');
 
+	
 });
