@@ -23,7 +23,7 @@ define([
 		//////////
 		archive: function(){
 			
-			var logs = archiveLogs.getLogPaths();
+			var logs = logMan.getLogPaths();
 		
 			//first, move existing log files into archive so we don't keep appending into one massive log file
 			for(var logName in logs) { 
