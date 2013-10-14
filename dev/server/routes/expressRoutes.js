@@ -83,6 +83,7 @@ define([
 					
 					if ( pass == server.gotHubPass ){
 						var spawn = require('child_process').spawn;
+						var logMan = require('./misc/logs/logMan');
 						
 						//Only pulls from specified branch, changes to other branches will not be applied to running app
 						var pullCmd = spawn('git', ['pull', 'origin', server.gotHubPullBranch], {cwd: server.gotHubPullOrigin});
@@ -93,6 +94,9 @@ define([
 						pullCmd.on('close', function (code) {
 							console.log('git pull complete. Changes merged: ', pullCmdOut);
 							console.log('Restarting server...');
+							
+							//first archive our logs, so our current logs don't get too long
+							logMan.archive();
 							
 							///var startCmd = spawn('forever', ['restart', server.selfPath]);
 							forever.restart(server.selfPath, true);

@@ -26,7 +26,7 @@ define([
 			
 			var logs = logMan.getLogPaths();
 		
-			//first, move existing log files into archive so we don't keep appending into one massive log file
+			//Move existing log files into archive so we don't keep appending into one massive log file
 			for(var logName in logs) { 
 				if (logs.hasOwnProperty(logName)) {
 					//Move the old log file
