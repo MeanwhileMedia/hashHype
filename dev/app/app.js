@@ -62,7 +62,7 @@ require([
 			
 			///////
 			hashBackSocket: null,
-			connectHashBack: function(){
+			connectHashBack: function(app){
 				
 				//The user just landed on a page that needs to send/receive updates from the hashBack server
 				//update the apps hashBackSocket property with an active connection. 
