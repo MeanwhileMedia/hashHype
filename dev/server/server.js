@@ -86,7 +86,6 @@ define([
 		///////
 		activeHttpPort: null,
 		activeHttpsPort: null,
-		requestWasHttps: false,
 		listenServerPort: function(){
 			
 			console.log("Starting hashHype server.");
@@ -105,7 +104,7 @@ define([
 			}
 			
 			server.activeHttpPort = http.createServer(server.express);
-			server.activeHttpPort.listen( 80 );
+			server.activeHttpPort.listen(80);
 			
 			if ( server.enableCors ){
 				server.initCors();
