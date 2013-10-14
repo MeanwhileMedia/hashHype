@@ -6,14 +6,15 @@ define([
 
 	var logMan = {
 		
+		logsDir: __dirname+'/', //main 'logs' folder
+		
 		/////////
 		getLogPaths: function(){
-			
-			var logsDir = __dirname+'/';
+
 			var logs = {
-				forever: logsDir+'forever.log',
-				out: logsDir+'out.log', 
-				err: logsDir+'err.log'
+				forever: logMan.logsDir+'forever.log',
+				out: logMan.logsDir+'out.log', 
+				err: logMan.logsDir+'err.log'
 			}
 			return logs;
 			
@@ -29,7 +30,7 @@ define([
 			for(var logName in logs) { 
 				if (logs.hasOwnProperty(logName)) {
 					//Move the old log file
-					fs.renameSync(logs[logName], logsDir+'archive/'+new Date().getTime()+'.'+logName+'.log'); //prepend a timestamp
+					fs.renameSync(logs[logName], logMan.logsDir+'archive/'+new Date().getTime()+'.'+logName+'.log'); //prepend a timestamp
 					//make a new blank one
 					fs.writeFileSync(logs[logName], ''); //these need to be prepared before we start forever
 				}
