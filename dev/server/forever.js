@@ -32,9 +32,10 @@ define([
 	//make sure that we stop our app before starting it. If it is not yet running, the 'close' event will still be thrown.
 	console.log('test2');
 	var stopCmd = childProc.spawn('forever', ['stop', targetApp]);
-	console.log('test3')
+	console.log('test3', targetApp)
 	stopCmd.on('close', function (code) {
-
+		
+		console.log('test4');
 		///Start up our forever Daemon
 		var hashBack = forever.startDaemon (targetApp, {
 			'logFile': logs.forever, // Path to log output from forever process (when daemonized)
