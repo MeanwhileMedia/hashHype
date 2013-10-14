@@ -53,18 +53,6 @@ define([
 							
 							///pull complete. restart app
 							var startCmd = spawn('node', [server.foreverPath, process.env.NODE_ENV]);
-//							startCmd.stdout.on('data', function (data) {
-//							  console.log('stdout: ' + data);
-//							});
-//							
-//							startCmd.stderr.on('data', function (data) {
-//							  console.log('stderr: ' + data);
-//							});
-//							
-//							startCmd.on('close', function (code) {
-//							  console.log('child process exited with code ' + code);
-//							});
-
 						});
 						
 					}
