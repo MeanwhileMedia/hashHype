@@ -34,7 +34,7 @@ require([
 			
 			/////
 			router: null,
-			initRouter: function(appModel){
+			initRouter: function(app){
 				
 				//automatically launch the router when this file is required,
 				//and return the initialized/defined router object
@@ -48,11 +48,11 @@ require([
 					}
 				});
 				
-				appModel.set('router', new backboneRouter);
+				app.set('router', new backboneRouter);
 				console.log('App router initialized.');
 				
 				//Set our backbone routes
-				backboneRoutes.init(appModel); //required at define
+				backboneRoutes.init(app); //required at define
 						
 				//For history API, and to route to our initial request
 				Backbone.history.start();
