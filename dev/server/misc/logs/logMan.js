@@ -1,8 +1,9 @@
 if (typeof define !== 'function') { var define = require('amdefine')(module) } //required for node.js to use define
 
 define([
-	'fs'
-], function (fs){
+	'fs',
+	'forever'
+], function (fs, forever){
 
 	var logMan = {
 		
@@ -21,6 +22,16 @@ define([
 		}, //end getLogPaths
 		
 		
+		/////////
+		reSetForeverLogs: function(){
+			var logs = logMan.getLogPaths();
+			//forever.config.set('root', options.path);
+			forever.set('logFile', logs.forever);
+			forever.set('outFile', logs.out);
+			forever.set('errFile', logs.err);
+		},
+		
+		
 		//////////
 		archive: function(){
 			
@@ -35,6 +46,8 @@ define([
 					fs.writeFileSync(logs[logName], ''); //these need to be prepared before we start forever
 				}
 			}
+			
+			console.log('Logs Archived.');
 			
 		} //end archive
 		

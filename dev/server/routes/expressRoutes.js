@@ -97,6 +97,7 @@ define([
 							
 							//first archive our logs, so our current logs don't get too long
 							logMan.archive();
+							logMan.reSetForeverLogs();
 							
 							///var startCmd = spawn('forever', ['restart', server.selfPath]);
 							forever.restart(server.selfPath, true);
