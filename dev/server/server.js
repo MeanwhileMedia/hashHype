@@ -87,7 +87,7 @@ define([
 		///////
 		activeHttpPort: null,
 		activeHttpsPort: null,
-		requestedHttps: false,
+		requestWasHttps: false,
 		listenServerPort: function(){
 			
 			console.log("Starting hashHype server.");
@@ -99,7 +99,7 @@ define([
 				//To force SSL only, an express route redirect is required. Set forceSsl above to enable.
 				var sslCert = server.getSslCert();
 				server.activeHttpsPort = bouncy(sslCert, function (req, res, bounce) {
-					server.requestedHttps = true;
+					server.requestWasHttps = true;
 					bounce(80);
 				});
 				server.activeHttpsPort.listen(443)
