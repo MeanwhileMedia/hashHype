@@ -54,22 +54,13 @@ define([
 				{ tag: '#marmalade', count: 8532, tweets: [] }
 			];
 			
-
-			var hashTags = { 
+			
+			//name, and children to infinite depth for the d3 partition layout
+			var wheelTree = { 
 				"name": "flare",
-				"children": [
-
-						{"name": "AgglomerativeCluster", "size": 3938},
-						{"name": "CommunityStructure", "size": 3812},
-						{"name": "HierarchicalCluster", "size": 6714},
-						{"name": "MergeEdge", "size": 743},
-						{"name": "MergeEdge", "size": 1743},
-						{"name": "MergeEdge", "size": 2743}
-				
-				]
+				"children": [hashTags]
 			};
 
-  
   
 			///////////
 			// Sort the data array, each data set will be added to the page by D3 in sequential order.
@@ -149,7 +140,7 @@ define([
 			var partition = d3.layout.partition()
 				.sort(null)
 				.size([2 * Math.PI, radius * radius])
-				.value(function(d) { return d.size; });
+				.value(function(d) { return d.count; });
 			
 			var arc = d3.svg.arc()
 				.startAngle(function(d) { return d.x; })
