@@ -67,17 +67,6 @@ define([
 						{"name": "MergeEdge", "size": 1743},
 						{"name": "MergeEdge", "size": 2743}
 					]}
-				],
-				
-				"name": "flash",
-				"children": [
-					{"name": "fireman",
-					"children": [
-						{"name": "Agglomerar", "size": 3008},
-						{"name": "Comructure", "size": 3012},
-						{"name": "Hieraluster", "size": 6014},
-						{"name": "Merdge", "size": 713}
-					]}
 				]
 			};
 
