@@ -150,7 +150,7 @@ define([
 			var partition = d3.layout.partition()
 				.sort(null)
 				.size([2 * Math.PI, radius * radius])
-				.value(function(d) { return 1; });
+				.value(function(d) { return d.size; });
 			
 			var arc = d3.svg.arc()
 				.startAngle(function(d) { return d.x; })
@@ -160,7 +160,7 @@ define([
 			
 			//d3.json('views/sampleData.json', function(error, root) {
 			  var path = svg.datum(hashTags).selectAll("path")
-				  .data(partition.value(13).nodes)
+				  .data(partition.nodes)
 				.enter().append("path")
 				  .attr("display", function(d) { return d.depth ? null : "none"; }) // hide inner ring
 				  .attr("d", arc)
