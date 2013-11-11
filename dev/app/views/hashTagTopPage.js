@@ -145,7 +145,7 @@ define([
 				.attr("width", width)
 				.attr("height", height)
 			  .append("g")
-				.attr("transform", "translate(" + width / 2 + "," + height * .52 + ")");
+				.attr("transform", "translate(" + width/2 + "," + height/2 + ")");
 			
 			var partition = d3.layout.partition()
 				.sort(null)
