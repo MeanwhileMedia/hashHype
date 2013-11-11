@@ -189,7 +189,7 @@ define([
 			  };
 			}
 
-			d3.select(self.frameElement).style("height", height + "px");
+			//d3.select(self.frameElement).style("height", height + "px");
 
 		},
 		
