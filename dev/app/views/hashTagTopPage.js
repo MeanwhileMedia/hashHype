@@ -64,6 +64,8 @@ define([
 			var height = 600;
 			var radius = Math.min(width, height) / 2;
 			
+			jQuery(".topWheelSvg g").remove();
+			
 			/////////
 			// Add them to the page, and apply dynamic styles using D3.
 			var svg = d3.select(".topWheelSvg g") //g = a group SVG shapes
