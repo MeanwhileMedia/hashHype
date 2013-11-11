@@ -160,7 +160,7 @@ define([
 			
 			//d3.json('views/sampleData.json', function(error, root) {
 			  var path = svg.datum(hashTags).selectAll("path")
-				  .data(partition.value('size').nodes)
+				  .data(partition.value(13).nodes)
 				.enter().append("path")
 				  .attr("display", function(d) { return d.depth ? null : "none"; }) // hide inner ring
 				  .attr("d", arc)
