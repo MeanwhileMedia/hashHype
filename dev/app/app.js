@@ -6,6 +6,7 @@ require.config({
 			exports: 'd3'
 		},
 	},
+	
 	paths: {
 		'jquery': 'web_modules/jquery/jquery',
 		'underscore': 'web_modules/underscore-amd/underscore',
