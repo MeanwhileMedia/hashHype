@@ -70,7 +70,6 @@ define([
 			var svg = d3.select(".topWheelSvg g") //g = a group SVG shapes
 			
 			var partition = d3.layout.partition()
-				.sort(null)
 				.size([2 * Math.PI, radius * radius])
 				.value(function(d) { return 1; });
 			
@@ -84,7 +83,7 @@ define([
 				.data(partition.nodes)
 				.enter()
 					.append("path")
-						//.attr("display", function(d) { return 'none'; }) // hide inner ring
+						.attr("display", function(d) { return 'none'; }) // hide inner ring
 						.attr("d", arc)
 						.style("stroke", "#fff")
 						.style("fill", function(d) { return color(d.tag); })
