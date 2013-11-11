@@ -2,6 +2,7 @@ define([
 	'jquery',
 	'underscore',
 	'backbone',
+	'd3',
 	
 	// Using text.js plugin to load our View template
   	'text!views/assets/templates/hashTagTop.html',
@@ -9,7 +10,8 @@ define([
 ], function(
 		jQuery, 
 		_, 
-		Backbone, 
+		Backbone,
+		d3,
 		hashTagTopTemplate, 
 		pieSliceTemplate
 	){

@@ -6,7 +6,8 @@ require.config({
 		'underscore': 'web_modules/underscore-amd/underscore',
 		'backbone': 'web_modules/backbone-amd/backbone',
 		'socket.io': 'web_modules/socket.io-client/dist/socket.io',
-		'text': 'web_modules/text/text'
+		'text': 'web_modules/text/text',
+		'd3': 'web_modules/d3/d3'
 	}
 });
 
