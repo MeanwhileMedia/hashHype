@@ -54,6 +54,33 @@ define([
 				{ tag: '#marmalade', count: 8532, tweets: [] }
 			];
 			
+
+			var hashTags = { 
+				"name": "flare",
+				"children": [
+					{"name": "analytics",
+					"children": [
+						{"name": "AgglomerativeCluster", "size": 3938},
+						{"name": "CommunityStructure", "size": 3812},
+						{"name": "HierarchicalCluster", "size": 6714},
+						{"name": "MergeEdge", "size": 743}
+					]}
+				],
+				
+				"name": "flash",
+				"children": [
+					{"name": "fireman",
+					"children": [
+						{"name": "Agglomerar", "size": 3008},
+						{"name": "Comructure", "size": 3012},
+						{"name": "Hieraluster", "size": 6014},
+						{"name": "Merdge", "size": 713}
+					]}
+				]
+			};
+
+  
+  
 			///////////
 			// Sort the data array, each data set will be added to the page by D3 in sequential order.
 			/// TODO
