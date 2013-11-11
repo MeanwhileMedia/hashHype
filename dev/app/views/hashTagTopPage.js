@@ -54,50 +54,62 @@ define([
 			// Sort the data array, each data set will be added to the page by D3 in sequential order.
 			/// TODO
 			
+			//////////
+			///Main Wheel sizing
+			var width = 600;
+			var height = 600;
+			var radius = Math.min(width, height) / 2;
+			
 			/////////
 			// Add them to the page, and apply dynamic styles using D3.
-			d3.select('.hashHype').selectAll('.pieSlice') //.pieSlice will correspond to data, and they will be appended to .hashHype
-				//data gets passed as argument into attribute and style functions bound below to each class member
-				//If there are less elements on the page than data objects, the .enter() chain is called.
-				//If there are more elements on the page than data objects, the .exit() chain is called.
-				//For each data object with a corresponding element, the .update() chain is called.
+			var svg = d3.select(".topWheelSvg g") //g = a group SVG shapes
+			
+			var partition = d3.layout.partition()
+				.sort(null)
+				.size([2 * Math.PI, radius * radius])
+				.value(function(d) { return 1; });
+			
+			var arc = d3.svg.arc()
+				.startAngle(function(d) { return d.x; })
+				.endAngle(function(d) { return d.x + d.dx; })
+				.innerRadius(function(d) { return Math.sqrt(d.y); })
+				.outerRadius(function(d) { return Math.sqrt(d.y + d.dy); });
+			
+			var path = svg.datum(hashTags).selectAll("path")
+				.data(partition.nodes)
+				.enter()
+					.append("path")
+						.attr("display", function(d) { return d.depth ? null : "none"; }) // hide inner ring
+						.attr("d", arc)
+						.style("stroke", "#fff")
+						.style("fill", function(d) { return color((d.children ? d : d.parent).name); })
+						.style("fill-rule", "evenodd")
+						.each(stash);
+							
+							
+			path.data(partition.value(value).nodes)
+				.transition()
+				.duration(1500)
+				.attrTween("d", arcTween);
 				
-				.data(hashTags)
 				
-					//we have an element that matches the index of this data object, 
-					.text( function(d, i) { 
-						return _.template( pieSliceTemplate, d ); 
-					})
-					
-					.style("font-size", function(d, i) { //use the data (d) to set the font size. i = index in class (0 based)
-						return d + "px"; 
-					})
-					
-					.attr("cx", function(d, i) { //or x-position
-						return d;
-					})
-					.attr("r", function(d, i) { //or radius 
-						return Math.sqrt(d, i);
-					})
-					
-				.enter() 
-				
-					//or we are creating a new element as our data objects have exceeded the count of elements present on page
-					.append('.pieSlice')
+			// Stash the old values for transition.
+			function stash(d) {
+				d.x0 = d.x;
+				d.dx0 = d.dx;
+			}
+			
+			// Interpolate the arcs in data space.
+			function arcTween(a) {
+				var i = d3.interpolate({x: a.x0, dx: a.dx0}, a);
+				return function(t) {
+					var b = i(t);
+					a.x0 = b.x;
+					a.dx0 = b.dx;
+					return arc(b);
+				};
+			}
 
-				.exit() 
-				
-					//we are removing one (we have more elements that data objects)
-					.transition() //apply a hide animation of some sort
-						.duration(750)
-						.delay(function(d, i) { 
-							return i * 10; 
-						})
-						.style("opacity", function(d, i) { 
-							return Math.sqrt(d * scale); 
-						})
-						
-					.remove();
 
 	
 			
