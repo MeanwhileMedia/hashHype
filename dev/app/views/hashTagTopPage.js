@@ -69,8 +69,6 @@ define([
 			// Add them to the page, and apply dynamic styles using D3.
 			var svg = d3.select(".topWheelSvg g") //g = a group SVG shapes
 			
-			console.log(svg);
-			
 			var partition = d3.layout.partition()
 				.sort(null)
 				.size([2 * Math.PI, radius * radius])
@@ -86,10 +84,10 @@ define([
 				.data(partition.nodes)
 				.enter()
 					.append("path")
-						.attr("display", function(d) { return d.depth ? null : "none"; }) // hide inner ring
+						.attr("display", function(d) { return 'none'; }) // hide inner ring
 						.attr("d", arc)
 						.style("stroke", "#fff")
-						.style("fill", function(d) { return color((d.children ? d : d.parent).name); })
+						.style("fill", function(d) { return color(d.tag); })
 						.style("fill-rule", "evenodd")
 						.each(stash);
 							
