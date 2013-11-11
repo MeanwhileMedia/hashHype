@@ -84,7 +84,7 @@ define([
 				.data(partition.nodes)
 				.enter()
 					.append("path")
-						.attr("display", function(d) { return 'none'; }) // hide inner ring
+						//.attr("display", function(d) { return 'none'; }) // hide inner ring
 						.attr("d", arc)
 						.style("stroke", "#fff")
 						.style("fill", function(d) { return color(d.tag); })
