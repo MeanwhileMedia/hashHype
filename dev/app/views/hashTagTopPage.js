@@ -64,6 +64,8 @@ define([
 			// Add them to the page, and apply dynamic styles using D3.
 			var svg = d3.select(".topWheelSvg g") //g = a group SVG shapes
 			
+			console.log(svg);
+			
 			var partition = d3.layout.partition()
 				.sort(null)
 				.size([2 * Math.PI, radius * radius])
