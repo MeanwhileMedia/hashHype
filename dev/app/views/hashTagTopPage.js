@@ -58,15 +58,14 @@ define([
 			var hashTags = { 
 				"name": "flare",
 				"children": [
-					{"name": "analytics",
-					"children": [
+
 						{"name": "AgglomerativeCluster", "size": 3938},
 						{"name": "CommunityStructure", "size": 3812},
 						{"name": "HierarchicalCluster", "size": 6714},
 						{"name": "MergeEdge", "size": 743},
 						{"name": "MergeEdge", "size": 1743},
 						{"name": "MergeEdge", "size": 2743}
-					]}
+				
 				]
 			};
 
@@ -138,14 +137,14 @@ define([
 			//Strait from example
 			var width = 960,
 				height = 700,
-				radius = Math.min(width, height) / 2,
+				radius = Math.min(width, height)*.5,
 				color = d3.scale.category20c();
 			
 			var svg = d3.select(".topWheel").append("svg")
 				.attr("width", width)
 				.attr("height", height)
 			  .append("g")
-				.attr("transform", "translate(" + width/2 + "," + height/2 + ")");
+				.attr("transform", "translate(" + width*.5 + "," + height*.5 + ")");
 			
 			var partition = d3.layout.partition()
 				.sort(null)
