@@ -123,7 +123,7 @@ define([
 				radius = Math.min(width, height) / 2,
 				color = d3.scale.category20c();
 			
-			var svg = d3.select(".topWheelSvg").append("svg")
+			var svg = d3.select(".topWheel").append("svg")
 				.attr("width", width)
 				.attr("height", height)
 			  .append("g")
