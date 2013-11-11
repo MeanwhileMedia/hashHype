@@ -147,7 +147,7 @@ define([
 				  .attr("display", function(d) { return d.depth ? null : "none"; }) // hide inner ring
 				  .attr("d", arc)
 				  .style("stroke", "#fff")
-				  .style("fill", function(d) { return color((d.children ? d : d.parent).name); })
+				  .style("fill", function(d) { return color(d.tag); })
 				  .style("fill-rule", "evenodd")
 				  .each(stash);
 			
