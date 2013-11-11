@@ -1,9 +1,9 @@
 require.config({
 	// The shim config allows us to configure dependencies for
-	// scripts that do not call define() to register a module
+	// scripts that do not call define() to register a module (non AMD)
 	shim: {
 		'd3': {
-			exports: 'd3'
+			exports: 'd3' //This will tell requirejs to use the global d3 as the module value for d3.
 		},
 	},
 	

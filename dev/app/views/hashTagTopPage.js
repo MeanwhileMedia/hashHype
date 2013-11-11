@@ -63,7 +63,7 @@ define([
 			var width = 600;
 			var height = 600;
 			var radius = Math.min(width, height) / 2;
-			
+			var color = d3.scale.category20c();
 			
 			/////////
 			// Add them to the page, and apply dynamic styles using D3.
