@@ -64,8 +64,6 @@ define([
 			var height = 600;
 			var radius = Math.min(width, height) / 2;
 			
-			var test = jQuery(".topWheelSvg g");
-			console.log('JWW ', test);
 			
 			/////////
 			// Add them to the page, and apply dynamic styles using D3.
