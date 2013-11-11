@@ -54,17 +54,13 @@ define([
 				{ tag: '#marmalade', count: 8532, tweets: [] }
 			];
 			
-			
-			//name, and children to infinite depth for the d3 partition layout
+			//////////
+			//Prepare the data for the d3 partition layout. Name, and children to infinite depth
 			var wheelTree = { 
 				"name": "flare",
 				"children": hashTags
 			};
 
-  
-			///////////
-			// Sort the data array, each data set will be added to the page by D3 in sequential order.
-			/// TODO
 			
 			//////////
 			///Main Wheel sizing
@@ -91,7 +87,6 @@ define([
 				.innerRadius(function(d) { return Math.sqrt(d.y); })
 				.outerRadius(function(d) { return Math.sqrt(d.y + d.dy); });
 			
-
 			var path = svg.datum(wheelTree).selectAll("path")
 				.data(partition.nodes)
 					.enter().append("path")
@@ -104,19 +99,19 @@ define([
 			
 			// Stash the old values for transition.
 			function stash(d) {
-			  d.x0 = d.x;
-			  d.dx0 = d.dx;
+			  	d.x0 = d.x;
+			  	d.dx0 = d.dx;
 			}
 			
 			// Interpolate the arcs in data space.
 			function arcTween(a) {
-			  var i = d3.interpolate({x: a.x0, dx: a.dx0}, a);
-			  return function(t) {
-				var b = i(t);
-				a.x0 = b.x;
-				a.dx0 = b.dx;
-				return arc(b);
-			  };
+				var i = d3.interpolate({x: a.x0, dx: a.dx0}, a);
+				return function(t) {
+					var b = i(t);
+					a.x0 = b.x;
+					a.dx0 = b.dx;
+					return arc(b);
+				};
 			}
 			
 			
