@@ -92,7 +92,7 @@ define([
 						.each(stash);
 							
 							
-			path.data(partition.value(d.count).nodes)
+			path.data(partition.value('count').nodes)
 				.transition()
 				.duration(1500)
 				.attrTween("d", arcTween);
