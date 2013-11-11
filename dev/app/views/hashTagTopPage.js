@@ -140,7 +140,7 @@ define([
 				.innerRadius(function(d) { return Math.sqrt(d.y); })
 				.outerRadius(function(d) { return Math.sqrt(d.y + d.dy); });
 			
-			d3.json('sampleData.json', function(error, root) {
+			d3.json('views/sampleData.json', function(error, root) {
 			  var path = svg.datum(root).selectAll("path")
 				  .data(partition.nodes)
 				.enter().append("path")
