@@ -49,18 +49,16 @@ define([
 			
 			//Test data
 			var hashTags = [
-				{ name: 'indiana', tag: '#indiana', count: 2435, tweets: ['etc', 'etc'] },
-				{ name: 'jones', tag: '#jones', count: 9876, tweets: [] },
-				{ name: 'marmalade', tag: '#marmalade', count: 8532, tweets: [] }
+				{ tag: '#indiana', count: 2435, tweets: ['etc', 'etc'] },
+				{ tag: '#jones', count: 9876, tweets: [] },
+				{ tag: '#marmalade', count: 8532, tweets: [] }
 			];
 			
 			
 			//name, and children to infinite depth for the d3 partition layout
 			var wheelTree = { 
 				"name": "flare",
-				"children": [
-					{"name": "flame", "children": hashTags}
-				]
+				"children": hashTags
 			};
 
   
@@ -151,7 +149,7 @@ define([
 				.outerRadius(function(d) { return Math.sqrt(d.y + d.dy); });
 			
 			//d3.json('views/sampleData.json', function(error, root) {
-			  var path = svg.datum(hashTags).selectAll("path")
+			  var path = svg.datum(wheelTree).selectAll("path")
 				  .data(partition.nodes)
 				.enter().append("path")
 				  .attr("display", function(d) { return d.depth ? null : "none"; }) // hide inner ring
