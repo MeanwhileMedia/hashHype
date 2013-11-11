@@ -49,9 +49,9 @@ define([
 			
 			//Test data
 			var hashTags = [
-				{ tag: '#indiana', count: 2435, tweets: ['etc', 'etc'] },
-				{ tag: '#jones', count: 9876, tweets: [] },
-				{ tag: '#marmalade', count: 8532, tweets: [] }
+				{ name: 'indiana', tag: '#indiana', count: 2435, tweets: ['etc', 'etc'] },
+				{ name: 'jones', tag: '#jones', count: 9876, tweets: [] },
+				{ name: 'marmalade', tag: '#marmalade', count: 8532, tweets: [] }
 			];
 			
 			
