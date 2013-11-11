@@ -160,7 +160,7 @@ define([
 			
 			//d3.json('views/sampleData.json', function(error, root) {
 			  var path = svg.datum(hashTags).selectAll("path")
-				  .data(partition.nodes)
+				  .data(partition.value(d.size).nodes)
 				.enter().append("path")
 				  .attr("display", function(d) { return d.depth ? null : "none"; }) // hide inner ring
 				  .attr("d", arc)
@@ -169,13 +169,17 @@ define([
 				  .style("fill-rule", "evenodd")
 				  .each(stash);
 			
-
-				path
-					.data(partition.value(value).nodes)
-					.transition()
-					.duration(1500)
-					.attrTween("d", arcTween);
-
+//			  d3.selectAll("input").on("change", function change() {
+//				var value = this.value === "count"
+//					? function() { return 1; }
+//					: function(d) { return d.size; };
+//			
+//				path
+//					.data(partition.value(value).nodes)
+//				  .transition()
+//					.duration(1500)
+//					.attrTween("d", arcTween);
+//			  });
 			//});
 			
 			// Stash the old values for transition.
