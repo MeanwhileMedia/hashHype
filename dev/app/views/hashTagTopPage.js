@@ -58,7 +58,9 @@ define([
 			//name, and children to infinite depth for the d3 partition layout
 			var wheelTree = { 
 				"name": "flare",
-				"children": hashTags
+				"children": [
+					{"name": "flame", "children": hashTags}
+				]
 			};
 
   
@@ -155,7 +157,7 @@ define([
 				  .attr("display", function(d) { return d.depth ? null : "none"; }) // hide inner ring
 				  .attr("d", arc)
 				  .style("stroke", "#fff")
-				  .style("fill", function(d) { return color(d.name); })
+				  .style("fill", function(d) { return color(d.tag); })
 				  .style("fill-rule", "evenodd")
 				  .each(stash);
 			
