@@ -169,17 +169,13 @@ define([
 				  .style("fill-rule", "evenodd")
 				  .each(stash);
 			
-			  d3.selectAll("input").on("change", function change() {
-				var value = this.value === "count"
-					? function() { return 1; }
-					: function(d) { return d.size; };
-			
+
 				path
 					.data(partition.value(value).nodes)
-				  .transition()
+					.transition()
 					.duration(1500)
 					.attrTween("d", arcTween);
-			  });
+
 			//});
 			
 			// Stash the old values for transition.
