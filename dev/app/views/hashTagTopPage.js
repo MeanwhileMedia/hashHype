@@ -37,6 +37,8 @@ define([
 			
 			//view.$el: A cached jQuery object for the view's element (el).
 			this.$el.append( compiledTemplate );
+			
+			this.mapD3(app);
 		},
 		
 		mapD3: function(app){	
