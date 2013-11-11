@@ -117,7 +117,7 @@ define([
 
 
 	
-	
+			//Strait from example
 			var width = 960,
 				height = 700,
 				radius = Math.min(width, height) / 2,
@@ -140,8 +140,8 @@ define([
 				.innerRadius(function(d) { return Math.sqrt(d.y); })
 				.outerRadius(function(d) { return Math.sqrt(d.y + d.dy); });
 			
-			d3.json('views/sampleData.json', function(error, root) {
-			  var path = svg.datum(root).selectAll("path")
+			//d3.json('views/sampleData.json', function(error, root) {
+			  var path = svg.datum(hashTags).selectAll("path")
 				  .data(partition.nodes)
 				.enter().append("path")
 				  .attr("display", function(d) { return d.depth ? null : "none"; }) // hide inner ring
@@ -162,7 +162,7 @@ define([
 					.duration(1500)
 					.attrTween("d", arcTween);
 			  });
-			});
+			//});
 			
 			// Stash the old values for transition.
 			function stash(d) {
