@@ -138,11 +138,14 @@ define([
 			d3.select(".topWheel").on("click", function(){
 				
 				var currentValue = function(d){
+					console.log(d);
+					
 					//We are updating the .value property for each of our partitions.
 					return d.count + Math.floor((Math.random()*1000)+1);
+					
 				}
 				
-				console.log(currentValue);
+				
 				
 				path //update path, our group of partitions which are bound to our data set
 					.data(partition.value(currentValue).nodes)
