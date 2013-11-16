@@ -68,7 +68,7 @@ define([
 			var width = 800; //main SVG container
 			var height = 800;
 			var jutSpace = 200; //the amount of space reserved outside the radius of our circle to add "juts" to represent larger partitions
-			var radius = Math.min(width-jutSpace*2, height-jutSpace*2)*.5; //partition layout radius
+			var radius = Math.min(width-jutSpace*2, height-jutSpace*2)*.5; //radius of empty space in middle of wheel
 			
 			var color = d3.scale.category20c();
 			
@@ -86,7 +86,7 @@ define([
 			//The partition object is given a .nodes array property. Each node represents a .children object of the data we passed.
 			var partition = d3.layout.partition()
 				.sort(null)
-				.size([2 * Math.PI, radius * radius])
+				
 //				.value(function(d) { //Value represents each nodes portion of the circle
 //					return d.count; 
 //				});
