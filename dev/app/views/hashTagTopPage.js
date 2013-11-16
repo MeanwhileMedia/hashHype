@@ -111,10 +111,10 @@ define([
 				})
 				.innerRadius(function(d, i) { //A lower number would make the partition's bottom edge extend further inward
 					//d.rank (set above during sort functions) is on a scale of 1-10, with 1 being the hashtag with the highest number of tweets.
-					return Math.sqrt(d.y) * d.depth; 
+					return Math.sqrt(d.y) * d.x/Math.PI; 
 				})
 				.outerRadius(function(d, i) { //A larger outer radius creates longer partitions to jut out
-					return Math.sqrt(d.y + d.dy) * d.depth; 
+					return Math.sqrt(d.y + d.dy) * d.x/Math.PI; 
 				});
 			
 			//the partitions are rendered on the page. Define styles, add content, etc. Path can be referenced at any time to change/update our data set.
