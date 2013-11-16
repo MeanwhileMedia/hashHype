@@ -59,7 +59,6 @@ define([
 			//Prepare the data for the d3 partition layout. Name, and children to infinite depth
 			var wheelTree = { 
 				"name": "flare",
-				"value": 0,
 				"children": hashTags
 			};
 
@@ -117,8 +116,10 @@ define([
 				})
 				.outerRadius(function(d, i) { //A larger outer radius creates longer partitions to jut out
 					//console.log(Math.sqrt(d.y + d.dy); 
-					console.log(d, i);
-					return ((outerRadius-innerRadius)*d.rank) + innerRadius;
+					if ( typeof d.rank != 'undefined' ){
+						return ((outerRadius-innerRadius)*d.rank) + innerRadius;
+					}
+					return Math.sqrt(d.y + d.dy);
 				});
 			
 			//the partitions are rendered on the page. Define styles, add content, etc. Path can be referenced at any time to change/update our data set.
