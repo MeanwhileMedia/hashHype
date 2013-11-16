@@ -69,7 +69,6 @@ define([
 			var height = 800;
 			
 			var jutSpace = 200; //the amount of space reserved outside the radius of our circle to add "juts" to represent larger partitions
-			var padRingWidth = 100;
 			var radius = Math.min(width-jutSpace*2, height-jutSpace*2)*.5; //radius of empty space in middle of wheel
 			
 			var color = d3.scale.category20c();
@@ -121,7 +120,8 @@ define([
 					//var jutRange = wheelTree.high - wheelTree.low;
 					console.log(d, i)
 					console.log(Math.sqrt(d.y + d.dy) + jutSpace*d.rank);
-					return Math.sqrt(d.y + d.dy) + jutSpace*d.rank; 
+					//return Math.sqrt(d.y + d.dy) + jutSpace*d.rank; 
+					return Math.sqrt(d.y + d.dy); 
 				});
 			
 			//the partitions are rendered on the page. Define styles, add content, etc. Path can be referenced at any time to change/update our data set.
