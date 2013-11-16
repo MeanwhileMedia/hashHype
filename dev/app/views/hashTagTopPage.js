@@ -113,7 +113,7 @@ define([
 					return Math.sqrt(d.y);
 				})
 				.outerRadius(function(d, i) { //A larger outer radius creates longer partitions to jut out
-					return Math.sqrt(d.y + d.dy) * d.rank; 
+					return Math.sqrt(d.y + d.dy) + d.rank*200; 
 				});
 			
 			//the partitions are rendered on the page. Define styles, add content, etc. Path can be referenced at any time to change/update our data set.
