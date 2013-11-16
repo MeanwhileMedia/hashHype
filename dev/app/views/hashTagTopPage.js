@@ -142,6 +142,8 @@ define([
 					return d.count + Math.floor((Math.random()*1000)+1);
 				}
 				
+				console.log(currentValue);
+				
 				path //update path, our group of partitions which are bound to our data set
 					.data(partition.value(currentValue).nodes)
 						.transition()
