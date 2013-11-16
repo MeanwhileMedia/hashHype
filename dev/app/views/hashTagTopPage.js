@@ -88,7 +88,7 @@ define([
 			//The partition object is given a .nodes array property. Each node represents a .children object of the data we passed.
 			var partition = d3.layout.partition()
 				.sort(null)
-				.size([padRingWidth, padRingWidth])
+				.size([2 * Math.PI, radius * radius])
 //				.value(function(d) { //Value represents each nodes portion of the circle
 //					return d.count; 
 //				});
