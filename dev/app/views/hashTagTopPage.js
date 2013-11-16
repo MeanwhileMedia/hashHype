@@ -110,11 +110,10 @@ define([
 					return d.x + d.dx; 
 				})
 				.innerRadius(function(d, i) { //A lower number would make the partition's bottom edge extend further inward
-					//d.rank (set above during sort functions) is on a scale of 1-10, with 1 being the hashtag with the highest number of tweets.
-					console.log('Wedge: ', d.x/Math.PI);
-					return Math.sqrt(d.y) * d.x/Math.PI; 
+					return Math.sqrt(d.y);
 				})
 				.outerRadius(function(d, i) { //A larger outer radius creates longer partitions to jut out
+					console.log('Wedge: ', d.x/Math.PI);
 					return Math.sqrt(d.y + d.dy) * d.x/Math.PI; 
 				});
 			
