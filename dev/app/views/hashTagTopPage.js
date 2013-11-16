@@ -78,7 +78,7 @@ define([
 			
 			var partition = d3.layout.partition()
 				.sort(null)
-				.size([2 * Math.PI, radius * radius])
+				.size([2.5 * Math.PI, radius * radius])
 				.value(function(d) { return d.count; });
 			
 			var arc = d3.svg.arc()
