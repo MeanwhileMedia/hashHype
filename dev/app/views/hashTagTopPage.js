@@ -49,24 +49,41 @@ define([
 			
 			//Test data - value is the only required attribute for the partition layout
 			var hashTags = [
-				{ tag: '#indiana', value: 4000, rank: .4, tweets: ['etc', 'etc'] },
-				{ tag: '#jones', value: 3500, rank: .35, tweets: [] },
-				{ tag: '#marmalade', value: 2500, rank: .25, tweets: [] }
+				{ tag: '#indiana', value: 5000, rank: 1, tweets: ['etc', 'etc'] },
+				{ tag: '#jones', value: 3500, rank: .7, tweets: [] },
+				{ tag: '#marmalade', value: 2500, rank: .5, tweets: [] }
 			];
+			
 			
 			//////////
 			//Prepare the data for the d3 partition layout. Name, and children to infinite depth
 			var wheelTree = { 
 				"name": "flare",
+				"high": null,
+				"low": null,
 				"children": hashTags
 			};
+			for ( var i=0; i<wheelTree.children.length; i++ ){
+				var thisTag = wheelTree.children[i];
+				if ( wheelTree.high < thisTag.value || wheelTree.high == null ){
+					wheelTree.high = thisTag.value;
+				}
+				if ( wheelTree.low < thisTag.value || wheelTree.low == null ){
+					wheelTree.low = thisTag.value;
+				}
+			}
+			
+			console.log('wheelTree: ', wheelTree);
+			
 
 			
 			//////////
 			///Main Wheel sizing
 			var width = 800; //main SVG container
 			var height = 800;
-			var radius = Math.min(width-200, height-200)*.5; //inner wheel (add 200px padding)
+			var jutSpace = 200; //the amount of space reserved outside the radius of our circle to add "juts" to represent larger partitions
+			var radius = Math.min(width-jutSpace, height-jutSpace)*.5; //partition layout radius
+			
 			var color = d3.scale.category20c();
 			
 			//add our main svg element, and our group element (g)
@@ -113,7 +130,8 @@ define([
 					return Math.sqrt(d.y);
 				})
 				.outerRadius(function(d, i) { //A larger outer radius creates longer partitions to jut out
-					return Math.sqrt(d.y + d.dy) + d.rank*200; 
+					var jutRange = wheelTree.high - wheelTree.low;
+					return Math.sqrt(d.y + d.dy) + jutRange*d.rank; 
 				});
 			
 			//the partitions are rendered on the page. Define styles, add content, etc. Path can be referenced at any time to change/update our data set.
