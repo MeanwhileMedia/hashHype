@@ -138,14 +138,9 @@ define([
 			d3.select(".topWheel").on("click", function(){
 				
 				var currentValue = function(d){
-					console.log(d);
-					
 					//We are updating the .value property for each of our partitions.
 					return d.count + Math.floor((Math.random()*1000)+1);
-					
 				}
-				
-				
 				
 				path //update path, our group of partitions which are bound to our data set
 					.data(partition.value(currentValue).nodes)
@@ -156,6 +151,9 @@ define([
 							.attrTween("d", function(a) {
 								var i = d3.interpolate({x: a.x0, dx: a.dx0}, a);
 								return function(t) {
+									
+									console.log(t);
+									
 									var b = i(t);
 									a.x0 = b.x;
 									a.dx0 = b.dx;
