@@ -99,8 +99,6 @@ define([
 //			dx - the x-extent of the node position.
 //			dy - the y-extent of the node position.
 
-			console.log('Current hashTag partitions: ', partition.nodes);
-			
 			///////
 			//Create an arc to define the size of this hashtag's partition
 			var arc = d3.svg.arc()
@@ -134,7 +132,9 @@ define([
 			  				d.dx0 = d.dx;
 						});
 						
-
+						
+			console.log('Current hashTag partitions: ', wheelTree);
+			
 			///////////
 			//Now set up listeners to transition data changes
 			d3.select(".topWheel").on("click", function(){
