@@ -82,7 +82,7 @@ define([
 			var width = 800; //main SVG container
 			var height = 800;
 			var jutSpace = 200; //the amount of space reserved outside the radius of our circle to add "juts" to represent larger partitions
-			var radius = Math.min(width-jutSpace, height-jutSpace)*.5; //partition layout radius
+			var radius = Math.min(width-jutSpace*2, height-jutSpace*2)*.5; //partition layout radius
 			
 			var color = d3.scale.category20c();
 			
