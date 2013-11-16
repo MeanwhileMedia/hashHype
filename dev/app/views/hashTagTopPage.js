@@ -59,6 +59,7 @@ define([
 			//Prepare the data for the d3 partition layout. Name, and children to infinite depth
 			var wheelTree = { 
 				"name": "flare",
+				value: 500,
 				"children": hashTags
 			};
 
