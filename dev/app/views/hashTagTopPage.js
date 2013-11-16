@@ -67,10 +67,6 @@ define([
 			///Main Wheel sizing
 			var outerRadius = 400; //the outermost radius (reached by our hashtag with the highest value
 			var innerRadius = 100; //the radius of the empty space in the middle of the wheel
-			var totalRadius = outerRadius + innerRadius;
-			
-			//var jutSpace = 200; //the amount of space reserved outside the radius of our circle to add "juts" to represent larger partitions
-			//var radius = Math.min(width-jutSpace*2, height-jutSpace*2)*.5; //radius of empty space in middle of wheel
 			
 			var color = d3.scale.category20c();
 			
@@ -94,7 +90,7 @@ define([
 //				});
 
 
-			//There are severtal properties added to our data to make the d3 partition object:
+			//There are several properties added to our data to make the d3 partition object:
 			
 //			parent - the parent node, or null for the root.
 //			children - the array of child nodes, or null for leaf nodes.
@@ -120,7 +116,7 @@ define([
 				})
 				.outerRadius(function(d, i) { //A larger outer radius creates longer partitions to jut out
 					//console.log(Math.sqrt(d.y + d.dy); 
-					return outerRadius*d.rank;
+					return ((outerRadius-innerRadius)*d.rank) + innerRadius;
 				});
 			
 			//the partitions are rendered on the page. Define styles, add content, etc. Path can be referenced at any time to change/update our data set.
