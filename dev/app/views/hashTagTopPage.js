@@ -64,9 +64,9 @@ define([
 			
 			//////////
 			///Main Wheel sizing
-			var width = 600;
-			var height = 600;
-			var radius = Math.min(width, height)*.5;
+			var width = 800; //main SVG container
+			var height = 800;
+			var radius = Math.min(width-200, height-200)*.5; //inner wheel (add 200px padding)
 			var color = d3.scale.category20c();
 			
 			var svg = d3.select(".topWheel") //add our main svg element, and our group element (g)
