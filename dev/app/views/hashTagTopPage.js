@@ -49,9 +49,9 @@ define([
 			
 			//Test data - value is the only required attribute for the partition layout
 			var hashTags = [
-				{ tag: '#indiana', value: 5000, rank: 1, tweets: ['etc', 'etc'] },
-				{ tag: '#jones', value: 3500, rank: .7, tweets: [] },
-				{ tag: '#marmalade', value: 2500, rank: .5, tweets: [] }
+				{ tag: '#indiana', count: 5000, rank: 1, tweets: ['etc', 'etc'] },
+				{ tag: '#jones', count: 3500, rank: .7, tweets: [] },
+				{ tag: '#marmalade', count: 2500, rank: .5, tweets: [] }
 			];
 			
 			
