@@ -77,10 +77,10 @@ define([
 			//add our main svg element, and our group element (g)
 			var svg = d3.select(".topWheel") 
 				.append("svg")
-					.attr("width", totalRadius*2)
-					.attr("height", totalRadius*2)
+					.attr("width", outerRadius*2)
+					.attr("height", outerRadius*2)
 					.append("g")
-						.attr("transform", "translate(" + totalRadius + "," + totalRadius + ")"); //center our shape (defaults to 0,0)
+						.attr("transform", "translate(" + outerRadius + "," + outerRadius + ")"); //center our shape (defaults to 0,0)
 			
 			
 			////////////
