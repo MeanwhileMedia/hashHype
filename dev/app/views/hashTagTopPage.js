@@ -69,74 +69,97 @@ define([
 			var radius = Math.min(width-200, height-200)*.5; //inner wheel (add 200px padding)
 			var color = d3.scale.category20c();
 			
-			var svg = d3.select(".topWheel") //add our main svg element, and our group element (g)
+			//add our main svg element, and our group element (g)
+			var svg = d3.select(".topWheel") 
 				.append("svg")
 					.attr("width", width)
 					.attr("height", height)
 					.append("g")
 						.attr("transform", "translate(" + width*.5 + "," + height*.5 + ")"); //center our shape (defaults to 0,0)
 			
+			
+			////////////
+			//D3 Partition layout
+			//The partition object is given a .nodes array property. Each node represents a .children object of the data we passed.
 			var partition = d3.layout.partition()
 				.sort(null)
 				.size([2 * Math.PI, radius * radius])
-				.value(function(d) { return d.count; });
+				.value(function(d) { //Value represents each nodes portion of the circle
+					return d.count; 
+				});
+
+			//There are severtal properties added to our data to make the d3 partition object:
 			
-			//Create an arc to define the size of this hashtag's pieSlice
+//			parent - the parent node, or null for the root.
+//			children - the array of child nodes, or null for leaf nodes.
+//			value - the node value, as returned by the value accessor.
+//			depth - the depth of the node, starting at 0 for the root.
+//			x - the minimum x-coordinate of the node position.
+//			y - the minimum y-coordinate of the node position.
+//			dx - the x-extent of the node position.
+//			dy - the y-extent of the node position.
+
+			
+			///////
+			//Create an arc to define the size of this hashtag's partition
 			var arc = d3.svg.arc()
-				.startAngle(function(d) { 
+				.startAngle(function(d) { //Start and end angles define the width of the partition, or it's share of the circle
 					return d.x; 
 				})
 				.endAngle(function(d) { 
 					return d.x + d.dx; 
 				})
-				.innerRadius(function(d) { 
+				.innerRadius(function(d) { //A lower number would make the partition's bottom edge extend further inward
 					return Math.sqrt(d.y) - Math.floor((Math.random()*100)+1); 
 				})
-				.outerRadius(function(d) { //A larger outer radius creates longer pie slices to jut out
+				.outerRadius(function(d) { //A larger outer radius creates longer partitions to jut out
 					return Math.sqrt(d.y + d.dy) + Math.floor((Math.random()*100)+1); 
 				});
 			
+			//the partitions are rendered on the page. Define styles, add content, etc. Path can be referenced at any time to change/update our data set.
 			var path = svg.datum(wheelTree).selectAll("path")
 				.data(partition.nodes)
-					.enter().append("path")
+					.enter().append("path") 
 						.attr("display", function(d) { return d.depth ? null : "none"; }) // hide inner ring
 						.attr("d", arc)
 						.style("stroke", "#fff")
 						.style("fill", function(d) { return color(d.tag); })
 						.style("fill-rule", "evenodd")
-						.each(stash);
+						
+						// Stash the old values for transition.
+						.each( function(d){
+							d.x0 = d.x;
+			  				d.dx0 = d.dx;
+						});
+						
+
+			///////////
+			//Now set up listeners to transition data changes
+			d3.select(".topWheel").on("click", function(){
+				
+				var currentValue = function(d){
+					//We are updating the .value property for each of our partitions.
+					return d.count + Math.floor((Math.random()*1000)+1);
+				}
+				
+				path //update path, our group of partitions which are bound to our data set
+					.data(partition.value(currentValue).nodes)
+						.transition()
+							.duration(1500)
+
+							// Interpolate the arcs in data space.
+							.attrTween("d", function(a) {
+								var i = d3.interpolate({x: a.x0, dx: a.dx0}, a);
+								return function(t) {
+									var b = i(t);
+									a.x0 = b.x;
+									a.dx0 = b.dx;
+									return arc(b);
+								};
+							});
+					
+			}); //end d3.selectAll("input").on("change"
 			
-			// Stash the old values for transition.
-			function stash(d) {
-			  	d.x0 = d.x;
-			  	d.dx0 = d.dx;
-			}
-			
-			// Interpolate the arcs in data space.
-			function arcTween(a) {
-				var i = d3.interpolate({x: a.x0, dx: a.dx0}, a);
-				return function(t) {
-					var b = i(t);
-					a.x0 = b.x;
-					a.dx0 = b.dx;
-					return arc(b);
-				};
-			}
-			
-			
-			
-//			  d3.selectAll("input").on("change", function change() {
-//				var value = this.value === "count"
-//					? function() { return 1; }
-//					: function(d) { return d.size; };
-//			
-//				path
-//					.data(partition.value(value).nodes)
-//				  .transition()
-//					.duration(1500)
-//					.attrTween("d", arcTween);
-//			  });
-			//});
 			
 
 
