@@ -111,11 +111,10 @@ define([
 					return d.x + d.dx; 
 				})
 				.innerRadius(function(d, i) { //A lower number would make the partition's bottom edge extend further inward
-					//console.log(Math.sqrt(d.y));
 					return innerRadius; //we are currently keeping a consistent inner radius
 				})
-				.outerRadius(function(d, i) { //A larger outer radius creates longer partitions to jut out
-					//console.log(Math.sqrt(d.y + d.dy); 
+				.outerRadius(function(d, i) { //A larger outer radius creates longer partitions to jut out.
+					//Any partitions that should jut must have a .rank property, otherwise Math.sqrt(d.y + d.dy); is default
 					if ( typeof d.rank != 'undefined' ){
 						return ((outerRadius-innerRadius)*d.rank) + innerRadius;
 					}
@@ -154,7 +153,7 @@ define([
 					//.data(partition.value(currentValue).nodes)
 					.data(partition.nodes)
 						.transition()
-							.duration(1500)
+							.duration(500)
 
 							//Smoothly transition between two attribute values.
 							//current datum = d, the current index = i and the current attribute value = a
@@ -164,10 +163,10 @@ define([
 								//use the x0 and dx0 which were stashed (see above)
 								var transPath = d3.interpolate(
 									{  //old values
-										x: a.x0, 
-										dx: a.dx0
+										x: d.x0, 
+										dx: d.dx0
 									}, //New values
-										a
+										d
 									);
 								
 								//The returned value to attrTween must be a function which will return 
@@ -177,8 +176,10 @@ define([
 									var b = transPath(t);
 									
 									//Update our stashed old values as the transition progresses
-									a.x0 = b.x;
-									a.dx0 = b.dx;
+									d.x0 = b.x;
+									d.dx0 = b.dx;
+									
+									console.log(b);
 									
 									//arc (above) returns the path data string for the specified datum
 									return arc(b, i);
