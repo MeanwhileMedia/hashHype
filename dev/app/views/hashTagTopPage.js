@@ -114,7 +114,7 @@ define([
 					return d.x + d.dx; 
 				})
 				.innerRadius(function(d, i) { //A lower number would make the partition's bottom edge extend further inward
-					console.log(d.y);
+					console.log(Math.sqrt(d.y));
 					return Math.sqrt(d.y);
 					
 				})
