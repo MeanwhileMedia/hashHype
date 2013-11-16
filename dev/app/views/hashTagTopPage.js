@@ -84,10 +84,8 @@ define([
 			//The partition object is given a .nodes array property. Each node represents a .children object of the data we passed.
 			var partition = d3.layout.partition()
 				.sort(null)
-				.size([2 * Math.PI, innerRadius * innerRadius])
-//				.value(function(d) { //Value represents each nodes portion of the circle
-//					return d.count; 
-//				});
+				.size([2 * Math.PI, innerRadius * innerRadius]);
+				//we don't set value here because it is already sent in with our data set (in this case, represents tweet count)
 
 
 			//There are several properties added to our data to make the d3 partition object:
@@ -144,14 +142,14 @@ define([
 			//Now set up listeners to transition data changes
 			d3.select(".topWheel").on("click", function(){
 				
-/*				var currentValue = function(d){
+				var currentValue = function(d){
 					//We are updating the .value property for each of our partitions.
-					return d.count + Math.floor((Math.random()*1000)+1);
-				}*/
+					return d.value + Math.floor((Math.random()*1000)+1);
+				}
 				
 				path //update path, our group of partitions which are bound to our data set
-					//.data(partition.value(currentValue).nodes)
-					.data(partition.nodes)
+					.data(partition.value(currentValue).nodes) //for testing
+					//.data(partition.nodes)
 						.transition()
 							.duration(500)
 
@@ -173,16 +171,14 @@ define([
 								//attribute values at any point (t) in our transition path 
 								return function(t) { 
 									//use t, in the range [0,1] to retreive our current attribute value
-									var b = transPath(t);
+									var next = transPath(t);
 									
 									//Update our stashed old values as the transition progresses
-									d.x0 = b.x;
-									d.dx0 = b.dx;
-									
-									console.log(b);
+									d.x0 = next.x;
+									d.dx0 = next.dx;
 									
 									//arc (above) returns the path data string for the specified datum
-									return arc(b, i);
+									return arc(next, i);
 								};
 							});
 					
