@@ -80,7 +80,7 @@ define([
 					.attr("width", totalRadius*2)
 					.attr("height", totalRadius*2)
 					.append("g")
-						.attr("transform", "translate(" + totalRadius*.5 + "," + totalRadius*.5 + ")"); //center our shape (defaults to 0,0)
+						.attr("transform", "translate(" + totalRadius + "," + totalRadius + ")"); //center our shape (defaults to 0,0)
 			
 			
 			////////////
