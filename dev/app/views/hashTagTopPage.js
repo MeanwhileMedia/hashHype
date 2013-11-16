@@ -67,6 +67,7 @@ define([
 			///Main Wheel sizing
 			var outerRadius = 800; //the outermost radius (reached by our hashtag with the highest value
 			var innerRadius = 100; //the radius of the empty space in the middle of the wheel
+			var totalRadius = outerRadius + innerRadius;
 			
 			//var jutSpace = 200; //the amount of space reserved outside the radius of our circle to add "juts" to represent larger partitions
 			//var radius = Math.min(width-jutSpace*2, height-jutSpace*2)*.5; //radius of empty space in middle of wheel
@@ -76,10 +77,10 @@ define([
 			//add our main svg element, and our group element (g)
 			var svg = d3.select(".topWheel") 
 				.append("svg")
-					.attr("width", outerRadius+innerRadius)
-					.attr("height", outerRadius+innerRadius)
+					.attr("width", totalRadius)
+					.attr("height", totalRadius)
 					.append("g")
-						.attr("transform", "translate(" + outerRadius+innerRadius*.5 + "," + outerRadius+innerRadius*.5 + ")"); //center our shape (defaults to 0,0)
+						.attr("transform", "translate(" + totalRadius*.5 + "," + totalRadius*.5 + ")"); //center our shape (defaults to 0,0)
 			
 			
 			////////////
