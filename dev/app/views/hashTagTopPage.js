@@ -59,22 +59,8 @@ define([
 			//Prepare the data for the d3 partition layout. Name, and children to infinite depth
 			var wheelTree = { 
 				"name": "flare",
-				"high": null,
-				"low": null,
 				"children": hashTags
 			};
-			for ( var i=0; i<wheelTree.children.length; i++ ){
-				var thisTag = wheelTree.children[i];
-				if ( wheelTree.high < thisTag.value || wheelTree.high == null ){
-					wheelTree.high = thisTag.value;
-				}
-				if ( wheelTree.low < thisTag.value || wheelTree.low == null ){
-					wheelTree.low = thisTag.value;
-				}
-			}
-			
-			console.log('wheelTree: ', wheelTree);
-			
 
 			
 			//////////
@@ -100,10 +86,10 @@ define([
 			//The partition object is given a .nodes array property. Each node represents a .children object of the data we passed.
 			var partition = d3.layout.partition()
 				.sort(null)
-				.size([2 * Math.PI, radius * radius]);
-//				.value(function(d) { //Value represents each nodes portion of the circle
-//					return d.count; 
-//				});
+				.size([2 * Math.PI, radius * radius])
+				.value(function(d) { //Value represents each nodes portion of the circle
+					return d.count; 
+				});
 
 
 			//There are severtal properties added to our data to make the d3 partition object:
@@ -157,14 +143,13 @@ define([
 			//Now set up listeners to transition data changes
 			d3.select(".topWheel").on("click", function(){
 				
-/*				var currentValue = function(d){
+				var currentValue = function(d){
 					//We are updating the .value property for each of our partitions.
 					return d.count + Math.floor((Math.random()*1000)+1);
-				}*/
+				}
 				
 				path //update path, our group of partitions which are bound to our data set
-					//.data(partition.value(currentValue).nodes)
-					.data(partition.nodes)
+					.data(partition.value(currentValue).nodes)
 						.transition()
 							.duration(1500)
 
