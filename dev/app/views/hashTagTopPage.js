@@ -87,9 +87,9 @@ define([
 			var partition = d3.layout.partition()
 				.sort(null)
 				.size([2 * Math.PI, radius * radius])
-				.value(function(d) { //Value represents each nodes portion of the circle
-					return d.count; 
-				});
+//				.value(function(d) { //Value represents each nodes portion of the circle
+//					return d.count; 
+//				});
 
 
 			//There are severtal properties added to our data to make the d3 partition object:
@@ -139,7 +139,51 @@ define([
 						
 			console.log('Current hashTag partitions: ', wheelTree.children);
 			
+			///////////
+			//Now set up listeners to transition data changes
+			d3.select(".topWheel").on("click", function(){
+				
+/*				var currentValue = function(d){
+					//We are updating the .value property for each of our partitions.
+					return d.count + Math.floor((Math.random()*1000)+1);
+				}*/
+				
+				path //update path, our group of partitions which are bound to our data set
+					//.data(partition.value(currentValue).nodes)
+					.data(partition.nodes)
+						.transition()
+							.duration(1500)
 
+							//Smoothly transition between two attribute values.
+							//current datum = d, the current index = i and the current attribute value = a
+							.attrTween("d", function(d, i, a) {
+
+								//interpolate maps a parametric value t in the domain [0,1] to a color, number or arbitrary value.
+								//use the x0 and dx0 which were stashed (see above)
+								var transPath = d3.interpolate(
+									{  //old values
+										x: a.x0, 
+										dx: a.dx0
+									}, //New values
+										a
+									);
+								
+								//The returned value to attrTween must be a function which will return 
+								//attribute values at any point (t) in our transition path 
+								return function(t) { 
+									//use t, in the range [0,1] to retreive our current attribute value
+									var b = transPath(t);
+									
+									//Update our stashed old values as the transition progresses
+									a.x0 = b.x;
+									a.dx0 = b.dx;
+									
+									//arc (above) returns the path data string for the specified datum
+									return arc(b, i);
+								};
+							});
+					
+			}); //end d3.selectAll("input").on("change"
 			
 			
 
