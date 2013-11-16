@@ -120,8 +120,7 @@ define([
 				})
 				.outerRadius(function(d, i) { //A larger outer radius creates longer partitions to jut out
 					//console.log(Math.sqrt(d.y + d.dy); 
-					var jutRange = totalRadius-innerRadius;
-					return jutRange*d.rank;
+					return outerRadius*d.rank;
 				});
 			
 			//the partitions are rendered on the page. Define styles, add content, etc. Path can be referenced at any time to change/update our data set.
