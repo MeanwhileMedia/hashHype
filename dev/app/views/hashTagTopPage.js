@@ -142,9 +142,10 @@ define([
 			//Now set up listeners to transition data changes
 			d3.select(".topWheel").on("click", function(){
 				
+				//for testing
 				var currentValue = function(d){
 					//We are updating the .value property for each of our partitions.
-					return d.value + Math.floor((Math.random()*1000)+1);
+					return d.value + Math.floor((Math.random()*10000)+1);
 				}
 				
 				path //update path, our group of partitions which are bound to our data set
