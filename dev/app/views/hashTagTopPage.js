@@ -81,11 +81,20 @@ define([
 				.size([2 * Math.PI, radius * radius])
 				.value(function(d) { return d.count; });
 			
+			//Create an arc to define the size of this hashtag's pieSlice
 			var arc = d3.svg.arc()
-				.startAngle(function(d) { return d.x; })
-				.endAngle(function(d) { return d.x + d.dx; })
-				.innerRadius(function(d) { return Math.sqrt(d.y); })
-				.outerRadius(function(d) { return Math.sqrt(d.y + d.dy) + Math.floor((Math.random()*100)+1); });
+				.startAngle(function(d) { 
+					return d.x; 
+				})
+				.endAngle(function(d) { 
+					return d.x + d.dx; 
+				})
+				.innerRadius(function(d) { 
+					return Math.sqrt(d.y) - Math.floor((Math.random()*100)+1); 
+				})
+				.outerRadius(function(d) { //A larger outer radius creates longer pie slices to jut out
+					return Math.sqrt(d.y + d.dy) + Math.floor((Math.random()*100)+1); 
+				});
 			
 			var path = svg.datum(wheelTree).selectAll("path")
 				.data(partition.nodes)
