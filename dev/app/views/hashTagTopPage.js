@@ -59,7 +59,6 @@ define([
 			//Prepare the data for the d3 partition layout. Name, and children to infinite depth
 			var wheelTree = { 
 				"name": "flare",
-				value: 500,
 				"children": hashTags
 			};
 
@@ -118,6 +117,7 @@ define([
 				})
 				.outerRadius(function(d, i) { //A larger outer radius creates longer partitions to jut out
 					//var jutRange = wheelTree.high - wheelTree.low;
+					console.log(d, i)
 					console.log(Math.sqrt(d.y + d.dy) + jutSpace*d.rank);
 					return Math.sqrt(d.y + d.dy) + jutSpace*d.rank; 
 				});
