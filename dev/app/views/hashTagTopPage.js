@@ -47,11 +47,11 @@ define([
 			//This renders, and assigns style and attribute property functions for each hashTag slice (in our wheel)
 			//D3 allows you to visualize realtime data, allow interactive exploration, and transition smoothly between datasets.
 			
-			//Test data
+			//Test data - value is the only required attribute for the partition layout
 			var hashTags = [
-				{ tag: '#indiana', count: 4000, rank: .4, tweets: ['etc', 'etc'] },
-				{ tag: '#jones', count: 3500, rank: .35, tweets: [] },
-				{ tag: '#marmalade', count: 2500, rank: .25, tweets: [] }
+				{ tag: '#indiana', value: 4000, rank: .4, tweets: ['etc', 'etc'] },
+				{ tag: '#jones', value: 3500, rank: .35, tweets: [] },
+				{ tag: '#marmalade', value: 2500, rank: .25, tweets: [] }
 			];
 			
 			//////////
@@ -83,10 +83,11 @@ define([
 			//The partition object is given a .nodes array property. Each node represents a .children object of the data we passed.
 			var partition = d3.layout.partition()
 				.sort(null)
-				.size([2 * Math.PI, radius * radius])
-				.value(function(d) { //Value represents each nodes portion of the circle
-					return d.count; 
-				});
+				.size([2 * Math.PI, radius * radius]);
+//				.value(function(d) { //Value represents each nodes portion of the circle
+//					return d.count; 
+//				});
+
 
 			//There are severtal properties added to our data to make the d3 partition object:
 			
@@ -133,19 +134,20 @@ define([
 						});
 						
 						
-			console.log('Current hashTag partitions: ', wheelTree);
+			console.log('Current hashTag partitions: ', wheelTree.children);
 			
 			///////////
 			//Now set up listeners to transition data changes
 			d3.select(".topWheel").on("click", function(){
 				
-				var currentValue = function(d){
+/*				var currentValue = function(d){
 					//We are updating the .value property for each of our partitions.
 					return d.count + Math.floor((Math.random()*1000)+1);
-				}
+				}*/
 				
 				path //update path, our group of partitions which are bound to our data set
-					.data(partition.value(currentValue).nodes)
+					//.data(partition.value(currentValue).nodes)
+					.data(partition.nodes)
 						.transition()
 							.duration(1500)
 
