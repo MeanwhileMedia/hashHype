@@ -116,6 +116,7 @@ define([
 				})
 				.outerRadius(function(d, i) { //A larger outer radius creates longer partitions to jut out
 					//console.log(Math.sqrt(d.y + d.dy); 
+					console.log(d, i);
 					return ((outerRadius-innerRadius)*d.rank) + innerRadius;
 				});
 			
