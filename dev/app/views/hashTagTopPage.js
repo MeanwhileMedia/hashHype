@@ -65,7 +65,7 @@ define([
 			
 			//////////
 			///Main Wheel sizing
-			var outerRadius = 800; //the outermost radius (reached by our hashtag with the highest value
+			var outerRadius = 400; //the outermost radius (reached by our hashtag with the highest value
 			var innerRadius = 100; //the radius of the empty space in the middle of the wheel
 			var totalRadius = outerRadius + innerRadius;
 			
@@ -77,8 +77,8 @@ define([
 			//add our main svg element, and our group element (g)
 			var svg = d3.select(".topWheel") 
 				.append("svg")
-					.attr("width", totalRadius)
-					.attr("height", totalRadius)
+					.attr("width", totalRadius*2)
+					.attr("height", totalRadius*2)
 					.append("g")
 						.attr("transform", "translate(" + totalRadius*.5 + "," + totalRadius*.5 + ")"); //center our shape (defaults to 0,0)
 			
