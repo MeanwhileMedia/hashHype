@@ -65,21 +65,21 @@ define([
 			
 			//////////
 			///Main Wheel sizing
-			var width = 800; //main SVG container
-			var height = 800;
+			var outerRadius = 800; //the outermost radius (reached by our hashtag with the highest value
+			var innerRadius = 100; //the radius of the empty space in the middle of the wheel
 			
-			var jutSpace = 200; //the amount of space reserved outside the radius of our circle to add "juts" to represent larger partitions
-			var radius = Math.min(width-jutSpace*2, height-jutSpace*2)*.5; //radius of empty space in middle of wheel
+			//var jutSpace = 200; //the amount of space reserved outside the radius of our circle to add "juts" to represent larger partitions
+			//var radius = Math.min(width-jutSpace*2, height-jutSpace*2)*.5; //radius of empty space in middle of wheel
 			
 			var color = d3.scale.category20c();
 			
 			//add our main svg element, and our group element (g)
 			var svg = d3.select(".topWheel") 
 				.append("svg")
-					.attr("width", width)
-					.attr("height", height)
+					.attr("width", outerRadius)
+					.attr("height", outerRadius)
 					.append("g")
-						.attr("transform", "translate(" + width*.5 + "," + height*.5 + ")"); //center our shape (defaults to 0,0)
+						.attr("transform", "translate(" + outerRadius*.5 + "," + outerRadius*.5 + ")"); //center our shape (defaults to 0,0)
 			
 			
 			////////////
@@ -87,7 +87,7 @@ define([
 			//The partition object is given a .nodes array property. Each node represents a .children object of the data we passed.
 			var partition = d3.layout.partition()
 				.sort(null)
-				.size([2 * Math.PI, radius * radius])
+				.size([2 * Math.PI, innerRadius * innerRadius])
 //				.value(function(d) { //Value represents each nodes portion of the circle
 //					return d.count; 
 //				});
@@ -114,17 +114,13 @@ define([
 					return d.x + d.dx; 
 				})
 				.innerRadius(function(d, i) { //A lower number would make the partition's bottom edge extend further inward
-					console.log(Math.sqrt(d.y));
-					return radius;
-					
+					//console.log(Math.sqrt(d.y));
+					return innerRadius; //we are currently keeping a consistent inner radius
 				})
 				.outerRadius(function(d, i) { //A larger outer radius creates longer partitions to jut out
-					//var jutRange = wheelTree.high - wheelTree.low;
-					console.log(d, i)
-					console.log(Math.sqrt( (d.y + d.dy)*d.rank ) );
-					return radius + jutSpace*d.rank;
-					//return Math.sqrt( (d.y + d.dy)*d.rank ) 
-					//return Math.sqrt(d.y + d.dy); 
+					//console.log(Math.sqrt(d.y + d.dy); 
+					var jutRange = outerRadius-innerRadius;
+					return jutRange*d.rank;
 				});
 			
 			//the partitions are rendered on the page. Define styles, add content, etc. Path can be referenced at any time to change/update our data set.
