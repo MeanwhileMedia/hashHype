@@ -49,9 +49,9 @@ define([
 			
 			//Test data
 			var hashTags = [
-				{ tag: '#indiana', count: 2435, tweets: ['etc', 'etc'] },
-				{ tag: '#jones', count: 9876, tweets: [] },
-				{ tag: '#marmalade', count: 8532, tweets: [] }
+				{ tag: '#indiana', count: 4000, rank: .4, tweets: ['etc', 'etc'] },
+				{ tag: '#jones', count: 3500, rank: .35, tweets: [] },
+				{ tag: '#marmalade', count: 2500, rank: .25, tweets: [] }
 			];
 			
 			//////////
@@ -103,17 +103,18 @@ define([
 			///////
 			//Create an arc to define the size of this hashtag's partition
 			var arc = d3.svg.arc()
-				.startAngle(function(d) { //Start and end angles define the width of the partition, or it's share of the circle
+				.startAngle(function(d, i) { //Start and end angles define the width of the partition, or it's share of the circle
 					return d.x; 
 				})
-				.endAngle(function(d) { 
+				.endAngle(function(d, i) { 
 					return d.x + d.dx; 
 				})
-				.innerRadius(function(d) { //A lower number would make the partition's bottom edge extend further inward
-					return Math.sqrt(d.y) - Math.floor((Math.random()*100)+1); 
+				.innerRadius(function(d, i) { //A lower number would make the partition's bottom edge extend further inward
+					//d.rank (set above during sort functions) is on a scale of 1-10, with 1 being the hashtag with the highest number of tweets.
+					return Math.sqrt(d.y) * dx; 
 				})
-				.outerRadius(function(d) { //A larger outer radius creates longer partitions to jut out
-					return Math.sqrt(d.y + d.dy) + Math.floor((Math.random()*100)+1); 
+				.outerRadius(function(d, i) { //A larger outer radius creates longer partitions to jut out
+					return Math.sqrt(d.y + d.dy) * dx; 
 				});
 			
 			//the partitions are rendered on the page. Define styles, add content, etc. Path can be referenced at any time to change/update our data set.
@@ -147,17 +148,32 @@ define([
 						.transition()
 							.duration(1500)
 
-							// Interpolate the arcs in data space.
-							.attrTween("d", function(a) {
-								var i = d3.interpolate({x: a.x0, dx: a.dx0}, a);
-								return function(t) {
+							//Smoothly transition between two attribute values.
+							//current datum = d, the current index = i and the current attribute value = a
+							.attrTween("d", function(d, i, a) {
+
+								//interpolate maps a parametric value t in the domain [0,1] to a color, number or arbitrary value.
+								//use the x0 and dx0 which were stashed (see above)
+								var transPath = d3.interpolate(
+									{  //old values
+										x: a.x0, 
+										dx: a.dx0
+									}, //New values
+										a
+									);
+								
+								//The returned value to attrTween must be a function which will return 
+								//attribute values at any point (t) in our transition path 
+								return function(t) { 
+									//use t, in the range [0,1] to retreive our current attribute value
+									var b = transPath(t);
 									
-									console.log(t);
-									
-									var b = i(t);
+									//Update our stashed old values as the transition progresses
 									a.x0 = b.x;
 									a.dx0 = b.dx;
-									return arc(b);
+									
+									//arc (above) returns the path data string for the specified datum
+									return arc(b, i);
 								};
 							});
 					
