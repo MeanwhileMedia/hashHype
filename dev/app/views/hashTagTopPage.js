@@ -115,15 +115,15 @@ define([
 				})
 				.innerRadius(function(d, i) { //A lower number would make the partition's bottom edge extend further inward
 					console.log(Math.sqrt(d.y));
-					return Math.sqrt(d.y);
+					return radius;
 					
 				})
 				.outerRadius(function(d, i) { //A larger outer radius creates longer partitions to jut out
 					//var jutRange = wheelTree.high - wheelTree.low;
 					console.log(d, i)
 					console.log(Math.sqrt( (d.y + d.dy)*d.rank ) );
-					//return Math.sqrt(d.y + d.dy) + jutSpace*d.rank;
-					return Math.sqrt( (d.y + d.dy)*d.rank ) 
+					return radius + jutSpace*d.rank;
+					//return Math.sqrt( (d.y + d.dy)*d.rank ) 
 					//return Math.sqrt(d.y + d.dy); 
 				});
 			
