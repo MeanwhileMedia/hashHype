@@ -85,6 +85,7 @@ define([
 			var partition = d3.layout.partition()
 				.sort(null)
 				.size([2 * Math.PI, innerRadius * innerRadius]);
+				//.value(function(d) { return d.value; }); //Value represents each nodes portion of the circle
 				//we don't set value here because it is already sent in with our data set (in this case, represents tweet count)
 
 
@@ -142,15 +143,9 @@ define([
 			//Now set up listeners to transition data changes
 			d3.select(".topWheel").on("click", function(){
 				
-				//for testing
-				var currentValue = function(d){
-					//We are updating the .value property for each of our partitions.
-					return d.value + Math.floor((Math.random()*10000)+1);
-				}
-				
 				path //update path, our group of partitions which are bound to our data set
-					.data(partition.value(currentValue).nodes) //for testing
-					//.data(partition.nodes)
+					//.data(partition.value(currentValue).nodes) //for testing/manual setting of value
+					.data(partition.nodes)
 						.transition()
 							.duration(500)
 
