@@ -1,0 +1,39 @@
+{
+  "name": "reddit",
+  "version": "0.0.1",
+  "description": "just for fun",
+  "keywords": [],
+  "devDependencies": {},
+  "dependencies": {
+    "@babel/core": "^7.12.17",
+    "@babel/preset-react": "^7.12.13",
+    "d3": "^6.5.0",
+    "hammerjs": "^2.0.8",
+    "koa": "^2.13.1",
+    "koa-convert": "^2.0.0",
+    "koa-send": "^5.0.1",
+    "koa-static": "^5.0.0",
+    "koa-websocket": "^6.0.0",
+    "natural": "^4.0.0",
+    "npm": "^7.6.0",
+    "radium": "^0.26.1",
+    "react": "^17.0.1",
+    "react-dom": "^17.0.1",
+    "redis": "^3.0.2",
+    "snoowrap": "^1.22.0",
+    "underscore": "^1.12.0",
+    "uuid": "^8.3.2",
+    "webpack": "^5.23.0"
+  },
+  "scripts": {
+    "start": "npm run startWordExtractor & npm run startRedditComments & npm run startTopCommentStats & npm run startCoinAndStockSymbols",
+    "startWordExtractor": "node ./processes/extractWordsFromComments.js",
+    "startRedditComments": "node ./processes/fetchRedditComments.js",
+    "startTopCommentStats": "node --inspect ./processes/topCommentStats.js",
+    "startCoinAndStockSymbols": "node ./processes/fetchCoinAndStockSymbols.js",
+    "startUiServer": "node ./ui/server/uiServer.js"
+  },
+  "license": "ISC",
+  "readme": "README.md",
+  "type": "module"
+}
