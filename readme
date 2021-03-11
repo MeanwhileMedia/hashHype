@@ -1,0 +1,6 @@
+NPM scripts:
+
+1. deployDev01: run when you need to sync your local dev code to a target for the first time. Wipes the target dir before copying (must run npm install on target after).
+2. deployDev01_watch: run during dev after deployDev01 has already been run once. Auto syncs changes to files but does not perform directory wipe (preserves target node_modules).
+3. startRedisServer: Run on target machine as seen below (to daemonize the output):
+    nohup npm run startRedisServer --path=/home/rock/jwebb/downloads/redis-stable/src/redis-server --pass=passThatClientsWillNeed > /dev/null 2>&1&

@@ -3,7 +3,9 @@
   "version": "0.0.1",
   "description": "just for fun",
   "keywords": [],
-  "devDependencies": {},
+  "devDependencies": {
+    "ssh2-sftp-client": "^6.0.1"
+  },
   "dependencies": {
     "@babel/core": "^7.12.17",
     "@babel/preset-react": "^7.12.13",
@@ -31,7 +33,10 @@
     "startRedditComments": "node ./processes/fetchRedditComments.js",
     "startTopCommentStats": "node --inspect ./processes/topCommentStats.js",
     "startCoinAndStockSymbols": "node ./processes/fetchCoinAndStockSymbols.js",
-    "startUiServer": "node ./ui/server/uiServer.js"
+    "startUiServer": "node ./ui/server/uiServer.js",
+    "deployDev01": "node ./utils/deployCodeSftp.js -target dev01",
+    "deployDev01_watch": "node ./utils/deployCodeSftp.js -target dev01_fast -watch",
+    "startRedisServer": "$npm_config_path --port 6379 --notify-keyspace-events KEA --requirepass $npm_config_pass"
   },
   "license": "ISC",
   "readme": "README.md",
