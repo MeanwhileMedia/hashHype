@@ -1,6 +1,6 @@
 import path from 'path';
 import fs from 'fs';
-import babel from '@babel/core';
+import * as babel from "@babel/core";
 import React from 'react';
 //import ReactDOMServer from 'react-dom/server';
 

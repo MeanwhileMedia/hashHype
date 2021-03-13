@@ -1,4 +1,6 @@
 import redis from 'redis';
+import yargs from 'yargs';
+const cliArgs = yargs(process.argv).argv;
 
 class RedisClient {
     constructor(opts) {
@@ -6,9 +8,9 @@ class RedisClient {
 
         this.client = null;
         this.clientOpts = {
-            host: opts.clientOpts.host || '127.0.0.1',
-            port: opts.clientOpts.port || 6379,
-            password: opts.clientOpts.password || 'breastOfTheWild'
+            host: opts.clientOpts.host || cliArgs.redisHost,
+            port: opts.clientOpts.port || cliArgs.redisPort,
+            password: opts.clientOpts.password || cliArgs.redisPassword
         };
         this.onConnect = opts.onConnect || function (client){
             console.log('Redis client connected.');

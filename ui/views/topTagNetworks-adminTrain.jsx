@@ -1,6 +1,6 @@
 import React from '/node_modules/react';
-import AdminTrainRow from './TopTagNetworks-adminTrain-row.jsx'
-import styles from './styles/TopTagNetworks-adminTrain.css';
+import AdminTrainRow from './topTagNetworks-adminTrain-row.jsx'
+import styles from './styles/topTagNetworks-adminTrain.css';
 
 import hbClientSocketDbRequests_admin from '../helpers/hbClientSocketDbRequests-admin.js';
 

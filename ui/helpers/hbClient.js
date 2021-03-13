@@ -5,7 +5,7 @@ import socketViewResponses from './hbClientSocketViewResponses';
 // and socket events for view/template requests.
 var hbClient = {
 
-  serverAddress: 'localhost:8080',
+  serverAddress: 'hashHype.com',
   socket: null,
 
   init() {

@@ -26,6 +26,7 @@ class DeployCodeSftp {
 
     initSftpClient(opts, cback) {
         this.sftpClient = new SftpClient();
+        console.log(`Opening SSH connection with ${opts.host}:${opts.port}`);
         this.sftpClient.connect(opts).then(() => {
             if (cback) cback();
         }).catch(err => {
@@ -40,7 +41,10 @@ class DeployCodeSftp {
         const self = this;
         const targetDir = `${this.deployConfig.targetDir}/${this.deployConfig.projectName}`;
         this.sftpClient.exists(targetDir).then((exists) => {
-            if (exists && self.deployConfig.wipeFirst) return self.sftpClient.rmdir(targetDir, true);
+            if (exists && self.deployConfig.wipeFirst) {
+                console.log(`Now deleting entire app folder (recursive): ${targetDir}`);
+                return self.sftpClient.rmdir(targetDir, true);
+            }
             return Promise.resolve();
         }).then(() => {
             let exludeRegEx = new RegExp('.*', 'i');
@@ -62,7 +66,6 @@ class DeployCodeSftp {
     watchForChangesToDeploy() {
         const self = this;
         watch(this.localProjectDir, {recursive: true}, (eventType, filename) => {
-            console.log(eventType)
             self.deployToTarget();
         });
     }
