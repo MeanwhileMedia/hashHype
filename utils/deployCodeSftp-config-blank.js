@@ -6,7 +6,7 @@ const deployCodeSftpConfig = {
     targets: {
         dev01: () => {
             return {
-                projectName: '', // set equal to this projects containt folder name
+                projectName: '', // set equal to this projects containing folder name
                 host: '',
                 port: 0,
                 username: '',

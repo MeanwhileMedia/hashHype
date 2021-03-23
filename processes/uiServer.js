@@ -20,7 +20,7 @@ const uiServer = {
 
     serverConfig: {
         rootDir: process.cwd(), //the project root
-        httpPort: 8080
+        httpPort: 8180
     },
 
     // ES module imports in browser do not yet support "bare" module imports. Maintain a map here, and use a custom syntax to import node_modules.
@@ -49,12 +49,14 @@ const uiServer = {
 
     init() {
         uiServer.initRedisDbClient( () => {
-            uiServer.hbClientSocketDbResponses_admin = new HbClientSocketDbResponses_admin({
-                redisDbClient: uiServer.redisDbClient
+            uiServer.initRedisSubClient( () => {
+                uiServer.initKoaServer();
+                uiServer.hbClientSocketDbResponses_admin = new HbClientSocketDbResponses_admin({
+                    redisDbClient: uiServer.redisDbClient,
+                    redisSubClient: uiServer.redisSubClient
+                });
             });
         });
-        uiServer.initRedisPubSubClient();
-        uiServer.initKoaServer();
     }, // init
 
     initKoaServer() {
@@ -193,7 +195,7 @@ const uiServer = {
                 }));
             });
 
-            self.redisPubSubClient.on('message', (channel, action) => {
+            self.redisSubClient.on('message', (channel, action) => {
                 if (action !== 'set' || channel !== keySpaceSubChannel) return;
 
                 const eventUid = keySpaceSubChannel + socket.uid;
@@ -213,7 +215,7 @@ const uiServer = {
                     }));
                 });
             });
-            self.redisPubSubClient.subscribe(keySpaceSubChannel);
+            self.redisSubClient.subscribe(keySpaceSubChannel);
             return;
         } // end if (message.channel === 'populateView')
 
@@ -291,13 +293,14 @@ const uiServer = {
             }
         });
     },
-    redisPubSubClient: null,
-    initRedisPubSubClient() {
+    redisSubClient: null,
+    initRedisSubClient(cback) {
         const self = uiServer;
         new RedisClient({
             onConnect: (client) => {
                 console.log('Connected new redis client for ui server.');
-                self.redisPubSubClient = client;
+                self.redisSubClient = client;
+                if (cback) cback();
             }
         });
     },

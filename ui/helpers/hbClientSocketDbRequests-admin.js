@@ -7,7 +7,8 @@ const hbClientSocketDbRequests_admin = {
     hbClient.socket.send(JSON.stringify({
       channel: 'markUserNotRelevant',
       data: {
-        username: opts.username
+        username: opts.username,
+        commentId: opts.commentId || null
       },
     }));
   },
@@ -17,7 +18,8 @@ const hbClientSocketDbRequests_admin = {
       hbClient.socket.send(JSON.stringify({
         channel: 'markWordNotRelevant',
         data: {
-          word: opts.word
+          word: opts.word,
+          commentId: opts.commentId || null
         },
       }));
   },

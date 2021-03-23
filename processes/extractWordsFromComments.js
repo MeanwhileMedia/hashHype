@@ -1,6 +1,9 @@
 import natural from 'natural';
 import RedisClient from '../utils/redisClient.js';
 
+import events from 'events';
+events.EventEmitter.defaultMaxListeners = Infinity;
+
 class ExtractWordsFromComments {
 
     // Step 1: strip out insignificant words like "it", "the" (built into PorterStemmer.tokenizeAndStem)
@@ -53,13 +56,13 @@ class ExtractWordsFromComments {
             let rawCommentKey = patternWithKey;
             rawCommentKey = rawCommentKey.replace('__keyspace@0__:', '');
             self.redisDbClient.get(rawCommentKey, (err, commentJson) => {
-                if (err) {
+                if (err || !commentJson) {
                     console.log(err);
                     return;
                 }
                 self.redisDbClient.del(rawCommentKey); // We are going to reform the rawComment: into a comment:. Delete rawComment from redis.
                 const comment = JSON.parse(commentJson);
-                if (!comment.body) return;
+                if (!comment || !comment.body) return;
                 self.extractSymbols(comment, () => {
                     self.extractWordSequences(comment, () => {
                         self.redisDbClient.set(`newComment:${comment.id}`, JSON.stringify(comment));
@@ -82,7 +85,9 @@ class ExtractWordsFromComments {
             }
             console.log(`Comment contained symbols:`, singleWordSymbols, commentData.body);
             singleWordSymbols.forEach((symbolWord, index) => {
-                let wordData = self.newWordEntity({type: 'symbol', value: [symbolWord]});
+                const word = [symbolWord];
+                if (self.isDiscardWord(word)) return;
+                let wordData = self.newWordEntity({type: 'symbol', value: word});
                 const key = self.generateWordEntityKey(wordData);
                 self.redisDbClient.get(key, (err, json) => {
                     if (json) {

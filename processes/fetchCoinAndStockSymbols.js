@@ -14,7 +14,7 @@ class FetchCoinAndStockSymbols {
     initFetchLoop() {
         const self = this;
         console.log('Now fetching list of all stock and coin symbols...');
-        setTimeout(self.initFetchLoop, self.fetchLoopIntervalTime);
+        setTimeout(self.initFetchLoop.bind(self), self.fetchLoopIntervalTime);
         self.getRequest(self.getStockSymbolEndpoint(), (stockSymbolsCsv) => {
             self.getRequest(self.getCoinSymbolEndpoint(), (coinSymbolsCsv) => {
                 const allFetchedSymbols = [];

@@ -129,19 +129,15 @@ class AdminTrain extends React.Component {
     markUserNotRelevant(username, comment) {
         // applies to all future comments, AND deletes this comment
         hbClientSocketDbRequests_admin.markUserNotRelevant({
-            username: username //case sensitive string
+            username: username, // case sensitive string
+            commentId: comment.id // the comment for which this user was marked not relevant (optional)
         });
-        hbClientSocketDbRequests_admin.deleteComment({ // We will also delete this comment since it was by our now not relevant user
-            commentId: comment.id
-        });
+        this.props.hideModal();
     }
 
     markWordNotRelevant(word, comment) {
         // applies to all future comments, AND to this comment
         hbClientSocketDbRequests_admin.markWordNotRelevant({
-            word: word //a word combo in string format: 'buy_gme_now'
-        });
-        hbClientSocketDbRequests_admin.deleteWordFromComment({
             word: word, //a word combo in string format: 'buy_gme_now'
             commentId: comment.id
         });
@@ -168,6 +164,7 @@ class AdminTrain extends React.Component {
         hbClientSocketDbRequests_admin.deleteComment({
             commentId: comment.id
         });
+        this.props.hideModal();
     }
 
 }

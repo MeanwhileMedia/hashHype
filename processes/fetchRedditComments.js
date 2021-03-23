@@ -127,7 +127,10 @@ class Reddit {
         // If user has been marked as not relevant
         if (this.trainingNotRelevant) {
             const notRelUserIndex = this.trainingNotRelevant.users.findIndex((thisUser) => thisUser.username === rawComment.author.name);
-            if (notRelUserIndex !== -1) shouldDiscard = true;
+            if (notRelUserIndex !== -1) {
+                shouldDiscard = true;
+                console.log(`Comment discarded for not relevant user: ${rawComment.author.name}`);
+            }
         }
 
         return shouldDiscard;
@@ -166,9 +169,6 @@ class Reddit {
                 '12Hr': 0,
                 '24Hr': 0,
                 //'all': 0
-            },
-            training: { // mirrors same structure as training:notRelevant redis data - stored locally on comment too
-                notRelevant: { words: [] }
             }
         }
     }

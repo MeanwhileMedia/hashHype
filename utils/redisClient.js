@@ -106,7 +106,7 @@ class RedisClient {
                 console.log(`Now running batched mget for ${mgetArgs.length} keys`);
                 self.mget(mgetArgs, (err, resArray) => {
                     if(err || !resArray || resArray.length === 0) {
-                        console.log(`Could not mget keys from redis:`, mgetArgs, err);
+                        console.error(`Could not mget ${mgetArgs.length} keys from redis`) //:`, mgetArgs, err);
                         return;
                     }
                     mgetArgs.forEach((key, thisKeyIndex) => {
@@ -121,6 +121,16 @@ class RedisClient {
                     });
                 });
             },
+
+            ///////
+            // Below functions are for manipulating batch records on this self.throttle object
+            clearPendingGet: (redisKey) => {
+                if (self.throttle.pendingGetBatch[redisKey]) delete self.throttle.pendingGetBatch[redisKey];
+            },
+            clearPendingSet: (redisKey) => {
+                if (self.throttle.pendingSetBatch[redisKey]) delete self.throttle.pendingSetBatch[redisKey];
+            }
+
 
         }; //end self.throttle
 
