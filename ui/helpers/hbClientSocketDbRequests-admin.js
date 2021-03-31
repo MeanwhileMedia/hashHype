@@ -54,6 +54,14 @@ const hbClientSocketDbRequests_admin = {
           commentId: opts.commentId
         },
       }));
+  },
+
+  editSymbolFunction(opts) {
+      if (!opts.symbol || !opts.functionName || !opts.functionString) return;
+      hbClient.socket.send(JSON.stringify({
+        channel: 'editSymbolFunction',
+        data: opts
+      }));
   }
 
 }; // end hbClientSocketViewRequests

@@ -75,7 +75,16 @@ class TopTagWheel extends React.Component {
 
     hierarchyData.children = hierarchyData.children.slice(0, this.state.topTagCount);
     hierarchyData.children.forEach( (topTag) => {
-        allMsgCounts.push(topTag.totalPoints['1Hr']);
+        const getUniquePointCount = (lastTriedUniqueCount) => {
+            if (allMsgCounts.indexOf(lastTriedUniqueCount) !== -1) { // Because we use this array to rank trends, we cannot use tie scores. If a tie is found, increment the dup by 1 until it's no longer a dup.
+                lastTriedUniqueCount++;
+                getUniquePointCount(lastTriedUniqueCount);
+                return;
+            }
+            allMsgCounts.push(lastTriedUniqueCount);
+            topTag.totalPoints['1Hr'] = lastTriedUniqueCount;
+        };
+        getUniquePointCount(topTag.totalPoints['1Hr']);
     });
 
     hierarchyData = d3.hierarchy(hierarchyData).sum((d) => {

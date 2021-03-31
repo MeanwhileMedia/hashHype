@@ -13,14 +13,12 @@ class TopTagnewsColumns extends React.Component {
         if (!thisView.activeTopTag) { return null; }
 
         let topSymbolName = '';
-        if (thisView.activeTopTag.topSymbol.points > 0) {
-            thisView.activeTopTag.symbols.forEach((symbol) => {
-                if (symbol.symbol.toLowerCase() === thisView.activeTopTag.topSymbol.symbol.toLowerCase()) topSymbolName = (
-                    <>
-                        <h2>{symbol.name}</h2>
-                    </>
-                );
-            });
+        if (thisView.activeTopTag.topSymbol) {
+            topSymbolName = (
+                <>
+                    <h2>{thisView.activeTopTag.topSymbol.name}</h2>
+                </>
+            );
         }
 
         let commentAuthorAndPoints = '';

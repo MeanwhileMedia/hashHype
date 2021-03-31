@@ -158,12 +158,8 @@ class Reddit {
             id: uuidv4(),
             body: initial.body || null,
             author: initial.author || {name: null},
-            words: [],
-            bigrams: [],
-            trigrams: [],
-            symbols: [],
-            topSymbol: {symbol: null, points: 0},
-            points: {}, // key: `${word.split(_)}__${tstampForWhenTheWordWasCounted}`, value: points awarded to word occurance (int)
+            words: [], // array of wordRef objects { word: 'word_seq' (also redis key to word object "word:word_seq"), hasSymbols: ['symbolKey', 'symbol:stock:gme', etc] }
+            points: {}, // key: `${word.value.split(_)}__${tstampForWhenTheWordWasCounted}`, value: points awarded to word occurance (int)
             totalPoints: { // summed totals from the above points attr.
                 '1Hr': 0,
                 '12Hr': 0,
@@ -173,6 +169,8 @@ class Reddit {
         }
     }
 }
+
+
 
 const thisReddit = new Reddit();
 export default Reddit;

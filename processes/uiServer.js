@@ -29,11 +29,14 @@ const uiServer = {
     // See https://medium.com/webpack/the-state-of-javascript-modules-4636d1774358
     bareModuleMap: {
         '/node_modules/underscore': '/node_modules/underscore/underscore-min.js',
-        '/node_modules/react': '/node_modules/react/cjs/react.production.min.js', //'/node_modules/react/umd/react.development.js'
-        '/node_modules/react-dom': '/node_modules/react-dom/cjs/react-dom.production.min.js', //'/node_modules/react-dom/umd/react-dom.development.js'
+        '/node_modules/react': '/node_modules/react/cjs/react.production.min.js',
+        '/node_modules/react-dom': '/node_modules/react-dom/cjs/react-dom.production.min.js',
         '/node_modules/d3': '/node_modules/d3/dist/d3.min.js',
         '/node_modules/hammerjs': '/node_modules/hammerjs/hammer.min.js',
-        '/node_modules/radium': '/node_modules/radium/dist/radium.min.js'
+        '/node_modules/radium': '/node_modules/radium/dist/radium.min.js',
+        '/node_modules/highlight': '/node_modules/highlight.js/lib/core.js',
+        '/node_modules/highlight/js': '/node_modules/highlight.js/lib/languages/javascript.js',
+        '/node_modules/highlight/jsStyles.css': '/node_modules/highlight.js/styles/atom-one-dark.css'
     },
 
     // In defining our koa middleware (below), we expose specific directories to public requests.
@@ -244,6 +247,23 @@ const uiServer = {
             const compiledPath = path.resolve(self.serverConfig.rootDir);
             const compiledFilename = `bareModule_${Date.now()}.js`;
             console.log(`Now attempting to serve request for a node_module: ${bareModulePath}`);
+
+            if(requestedPath.search(/\.css$/) !== -1) {
+                // Looks like this was an ES module request for a CSS file - wrap the css content in JS that will auto inject it to the page
+                fs.readFile(bareModulePath, (err, cssText) => {
+                    const esModuleText = `const injectCss = () => {
+                        let styleEl = document.createElement('style');
+                        styleEl.innerHTML = "${cssText}";
+                        document.body.appendChild(styleEl);
+                    };
+                    injectCss();
+                    export default injectCss;`.replace(/(\r\n|\n|\r)/gm, ""); //remove linebreaks
+                    console.log(`Compiled CSS into ES module format: ${bareModulePath}`);
+                    resolve(esModuleText);
+                });
+                return;
+            }
+
             const wpCompiler = webpack({
                 mode: 'production',
                 entry: bareModulePath,

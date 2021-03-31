@@ -7,7 +7,7 @@ const styles = {
     generate(view) {
         //const colorPallette = d3.schemePastel1;
         const colorPallette = ["#f94144","#f3722c","#f8961e","#f9844a","#f9c74f","#90be6d","#43aa8b","#4d908e","#577590","#277da1"]; //https://coolors.co/palettes/trending
-        let colorRank = view.props.data.rank;
+        let colorRank = view.props.data.rank - 1;
         if (view.props.allMsgCounts.length > colorPallette.length) {
             colorRank = Math.round((view.props.data.rank / view.props.allMsgCounts.length) * colorPallette.length);
         }

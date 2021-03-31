@@ -1,4 +1,9 @@
 import React from '/node_modules/react';
+import highlight from '/node_modules/highlight';
+import highlightJs from '/node_modules/highlight/js';
+import highlightJsStyles from '/node_modules/highlight/jsStyles.css';
+highlight.registerLanguage('javascript', highlightJs);
+
 import AdminTrainRow from './topTagNetworks-adminTrain-row.jsx'
 import styles from './styles/topTagNetworks-adminTrain.css';
 
@@ -7,7 +12,6 @@ import hbClientSocketDbRequests_admin from '../helpers/hbClientSocketDbRequests-
 class AdminTrain extends React.Component {
     constructor(props) {
         super(props);
-
         this.state = {
             accordionCollapsed: [] //list of accordion title names which were collapsed by ui click
         };
@@ -17,10 +21,11 @@ class AdminTrain extends React.Component {
         const thisView = this;
         const css = styles.generate(this);
 
-        let commentColumn = (
+        let commentSection = (
             <AdminTrainRow
                 topTag={thisView.props.topTag}
                 label={(<><p>{thisView.props.topTag.body}</p><div><p>({thisView.props.topTag.id})</p></div></>)}
+                editIcon={'dangerous'}
                 deletePrompt={(
                     <><p><i>Comment is not relevant?</i>
                         <button className="button_sev1" onClick={this.deleteComment.bind(this, this.props.topTag)}>Confirm</button>
@@ -28,12 +33,13 @@ class AdminTrain extends React.Component {
                 )}
             />
         );
-        if (this.state.accordionCollapsed.indexOf('Comment') !== -1) commentColumn = null;
+        if (this.state.accordionCollapsed.indexOf('Comment') !== -1) commentSection = null;
 
-        let usernameColumn = (
+        let usernameSection = (
             <AdminTrainRow
                 topTag={thisView.props.topTag}
                 label={(<><p>{this.props.topTag.author.name}</p></>)}
+                editIcon={'dangerous'}
                 deletePrompt={(
                     <><p><i>User is not relevant?</i>
                         <button className="button_sev1" onClick={this.markUserNotRelevant.bind(this, this.props.topTag.author.name, this.props.topTag)}>Confirm</button>
@@ -41,9 +47,9 @@ class AdminTrain extends React.Component {
                 )}
             />
         );
-        if (this.state.accordionCollapsed.indexOf('Username') !== -1) usernameColumn = null;
+        if (this.state.accordionCollapsed.indexOf('Username') !== -1) usernameSection = null;
 
-        let wordColumns = [];
+        let wordsSection = [];
         const sortedWords = Object.entries(this.props.topTag.points['1Hr']).sort((a, b) => {
             return b[1] - a[1];
         });
@@ -57,35 +63,52 @@ class AdminTrain extends React.Component {
                     <button className="button_sev2" onClick={this.markWordNotRelevant.bind(this, word[0], this.props.topTag)}>All</button>
                 </p></>
             );
-            wordColumns.push((
+            wordsSection.push((
                 <AdminTrainRow
                     topTag={thisView.props.topTag}
                     label={rowLabel}
+                    editIcon={'dangerous'}
                     deletePrompt={deletePrompt}
                 />
             ));
         });
-        if (this.state.accordionCollapsed.indexOf('Words') !== -1) wordColumns = [];
+        if (this.state.accordionCollapsed.indexOf('Words') !== -1) wordsSection = [];
 
-        let symbolColumns = [];
+        let symbolsSection = [];
         this.props.topTag.symbols.forEach((symbol) => {
+            const rowRef = React.createRef();
             const rowLabel = (
-                <><p>{symbol.name} <b>({symbol.symbol})</b></p></>
+                <><p>{symbol.name} <b>({symbol.symbol.toUpperCase()})</b></p></>
             );
             const deletePrompt = (
-                <><p><i>Symbol is not relevant to comment?</i>
-                    <button className="button_sev1" onClick={this.deleteSymbolFromComment.bind(this, symbol.symbol, this.props.topTag)}>Confirm</button>
-                </p></>
+                <>
+                    <p><i>Customize function:</i>
+                        <button className="editFuncButton button_sev1" onClick={ (e) => { thisView.initSymbolCodeEdit.call(thisView, e, symbol, 'get', rowRef) } }>get ( )</button>
+                        <button className="editFuncButton button_sev1" onClick={ (e) => { thisView.initSymbolCodeEdit.call(thisView, e, symbol, 'match', rowRef) } }>match ( )</button>
+                    </p>
+                    <div className="adminTrain_section_code" style={css.adminTrain_section_code}>
+                        <pre>
+                            <code className="adminTrain_section_code_presentation" style={css.adminTrain_section_code_presentation}></code>
+                            <code className="adminTrain_section_code_input" style={css.adminTrain_section_code_input} contenteditable="true"></code>
+                        </pre>
+                        <div style={css.adminTrain_section_code_buttons}>
+                            <button onClick={thisView.exitSymbolFunctionEdit.bind(thisView, 'cancel')}>Cancel</button>
+                            <button className="button_sev2" onClick={this.exitSymbolFunctionEdit.bind(this, 'save')}>Save</button>
+                        </div>
+                    </div>
+                </>
             );
-            symbolColumns.push((
+            symbolsSection.push((
                 <AdminTrainRow
                     topTag={thisView.props.topTag}
                     label={rowLabel}
+                    editIcon={'article'}
                     deletePrompt={deletePrompt}
+                    ref={rowRef}
                 />
             ));
         });
-        if (this.state.accordionCollapsed.indexOf('Symbols') !== -1) symbolColumns = [];
+        if (this.state.accordionCollapsed.indexOf('Symbols') !== -1) symbolsSection = [];
 
         return (
             <div className="adminTrain" style={css.adminTrain}>
@@ -94,19 +117,19 @@ class AdminTrain extends React.Component {
                         <h5 style={{cursor: 'ns-resize'}} onClick={this.toggleAccord.bind(this)}>Comment</h5>
                         <p style={{position: 'absolute', right: 0, top: '-10px'}}>Points: <b>{thisView.props.topTag.totalPoints['1Hr']}</b></p>
                     </div>
-                    {commentColumn}
+                    {commentSection}
                 </div>
                 <div style={css.adminTrain_section}>
                     <h5 style={{cursor: 'ns-resize'}} onClick={this.toggleAccord.bind(this)}>Username</h5>
-                    {usernameColumn}
-                </div>
-                <div style={css.adminTrain_section}>
-                    <h5 style={{cursor: 'ns-resize'}} onClick={this.toggleAccord.bind(this)}>Words</h5>
-                    {wordColumns}
+                    {usernameSection}
                 </div>
                 <div style={css.adminTrain_section}>
                     <h5 style={{cursor: 'ns-resize'}} onClick={this.toggleAccord.bind(this)}>Symbols</h5>
-                    {symbolColumns}
+                    {symbolsSection}
+                </div>
+                <div style={css.adminTrain_section}>
+                    <h5 style={{cursor: 'ns-resize'}} onClick={this.toggleAccord.bind(this)}>Words</h5>
+                    {wordsSection}
                 </div>
         </div>
         );
@@ -151,20 +174,72 @@ class AdminTrain extends React.Component {
         });
     }
 
-    deleteSymbolFromComment(symbol, comment) {
-        // applies only to this comment
-        hbClientSocketDbRequests_admin.deleteSymbolFromComment({
-            symbol: symbol, //string - this symbol.symbol prop of a symbol object
-            commentId: comment.id
-        });
-    }
-
     deleteComment(comment) {
         // applies only to this comment
         hbClientSocketDbRequests_admin.deleteComment({
             commentId: comment.id
         });
         this.props.hideModal();
+    }
+
+    exitSymbolFunctionEdit(action) { // action is 'save' or 'cancel'
+        if (!this.currentlyEditingSymbol) return;
+        if (action === 'cancel') {
+            this.currentlyEditingSymbol.onExitEdit();
+            return;
+        }
+        hbClientSocketDbRequests_admin.editSymbolFunction({
+            symbol: this.currentlyEditingSymbol.symbol, //a full symbol object
+            functionName: this.currentlyEditingSymbol.editingFunctionName,
+            functionString: this.currentlyEditingSymbol.getEditedFunctionString()
+        });
+        this.currentlyEditingSymbol.onExitEdit();
+    }
+
+    initSymbolCodeEdit(e, symbol, editingFunctionName, adminTrainRowRef) {
+        // Make some UI changes
+        const self = this;
+        const thisRowEl = e.target.closest('.adminTrain_section_rows');
+        const editIcon = thisRowEl.querySelector('.adminTrain_section_rows_editIcon');
+        const codeEditorWrapper = thisRowEl.querySelector('.adminTrain_section_code');
+        const codeEditorInput = codeEditorWrapper.querySelector('.adminTrain_section_code_input');
+        const codeEditorPresentation = codeEditorWrapper.querySelector('.adminTrain_section_code_presentation');
+        codeEditorWrapper.style.display = 'block';
+        editIcon.style.display = 'none';
+        thisRowEl.querySelectorAll('.editFuncButton').forEach((b) => {
+            b.style.opacity = .2;
+            b.style.pointerEvents = 'none';
+        });
+        e.target.style.opacity = .5;
+        document.querySelector('.adminTrain').addEventListener('click', (e) => {
+            if (e.target.closest('.admintrain_section_rows_editicon')) self.currentlyEditingSymbol.onExitEdit(); // exit code editor if any other row is selected for editing
+        });
+        codeEditorInput.innerText = symbol[editingFunctionName];
+        const presentCodeInput = () => {
+            codeEditorPresentation.innerText = codeEditorInput.innerText;
+            highlight.highlightElement(codeEditorPresentation);
+        };
+        presentCodeInput();
+        codeEditorInput.addEventListener('keydown', presentCodeInput);
+        codeEditorInput.addEventListener('input', presentCodeInput);
+        // Save a local ref to be used in exitSymbolFunctionEdit
+        this.currentlyEditingSymbol = {
+            symbol: symbol,
+            editingFunctionName: editingFunctionName,
+            getEditedFunctionString: () => {
+                return codeEditorInput.innerText;
+            },
+            onExitEdit: () => { // save or cancel
+                adminTrainRowRef.current.hideDeletePrompt();
+                codeEditorWrapper.style.display = 'none';
+                editIcon.style.display = 'block';
+                thisRowEl.querySelectorAll('.editFuncButton').forEach((b) => {
+                    b.style.opacity = 1;
+                    b.style.pointerEvents = 'all';
+                });
+                editIcon.click();
+            }
+        };
     }
 
 }

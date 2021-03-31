@@ -22,11 +22,7 @@ class TopTagWheelPart extends React.Component {
     this.props.data.rank = this.props.allMsgCounts.indexOf(this.props.data.totalPoints['1Hr']) + 1;
 
     let topSymbol = '';
-    if (this.props.data.topSymbol.points > 0) {
-        this.props.data.symbols.forEach((symbol) => {
-            if (symbol.symbol.toLowerCase() === this.props.data.topSymbol.symbol.toLowerCase()) topSymbol = symbol.symbol;
-        });
-    }
+    if (this.props.data.topSymbol) topSymbol = this.props.data.topSymbol.symbol.toUpperCase();
 
     const rankSpace = this.props.maxOuterRadius - this.props.minOuterRadius;
     const innerPadding = (rankSpace/2);

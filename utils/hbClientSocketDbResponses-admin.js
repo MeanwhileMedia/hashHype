@@ -17,25 +17,27 @@ class HbClientSocketDbResponses_admin {
         if (!username) return;
 
         const exists = self.trainingNotRelevant.users.find(thisUser => thisUser.username === username);
-        if (exists) return;
-        self.trainingNotRelevant.users.push({
-            username: username,
-            tstamp: Date.now()
-        });
+        if (!exists) {
+            self.trainingNotRelevant.users.push({
+                username: username,
+                tstamp: Date.now()
+            });
+        }
 
         self.trainingNotRelevant.lastAffected = [];
         self.trainingNotRelevant.lastAffected.push({
             key: `user:${username}`,
             tstamp: Date.now()
         });
-        self.redisDbClient.set(self.trainingNotRelevantKey, JSON.stringify(self.trainingNotRelevant), (err) => {
-            if (err) {
-                console.log(`Could not set ${self.trainingNotRelevantKey}`, err);
-                return;
-            }
-            if (!commentId) return;
-            self.deleteComment({data: {commentId: commentId}});
-        });
+        self.redisDbClient.set(self.trainingNotRelevantKey, JSON.stringify(self.trainingNotRelevant));
+        // , (err) => {
+        //     if (err) {
+        //         console.log(`Could not set ${self.trainingNotRelevantKey}`, err);
+        //         return;
+        //     }
+        //     if (!commentId) return;
+        //     self.deleteComment({data: {commentId: commentId}});
+        // });
     }
 
     markWordNotRelevant(message, socket) {
@@ -46,18 +48,15 @@ class HbClientSocketDbResponses_admin {
 
         // First, add this new entry to our global traingin:notRelevant object
         const exists = self.trainingNotRelevant.words.find(thisWord => thisWord.word === word);
-        if (exists) return;
-        self.trainingNotRelevant.words.push({
-            word: word,
-            tstamp: Date.now()
-        });
+        if (!exists) {
+            self.trainingNotRelevant.words.push({
+                word: word,
+                tstamp: Date.now()
+            });
+        }
 
         // also delete this word object from redis
-        let wordType = 'word';
-        const wordParts = word.split('_');
-        if (wordParts.length === 2) wordType = 'bigram';
-        if (wordParts.length === 3) wordType = 'trigram';
-        const wordKey = `word:${wordType}:${word}`;
+        const wordKey = `word:${word}`;
         self.redisDbClient.del(wordKey);
 
         self.trainingNotRelevant.lastAffected = [];
@@ -65,14 +64,15 @@ class HbClientSocketDbResponses_admin {
             key: wordKey,
             tstamp: Date.now()
         });
-        self.redisDbClient.set(self.trainingNotRelevantKey, JSON.stringify(self.trainingNotRelevant), (err) => {
-            if (err) {
-                console.log(`Could not set ${self.trainingNotRelevantKey}`, err);
-                return;
-            }
-            if (!commentId) return;
-            self.deleteWordFromComment({data: {word: word, commentId: commentId}});
-        });
+        self.redisDbClient.set(self.trainingNotRelevantKey, JSON.stringify(self.trainingNotRelevant));
+        // , (err) => {
+        //     if (err) {
+        //         console.log(`Could not set ${self.trainingNotRelevantKey}`, err);
+        //         return;
+        //     }
+        //     if (!commentId) return;
+        //     self.deleteWordFromComment({data: {word: word, commentId: commentId}});
+        // });
     }
 
     deleteWordFromComment(message, socket) {
@@ -89,13 +89,9 @@ class HbClientSocketDbResponses_admin {
             const comment = JSON.parse(json);
 
             // First, remove it from the words array
-            let wordType = 'words';
-            const wordParts = word.split('_');
-            if (wordParts.length === 2) wordType = 'bigrams';
-            if (wordParts.length === 3) wordType = 'trigrams';
-            const wordIndex = comment[wordType].findIndex((thisWord) => thisWord.join('_') === word);
+            const wordIndex = comment.words.findIndex((thisWord) => thisWord.word === word);
             if (wordIndex === -1) return;
-            comment[wordType].splice(wordIndex, 1);
+            comment.words.splice(wordIndex, 1);
 
             // Second, remove all points which this word may have already earned
             const newPoints = {};
@@ -120,7 +116,7 @@ class HbClientSocketDbResponses_admin {
     });
     }
 
-    deleteSymbolFromComment(message, socket) {
+    deleteSymbolFromComment(message, socket) { // nothing in the training UI currently triggers this (symbols have function editors)
         const self = this;
         const symbol = message.data.symbol;
         const commentId = message.data.commentId;
@@ -134,18 +130,35 @@ class HbClientSocketDbResponses_admin {
             const comment = JSON.parse(json);
 
             //JWW STOPPING POINT -
-            // 1. Build an input in adminTrain for symbols allowing code snippets for custom matching logic (many single charachters within comments
+            // 1. DONE - Build an input in adminTrain for symbols allowing code snippets for custom matching logic (many single charachters within comments
             //    are matching as symbols (cuz stupid wall street assigned single char stock symbols)). This single char or other ambiguous stock symbols could be customized to caps only, or must be prepended by $, etc.
             //    This logic could also allow for looser matching rules (like matching on a company name instead of specifically it's stock symbol)
-            // 2. Build an option into adminTrain to edit symbol data (like the "name" prop which is rendered large in wheel UI - sometimes contains excess info like "Gamestop - Class A" etc).
+            // 2. WIP - Build an option into adminTrain to edit symbol data (like the "name" prop which is rendered large in wheel UI - sometimes contains excess info like "Gamestop - Class A" etc).
             //    This feature will also help admins manually add descriptive data to URL symbols (see #3 below)
+            //         JWW stopping point - need to use the get function when assigning symbol objects to topComments (so custom get logic is applied to rendered content)
             // 3. Extract URLS from comments as a new type of symbol. Make sure none of the URL chars get extracted as words during tokenization
+            // 4. Adjust redis aof settings because it appears to be saving too often - also look into the minifaction feature
 
 
-            // Remove this symbol from comment.symbols
-            const symbolIndex = comment.symbols.findIndex((thisSymbol) => thisSymbol.symbol === symbol);
-            if (symbolIndex === -1) return;
-            comment.symbols.splice(symbolIndex, 1);
+            // Loop through all comment wordRefs and inspect each "hasSymbols" prop. Remove this symbol key whenever found.
+            const removeSymbolKey = `symbol:${symbol.type}:${symbol.symbol}`;
+            comment.words.forEach((wordRef, wordRefIndex) => {
+                const symbolKeyIndex = wordRef.hasSymbols.findIndex((thisSymbolKey) => thisSymbolKey === removeSymbolKey);
+                if (symbolKeyIndex) {
+                    wordRef.hasSymbols.splice(symbolKeyIndex, 1);
+                }
+            });
+            // We will also remove all points from comment.points which were added for this word. This is not a perfect
+            // method for re-tallying points (because we remove ALL points for word - rather than just the symbol multiplier).
+            let pointsRemoved = 0;
+            for (const [pointsKey, pointsCount] of Object.entries(comment.points)) { // the points object strait from redis looks like: {"foo_bar__1616453254162": 5, etc...}
+                const matched = pointsKey.search(new RegExp(`(_|^)(${symbol.symbol})(_)`));
+                if (matched !== -1) {
+                    pointsRemoved = pointsRemoved + pointsCount;
+                    delete comment.points[pointsKey];
+                }
+            };
+            if (pointsRemoved) console.log(`Removed ${pointsRemoved} points from comment:${comment.id} after deleting symbol ${symbol.symbol}`);
 
             // Set comment changes and update training object lastAffected
             self.redisDbClient.set(commentKey, JSON.stringify(comment));
@@ -170,7 +183,10 @@ class HbClientSocketDbResponses_admin {
 
         // add this new comment to our global traingin:notRelevant object
         const exists = self.trainingNotRelevant.comments.find(thisComment => thisComment.id === commentId);
-        if (exists) return;
+        if (exists) {
+            console.log(`Comment ${commentId} has already been marked as not relevent. Canceling request.`);
+            return;
+        }
         self.trainingNotRelevant.comments.push({
             id: commentId,
             tstamp: Date.now()
@@ -182,6 +198,42 @@ class HbClientSocketDbResponses_admin {
             tstamp: Date.now()
         });
         self.redisDbClient.set(self.trainingNotRelevantKey, JSON.stringify(self.trainingNotRelevant));
+    }
+
+    editSymbolFunction(message, socket) {
+        const self = this;
+        const opts = message.data;
+        if (!opts || !opts.symbol || !opts.functionName || !opts.functionString) return;
+        if (opts.functionName !== 'get' && opts.functionName !== 'match') return;
+        const symbolRedisKey = `symbol:${opts.symbol.type}:${opts.symbol.symbol}`
+        this.redisDbClient.get(symbolRedisKey, (err, json) => {
+            if (err || !json) {
+                console.log(`Could not get ${symbolRedisKey}`, err);
+                return;
+            }
+            const symbolRedisData = JSON.parse(json);
+            // First run it in a try/catch before saving to redis - in case the edited function contains an error.
+            try {
+                let testFunc;
+                if (opts.functionName === 'get') {
+                    testFunc = new Function(`const execFunc = (props) => { ${opts.functionString} }; return execFunc.apply(undefined, arguments);`);
+                    const alteredProps = testFunc(symbolRedisData);
+                    if (typeof alteredProps !== 'object') throw 'Symbol get function must return an object.'
+                }
+                if (opts.functionName === 'match') {
+                    testFunc = new Function(`const execFunc = (props, matchAgainst, isMatch) => { ${opts.functionString} }; return execFunc.apply(undefined, arguments);`);
+                    const matchOutcome = testFunc(symbolRedisData, 'bui_gme', true);
+                    if (typeof matchOutcome !== 'boolean') throw 'Symbol match function must return a boolean.'
+                }
+            } catch (error) {
+                console.warn(`Edited symbol (${symbolRedisData.symbol}) function ${opts.functionName}() ran with error. Won't save.`, error);
+                return;
+            }
+            // Looks legit, save now.
+            console.log(`Saving ${opts.functionName}() function edit on symbol ${opts.symbol.symbol}:`, opts.functionString);
+            symbolRedisData[opts.functionName] = opts.functionString;
+            self.redisDbClient.set(symbolRedisKey, JSON.stringify(symbolRedisData));
+        });
     }
 
     syncTrainingNotRelevant() {

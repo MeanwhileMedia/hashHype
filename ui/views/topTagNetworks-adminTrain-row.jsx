@@ -15,12 +15,12 @@ class AdminTrainRow extends React.Component {
 
         const showDeletePrompt = this.state.showDeletePrompt;
         return (
-            <div style={css.adminTrain_section_rows}>
-                <div onClick={this.hideDeletePrompt.bind(this)}>
+            <div className='adminTrain_section_rows' style={css.adminTrain_section_rows}>
+                <div style={{width: '100%'}}>
                     {showDeletePrompt ? this.props.deletePrompt : this.props.label}
                 </div>
-                <div style={css.adminTrain_section_rows_ctrls}>
-                    <span class="material-icons" onClick={this.toggleDeletePrompt.bind(this)}>dangerous</span>
+                <div className='adminTrain_section_rows_editIcon' style={css.adminTrain_section_rows_ctrls}>
+                    <span class="material-icons" onClick={this.toggleDeletePrompt.bind(this)}>{this.props.editIcon}</span>
                 </div>
             </div>
         );
