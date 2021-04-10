@@ -37,6 +37,7 @@ class Reddit {
     initRedisSubClient(cback) {
         const self = this;
         new RedisClient({
+            dbName: 'short',
             onConnect: (client) => {
                 console.log('Connected new redis sub client for topCommentStats class.');
                 self.redisSubClient = client;
@@ -48,6 +49,7 @@ class Reddit {
     initRedisDbClient(cback) {
         const self = this;
         new RedisClient({
+            dbName: 'short',
             onConnect: (client) => {
                 console.log('Connected new redis db client for topCommentStats class.');
                 self.redisDbClient = client;
@@ -159,7 +161,7 @@ class Reddit {
             body: initial.body || null,
             author: initial.author || {name: null},
             words: [], // array of wordRef objects { word: 'word_seq' (also redis key to word object "word:word_seq"), hasSymbols: ['symbolKey', 'symbol:stock:gme', etc] }
-            points: {}, // key: `${word.value.split(_)}__${tstampForWhenTheWordWasCounted}`, value: points awarded to word occurance (int)
+            points: {}, // key: `${word.value.split('_!!_')}__${tstampForWhenTheWordWasCounted}`, value: points awarded to word occurance (int)
             totalPoints: { // summed totals from the above points attr.
                 '1Hr': 0,
                 '12Hr': 0,

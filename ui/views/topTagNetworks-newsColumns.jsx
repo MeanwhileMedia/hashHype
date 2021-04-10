@@ -14,9 +14,11 @@ class TopTagnewsColumns extends React.Component {
 
         let topSymbolName = '';
         if (thisView.activeTopTag.topSymbol) {
+            let topSymbolNameText = thisView.activeTopTag.topSymbol.name;
+            if (thisView.activeTopTag.topSymbol.funcdSymbolData) topSymbolNameText = thisView.activeTopTag.topSymbol.funcdSymbolData.name || topSymbolNameText;
             topSymbolName = (
                 <>
-                    <h2>{thisView.activeTopTag.topSymbol.name}</h2>
+                    <h2>{topSymbolNameText}</h2>
                 </>
             );
         }

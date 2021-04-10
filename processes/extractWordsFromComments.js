@@ -1,5 +1,8 @@
 import natural from 'natural';
+import urlRegex from 'url-regex';
+import urlNormalize from 'normalize-url';
 import RedisClient from '../utils/redisClient.js';
+import symbolModel from '../utils/objectModels/symbol.js';
 
 import events from 'events';
 events.EventEmitter.defaultMaxListeners = Infinity;
@@ -29,6 +32,7 @@ class ExtractWordsFromComments {
     initRedisSubClient(cback) {
         const self = this;
         new RedisClient({
+            dbName: 'short',
             onConnect: (client) => {
                 console.log('Connected new redis sub client for word extractor class.');
                 self.redisSubClient = client;
@@ -40,6 +44,7 @@ class ExtractWordsFromComments {
     initRedisDbClient(cback) {
         const self = this;
         new RedisClient({
+            dbName: 'short',
             onConnect: (client) => {
                 console.log('Connected new redis db client for word extractor class.');
                 self.redisDbClient = client;
@@ -63,12 +68,71 @@ class ExtractWordsFromComments {
                 self.redisDbClient.del(rawCommentKey); // We are going to reform the rawComment: into a comment:. Delete rawComment from redis.
                 const comment = JSON.parse(commentJson);
                 if (!comment || !comment.body) return;
+                self.preserveUrlsInCommentBody(comment);
                 self.extractWordSequences(comment, () => {
-                    self.redisDbClient.set(`newComment:${comment.id}`, JSON.stringify(comment));
+                    let wordsRegistered = 0;
+                    comment.words.forEach( (thisWordRef) => {
+                        self.registerWordToCommentsIndex(thisWordRef.word, comment.id, () => {
+                            wordsRegistered++;
+                            if (wordsRegistered >= comment.words.length) {
+                                self.redisDbClient.set(`comment:${comment.id}`, JSON.stringify(comment));
+                            }
+                        })
+                    });
                 });
             });
         });
         this.redisSubClient.psubscribe('__keyspace@0__:rawComment*'); // flow for comments is rawComment -> newComment -> comment
+    }
+
+    preserveUrlsInCommentBody(comment) { // alters comment in-place
+        // This function uses regex to locate urls within the comment body, then temporarily stores those URLs in comment.pendingUrls (not saved to redis).
+        // It then replaces the URL strings within comment.body with a "urlUid" string (which natural.js will respect as a single token - already "stemmed").
+        // The comment.body can then be tokenized and stemmed in extractWordSequences without malforming the URL or interpreting it as multiple tokens.
+        // After extractWordSequences has completed the word isolation logic (see "reducedTokensToStems") - the URLs can be re-injected at their original location within
+        // comment.body (by doing a string replace against the urlUid that was originally assigned for each URL). urlUid in format `comment${number}` will not be altered by natural js (porter stemmer).
+        let commentBody = `${comment.body}`; // We will preserve untouched body text for rendering, and format a temporary local copy for this function's URL extraction logic
+        comment.pendingUrls = {};
+        const foundUrlsFirstPass = commentBody.match(urlRegex({strict: false}));
+        if (!foundUrlsFirstPass) return;
+
+        // 1. Perform some alterations to the commentBody that will better support our regex based URL extraction below.
+        // Normalize whitespace
+        commentBody = commentBody.replace(/\u{2800}/gum, ' '); // \u{2800} is the unicode braile 0 dot symbol (looks like a space)
+        // Convert markdown links to a raw link string. urlRegex mistakes format [http://foo.com](http://foo.com/bar/baz) for a single link.
+        commentBody = commentBody.replace(/\[(.(?!\s))+\]\(/gm, '('); // https://regexr.com/5q85i - converts [http://foo.com](http://foo.com/bar/baz) to (http://foo.com/bar/baz)
+        // next, we need to convert all urls wrapped in parenthesis/brackets (whether they were leftover from MD conversion above, or commenter intentionally put in parenths).
+        // ulrRegex mistakes the trailing ) for part of the url identifies 'foo bar (http://foo.com/bar/baz)' for having link: http://foo.com/bar/baz)
+        const foundUrlsSecondPass = commentBody.match(urlRegex({strict: false}));
+        if (!foundUrlsSecondPass) return;
+        foundUrlsSecondPass.forEach((thisSecondPassUrl) => {
+            if (/\)|\]$/.test(thisSecondPassUrl)) { // https://regexr.com/5q85i
+                // found a trailing parenth/bracket. Confirm there was originally an opening before stripping them both from commentBody
+                const thisSecondPassUrlNoClosing = thisSecondPassUrl.slice(0, -1);
+                commentBody = commentBody.replace('['+thisSecondPassUrl, thisSecondPassUrlNoClosing);
+                commentBody = commentBody.replace('('+thisSecondPassUrl, thisSecondPassUrlNoClosing);
+            }
+        });
+
+        // 2. Now we are ready to make a final pass at foundUrls and then replace all found URLs with our urlUid placeholders
+        const foundUrls = commentBody.match(urlRegex({strict: false}));
+        if (!foundUrls) return;
+
+        console.log(`Found ${foundUrls.length} urls in comment:${comment.id}`);
+        //comment.originalBody = `${comment.body}`; // Sometimes useful to preserve untouched body on comment object for debugging
+        let idIncrement = 0;
+        foundUrls.forEach((thisUrl) => {
+            const thisUrlUid = `url${++idIncrement}`;
+            // const thisUrlEscapedForRegex = thisUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\\$&') // the string we are matching against needs to be escaped for regex. https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
+            // const newUrlRegex = new RegExp(`(^|\\s)(${thisUrlEscapedForRegex})(\\s|(\\.\\s)|$)`, 'gm'); // remember has to be double escaped cuz it's wrapped in string concat. https://regexr.com/5q5m8
+            // comment.body = comment.body.replace(newUrlRegex, ` ${thisUrlUid} `);
+            const thisUrlEscapedForRegex = thisUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // the string we are matching against needs to be escaped for regex. https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
+            const newUrlRegex = new RegExp(thisUrlEscapedForRegex, 'gm'); // remember has to be double escaped cuz it's wrapped in string concat. https://regexr.com/5q5m8
+            comment.body = comment.body.replace(newUrlRegex, `${thisUrlUid}`);
+            let normalizedUrl = urlNormalize(thisUrl);
+            comment.pendingUrls[thisUrlUid] = normalizedUrl;
+        });
+        // console.log('Replaced urls with urlUids:', comment);
     }
 
     extractWordSequences(commentData, cback) {
@@ -111,20 +175,35 @@ class ExtractWordsFromComments {
         const reducedTokensToStems = {};
         tokensToStems.forEach((thisTokenToStem) => {
             if (thisTokenToStem.stemmed.length > maxNgram) return; // The outcome from this stemming resulted in too long a sequence. Discard.
-            const sequenceKey = thisTokenToStem.stemmed.join('_');
+            const sequenceKey = thisTokenToStem.stemmed.join('_!!_'); // _!!_ is the hashHype word delimeter
             reducedTokensToStems[sequenceKey] = reducedTokensToStems[sequenceKey] || [];
             reducedTokensToStems[sequenceKey].push(thisTokenToStem.tokenized);
         });
         //////////////////
 
-        //console.log(reducedTokensToStems)
         // Now that we reduced comment body to token sequences, loop through and determine if any are symbols, and save all to redis as new words objects
         const allNewWordObjects = {};
         const symbolMatchPromises = []; // runs promise.all first
         const wordSavePromises = []; // runs second
-        for (const [sequenceKey, allRawTokenSequences] of Object.entries(reducedTokensToStems)) {
+        for (let [sequenceKey, allRawTokenSequences] of Object.entries(reducedTokensToStems)) {
+            // Now we will add URLs back into each word sequence (and comment.body) before proceeding to extract symbols and save the words.
+            for (const [urlUid, url] of Object.entries(commentData.pendingUrls)) {
+                const urlUidRegex = new RegExp(urlUid, 'gm');
+                commentData.body = commentData.body.replace(urlUidRegex, url);
+                sequenceKey = sequenceKey.replace(urlUidRegex, url);
+                allRawTokenSequences.forEach((thisRawSeq, thisRawSeqIndex) => {
+                    let correctedSequence = [];
+                    thisRawSeq.forEach((thisRawSeqToken, thisRawSeqTokenIndex) => {
+                        thisRawSeq[thisRawSeqTokenIndex] = thisRawSeqToken.replace(urlUidRegex, url);
+                    });
+                });
+            }
+
+            // Check if this word should be discard from relevancy training or by other rules.
             if (self.isDiscardWord(sequenceKey)) continue;
-            const stemSequence = sequenceKey.split('_');
+
+            // Ready to proceed in forming a newWordEntity and checking for symbols
+            const stemSequence = sequenceKey.split('_!!_'); // _!!_ is the hashHype word delimeter
             let wordType = 'word';
             if (stemSequence.length === 2) wordType = 'bigram';
             if (stemSequence.length === 3) wordType = 'trigram';
@@ -132,7 +211,7 @@ class ExtractWordsFromComments {
             const newWordObject = self.newWordEntity({
                 type: wordType,
                 value: stemSequence, // sequence array - NOT stringified
-                rawWords: allRawTokenSequences,
+                rawWords: [...new Set(allRawTokenSequences)], // remove dups
                 hasSymbols: [] // will fill this array if symbols are found during our symbolMatchPromises
             });
             const redisWordKey = self.generateWordEntityKey(newWordObject);
@@ -156,7 +235,6 @@ class ExtractWordsFromComments {
                     });
                 });
             }
-
 
             // Now that we have the comment broken down into word sequences (singe, bi/trigrams) we will attempt to identify symbols within those sequences.
             // Because symbols, by nature, are a single token, we only run the "isWordSymbol" on type: single word objects. If a word matches a symbol, then we will
@@ -185,8 +263,10 @@ class ExtractWordsFromComments {
                             saveWordToRedis(isSymbol.wordObj, wordSaveResolve);
                         }));
                         // 4. Loop through commentData.words to test bi/trigrams for inclusion of this symbol token in their word sequence.
+                        const wordThatMatchedSymbolEscapedForRegex = wordThatMatchedSymbol.replace(/[.*+?^${}()|[\]\\]/g, '\\\$&') // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
+                        const wordThatMatchedSymbolRegex = new RegExp(`(_|^)(${wordThatMatchedSymbolEscapedForRegex})(_|$)`); // https://regexr.com/5pnvm
                         commentData.words.forEach((thisCommentWordRef) => {
-                            const matchIndex = thisCommentWordRef.word.search(new RegExp(`(_|^)(${wordThatMatchedSymbol})(_|$)`)); // https://regexr.com/5pnvm
+                            const matchIndex = thisCommentWordRef.word.search(wordThatMatchedSymbolRegex);
                             if (matchIndex !== -1 && thisCommentWordRef.word !== wordThatMatchedSymbol) {
                                 console.log(`A word sequence (${thisCommentWordRef.word}) contained a symbol (${wordThatMatchedSymbol}) on comment: ${commentData.id}`);
                                 thisCommentWordRef.hasSymbols.push(isSymbol.symbolKey); // update the wordRef hasSymbols (wordRef stored on comment)
@@ -214,17 +294,66 @@ class ExtractWordsFromComments {
                 if(cback) cback();
             });
         });
+
+        delete commentData.pendingUrls; // this was only a temporary prop created by preserveUrlsInCommentBody function
     } //end extractWordSequences
 
     isWordSymbol(wordObject, cback) { // cback returns {isSymbol: bool, symbolKey: string}
-        this.checkForStockSymbol(wordObject, cback);
-        // JWW stopping - add functions here to check for other symbol types (coin, url, etc)
+        const self = this;
+        self.checkForUrlSymbol(wordObject, (isUrlSymbol) => {
+            if (isUrlSymbol.isSymbol) {
+                if (cback) cback(isUrlSymbol);
+                return;
+            }
+            //JWW TODO - check for emoji symbols
+            self.checkForStockSymbol(wordObject, (isStockSymbol) => {
+                if (cback) cback(isStockSymbol);
+            });
+        });
+    }
+
+    checkForUrlSymbol(wordObj, cback) {
+        const self = this;
+        cback = cback || function(){};
+        const wordString = wordObj.value.join('_!!_'); // _!!_ is the hashHype word delimeter
+        const symbolKey = `symbol:url:${wordString}`
+
+        const wordHasUrl = urlRegex({exact: true}).test(wordString);
+        if (!wordHasUrl) {
+            // console.log(`Word is not URL: ${wordString}`);
+            cback({isSymbol: false, symbolKey: symbolKey, wordObj: wordObj});
+            return;
+        }
+
+        // Now that we confirmed this word sequence has a URL in it, check if this symbol exists in redis. if not, save a new symbol object now.
+        this.redisDbClient.get(symbolKey, (err, foundSymbolJson) => {
+            if(foundSymbolJson) {
+                // Symbol already exists and we have nothing to merge in at this point.
+                console.log(`Found URL symbol already exists in redis: ${symbolKey}`);
+                if (cback) cback({isSymbol: true, symbolKey: symbolKey, wordObj: wordObj});
+                return;
+            }
+            // Symbol object for this URL does not yet exist, create and save it now.
+            // Attempt to generate a symbol name by getting the domain only from the link. ie: reddit.com
+            let symbolName = wordString.replace(/http(s)*:\/\/(www\.)*/, ''); // https://regexr.com/5q8tl
+            const firstSlashIndex = symbolName.indexOf('/');
+            if (firstSlashIndex !== -1) symbolName = symbolName.slice(0, firstSlashIndex);
+            const newSymbolObj = symbolModel.createSymbolObject({
+                name: symbolName || 'link', // name is required, so provide a fallback
+                symbol: wordString,
+                type: 'url'
+            });
+            console.log(`Created new URL symbol object for ${symbolKey}`); //, newSymbolObj, wordObj);
+            self.redisDbClient.set(symbolKey, JSON.stringify(newSymbolObj), () => {
+                if (cback) cback({isSymbol: true, symbolKey: symbolKey, wordObj: wordObj});
+            });
+        });
     }
 
     checkForStockSymbol(wordObj, cback) { // cback returns {isSymbol: bool, symbolKey: string}
         const self = this;
         cback = cback || function(){};
-        const wordString = wordObj.value.join('_');
+        const wordString = wordObj.value.join('_!!_'); // _!!_ is the hashHype word delimeter
 
         // Step 1: eliminate this word based on quick basic rules
         // Enforce a max length for stock symbols
@@ -249,13 +378,31 @@ class ExtractWordsFromComments {
             }
             const symbolData = JSON.parse(foundSymbolJson);
             //console.log(`A possible symbol match was found (${wordString} => ${symbolData.symbol}). Will now run through match function to confirm.`)
-            const match = new Function(`const execFunc = (props, matchAgainst, isMatch) => { ${symbolData.match} }; return execFunc.apply(undefined, arguments);`);
+            const funcdSymbolData = symbolModel.execGet(symbolData); // When matching this word agains the symbol, we pass symbol data generated from the custom symbol.get logic.
             const wordPassedSymbolMatch = wordObj.rawWords.some((rawWordSeq) => {
                 const rawWordSeqString = rawWordSeq.join(' '); // our custom match functions expects this to be a spaced string of tokens
-                const isMatch = match(symbolData, rawWordSeqString, true);
+                const isMatch = symbolModel.execMatch(funcdSymbolData, rawWordSeqString, true);
                 if (isMatch) return true; // break from loop. We only need to confirm 1 match
             });
             cback({isSymbol: wordPassedSymbolMatch, symbolKey: symbolKey, wordObj: wordObj});
+        });
+    }
+
+    registerWordToCommentsIndex(wordString, commentId, cback) { // a comment index (index:wordToComments:) is an array holding comment ids
+        const self = this;
+        const thisIndexKey = `index:wordToComments:${wordString}`;
+        self.redisDbClient.get(thisIndexKey, (err, json) => {
+            if (err) {
+                console.log(err);
+                if (cback) cback();
+                return;
+            }
+            let wordToCommentsIndex = [];
+            if (json) wordToCommentsIndex = JSON.parse(json);
+            if (wordToCommentsIndex.indexOf(commentId) === -1) wordToCommentsIndex.push(commentId);
+            self.redisDbClient.set(thisIndexKey, JSON.stringify(wordToCommentsIndex), () => {
+                if (cback) cback();
+            });
         });
     }
 
@@ -279,10 +426,17 @@ class ExtractWordsFromComments {
         // this process includes rules around which comments should be included in trend analysis. Ie: comments that are too long... comments that look like bots or spam, etc.
         let shouldDiscard = false;
 
+        // If word is an empty string
+        if (wordString.replace(/\s|\u{2800}/gum, '').length === 0) {
+            shouldDiscard = true;
+            return shouldDiscard;
+        }
+
         // If word has been marked as not relevant
         if (this.trainingNotRelevant) {
             const notRelWordIndex = this.trainingNotRelevant.words.findIndex((thisWord) => thisWord.word === wordString);
             if (notRelWordIndex !== -1) shouldDiscard = true;
+            return shouldDiscard;
         }
 
         return shouldDiscard;
@@ -309,7 +463,7 @@ class ExtractWordsFromComments {
     }
 
     generateWordEntityKey(word) {
-        const wordEntityKey = `word:${word.value.join('_')}`;
+        const wordEntityKey = `word:${word.value.join('_!!_')}`; // _!!_ is the hashHype word delimeter
         return wordEntityKey;
     }
 

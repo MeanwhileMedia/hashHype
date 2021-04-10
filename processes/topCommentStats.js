@@ -2,6 +2,7 @@ import natural from 'natural';
 import _ from 'underscore';
 import util from 'util';
 import RedisClient from '../utils/redisClient.js';
+import symbolModel from '../utils/objectModels/symbol.js';
 
 import events from 'events';
 events.EventEmitter.defaultMaxListeners = Infinity;
@@ -18,15 +19,6 @@ class TopCommentsStats {
             storeNewTopCommentsStats: _.throttle(this.storeNewTopCommentsStats, 5000).bind(this),
         };
 
-        // cachedSymbols is used to speed up addSymbolsDataToComment because if storeNewTopCommentsStats occurs while addSymbolsDataToComment is working, then
-        // this.topComments will have incomplete symbol data attached to comments (will render a top comment without associating it with a symbol in UI).
-        this.cachedSymbols = []; // array of full symbol objects
-        this.cachedSymbolsMaxSize = 50; // To control memory usage. During a given period, it's likely that only a small number of symbols will trend. Those will be the ones we try to hold in cachedSymbols
-        // clear the symbol cache in intervals
-        setInterval(() => {
-            self.cachedSymbols = [];
-        }, 60000*5); //5 minutes
-
         this.initRedisSubClient(() => {
             self.initRedisDbClient(() => {
                 self.redisDbClient.get(this.topCommentsStatsKey, (err, json) => {
@@ -41,6 +33,7 @@ class TopCommentsStats {
     initRedisSubClient(cback) {
         const self = this;
         new RedisClient({
+            dbName: 'short',
             onConnect: (client) => {
                 console.log('Connected new redis sub client for topCommentStats class.');
                 self.redisSubClient = client;
@@ -52,6 +45,7 @@ class TopCommentsStats {
     initRedisDbClient(cback) {
         const self = this;
         new RedisClient({
+            dbName: 'short',
             onConnect: (client) => {
                 console.log('Connected new redis db client for topCommentStats class.');
                 self.redisDbClient = client;
@@ -69,18 +63,9 @@ class TopCommentsStats {
             key = key.replace('__keyspace@0__:', '');
             self.redisDbClient.throttle.get(key, (gotObj) => {
                 if (!gotObj) return;
-                if (key.indexOf('newComment:') !== -1) {
-                    const comment = gotObj;
-                    self.registerWordToCommentsIndex(comment, () => {
-                        // We are going to reform the newComment into a comment and delete newComment version from redis.
-                        self.redisDbClient.throttle.set(`comment:${comment.id}`, comment, () => {
-                            self.redisDbClient.del(key);
-                        });
-                    });
-                }
                 if (key.indexOf('word:') !== -1) {
                     const word = gotObj;
-                    const wordIndexKey = `index:wordToComments:${word.value.join('_')}`;
+                    const wordIndexKey = `index:wordToComments:${word.value.join('_!!_')}`; // _!!_ is the hashHype word delimeter
                     self.redisDbClient.throttle.get(wordIndexKey, (wordToCommentsIndex) => {
                         if (!wordToCommentsIndex) return;
                         let commentsChecked = 0; // So we know when all checkWordAgainstComment calls (async) have completed
@@ -91,7 +76,8 @@ class TopCommentsStats {
                                 if (!err) commentsFound.push(thisCommentId);
                                 if (commentsChecked === wordToCommentsIndex.length && commentsFound.length !== wordToCommentsIndex.length) {
                                     // Looks like at least one of the comments for this word index was not in redis. Update the index object.
-                                    self.redisDbClient.throttle.set(wordIndexKey, commentsFound);
+                                    self.redisDbClient.throttle.clearPendingSet(wordIndexKey);
+                                    self.redisDbClient.set(wordIndexKey, JSON.stringify(commentsFound)); // don't throttle this update as the index innacuracy must be corrected immediately
                                 }
                             });
                         });
@@ -99,34 +85,8 @@ class TopCommentsStats {
                 }
             });
         });
-        // 1. The overall listener for new comments (so we can add listeners for recurrances of all of that comment's words)
-        this.redisSubClient.psubscribe('__keyspace@0__:newComment*');
-        // 2. Pattern listener for all of the different word types.
+        // Pattern listener for all of the different word types.
         this.redisSubClient.psubscribe('__keyspace@0__:word*');
-        // 3. Update local copy of topComments in case another process has to alter it
-        this.redisSubClient.on('message', (channel, message) => {
-            if (channel === `__keyspace@0__:${this.topCommentsStatsKey}`) {
-                self.redisDbClient.get(self.topCommentsStatsKey, (err, json) => {
-                    if (json) self.topComments = JSON.parse(json);
-                });
-            }
-        });
-        this.redisSubClient.subscribe(`__keyspace@0__:${this.topCommentsStatsKey}`);
-
-    }
-
-    registerWordToCommentsIndex(comment, cback) { // a comment index (index:wordToComments:) is an array holding comment ids
-        const self = this;
-        comment.words.forEach((word) => {
-            const thisIndexKey = `index:wordToComments:${word.word}`;
-            self.redisDbClient.throttle.get(thisIndexKey, (wordToCommentsIndex) => {
-                wordToCommentsIndex = wordToCommentsIndex || [];
-                if (wordToCommentsIndex.indexOf(comment.id) === -1) wordToCommentsIndex.push(comment.id);
-                self.redisDbClient.throttle.set(thisIndexKey, wordToCommentsIndex, () => {
-                    if (cback) cback();
-                });
-            });
-        });
     }
 
     checkWordAgainstComment(word, commentId, cback) { // cback is used to pass back err message (or undefined on success)
@@ -144,14 +104,19 @@ class TopCommentsStats {
                 self.redisDbClient.throttle.set(`comment:${comment.id}`, comment, () => {
                     // Now take another look at the comment to see if it belongs in our topComments object
                     const commentClone = JSON.parse(JSON.stringify(comment));
-                    self.reduceComment(commentClone);
-                    const foundNewTopComment = self.isCommentTopComment(commentClone); //Alters this.topComments in-place.
-                    if (foundNewTopComment) {
-                        self.addSymbolsDataToComment(commentClone, () => {
+                    self.reduceCommentPoints(commentClone);
+                    const isCommentTopComment = self.isCommentTopComment(commentClone); //Alters this.topComments in-place. returns {isTopComment: bool, isNewTopComment: bool};
+                    if (isCommentTopComment.isTopComment) {  // && isCommentTopComment.isNewTopComment) {
+                        self.addSymbolsDataToComment(commentClone, () => { // Since this comment is new to the this.topComments object, we need to populate it's comment.symbols array.
                             self.determineCommentTopSymbol(commentClone);
+                            self.minimizeComment(commentClone);
                             self.throttle.storeNewTopCommentsStats();
                             if (cback) cback();
                         });
+                    } else if (isCommentTopComment.isTopComment) {
+                        self.determineCommentTopSymbol(commentClone);
+                        self.throttle.storeNewTopCommentsStats();
+                        if (cback) cback();
                     }
                 }); // end .set(`comment
             });
@@ -162,7 +127,8 @@ class TopCommentsStats {
         this.getWordPointCount(comment, word, (points) => {
             // Sum the new points total on the comment.words[wordRef] object. This provides a quick sum of how many points
             // this word earned this comment (starting from when the comment was created). It is not time bucketed. Is used for determining topSymbol for this comment.
-            const commentWordRef = comment.words.find(wordRef => wordRef.word === word.value.join('_'));
+            const wordString = word.value.join('_!!_'); // _!!_ is the hashHype word delimeter
+            const commentWordRef = comment.words.find(wordRef => wordRef.word === wordString);
             if (commentWordRef) {
                 commentWordRef.pointsEarned = commentWordRef.pointsEarned + points;
                 // We will also look at every time this word occurred in ANY comment (since the word was first created) and transfter time based
@@ -203,11 +169,8 @@ class TopCommentsStats {
         if (cback) cback(points);
     } //end getWordPointCount
 
-    reduceComment(comment) {
-        // This function creates a minimized version of a comment object so it can be saved to this.topComments and sent to clients via socket.
+    reduceCommentPoints(comment) {
         const self = this;
-        //////////////
-        // 1. Reduce comment.points
         // Converts an unordered array of points into a summed count for each word in time buckets.
         // points: { go__1614114246914: 2, go__1614114241877: 2, go__1614114236809: 2, go__1614114221815: 2 } =>
         // points: { '1Hr': { go: 8 }, etc... }
@@ -243,17 +206,13 @@ class TopCommentsStats {
             // reducedPoints['all'][thisWord]++;
         };
         comment.points = reducedPoints;
-
-        ////////////
-        // 2. Remove any other props that are not needed for this.topComments
-        // comment.points was already reduced to represent every word/word sequence which earned the comment points. We don't need store all the word combinations to this.topComments.
-        //delete comment.words;
     }
 
     isCommentTopComment(comment) {
         // this function takes the comment count stats and determines if it is ranked as a top trending comment in any of the time buckets.
         // Alters this.topComments in-place.
-        let commentIsTop = false;
+        let isTopComment = false;
+        let isNewTopComment = false; // will be true if isTopComment AND doesn't already exist on this.topComments
         for (const [bucketKey, bucketComments] of Object.entries(this.topComments.timeBuckets)) {
 
             //First re-tally total points for this comment
@@ -271,13 +230,19 @@ class TopCommentsStats {
 
             if (comment.totalPoints[bucketKey] > minCountForBucket) { // we have a winner, remove the loser and add our new topComment
                 if (bucketComments.length >= this.maxTopCommentsPerBucket) bucketComments.pop();
+                isNewTopComment = true;
 
                 // We also need to remove this topComment from the bucket if it's already there
                 const existingCommentIndex = bucketComments.findIndex((existingComment) => existingComment.id === comment.id);
-                if (existingCommentIndex !== -1) bucketComments.splice(existingCommentIndex, 1);
+                if (existingCommentIndex !== -1) {
+                    isNewTopComment = false;
+                    const existingComment = bucketComments[existingCommentIndex];
+                    comment.symbols = existingComment.symbols; // transfer over the symbols array so we don't have to fetch that data from redis again (this is a recurring topComment so it will have already received that data when it first started trending)
+                    bucketComments.splice(existingCommentIndex, 1); // we remove the previous instance of this trending comment because it's point count will now be out-of-date
+                }
 
                 bucketComments.push(comment);
-                commentIsTop = true;
+                isTopComment = true;
             }
 
             // Now re-sort this bucket descending
@@ -288,7 +253,7 @@ class TopCommentsStats {
                 return 0;
             });
         }
-        return commentIsTop;
+        return {isTopComment: isTopComment, isNewTopComment: isNewTopComment};
     }
 
     addSymbolsDataToComment(comment, cback) { //alters comment in-place
@@ -302,55 +267,17 @@ class TopCommentsStats {
             if (cback) cback();
             return;
         }
-
-        // allSymbolObjectsForComment will be populated potentially both from cachedSymbols and from redis get cbacks
+        // allSymbolObjectsForComment will be populated using getCached - our most performant redis get method, but data may be stale if other processes are manipulating the objects.
         const allSymbolObjectsForComment = [];
-
-        const getSymbolKeys = []; // These will be the keys not found in cache that we will next need to get from redis
         allSymbolKeys.forEach((thisSymbolKey) => {
-            const findSymbolSymbol = thisSymbolKey.split(':')[2]; // symbol:stock:gme
-            const cachedSymbolIndex = self.cachedSymbols.findIndex(thisCachedSymbolObj => thisCachedSymbolObj.symbol === findSymbolSymbol);
-            if (cachedSymbolIndex === -1) {
-                getSymbolKeys.push(thisSymbolKey);
-                return;
-            }
-            const symbolObj = self.cachedSymbols[cachedSymbolIndex];
-            allSymbolObjectsForComment.push(symbolObj);
-            // Also move to the top of the cache array because we remove from bottom when meeting cachedSymbolsMaxSize requirement
-            self.cachedSymbols.splice(cachedSymbolIndex, 1);
-            self.cachedSymbols.unshift(symbolObj);
-        });
-
-        if (getSymbolKeys.length > 0 && allSymbolObjectsForComment.length > 0) {
-            // Looks like we found at least a portion of the symbols in cache. Apply to comment.symbols immediately. Worst case scenario,
-            // topComments may be sent to FE with a partially filled comment.symbols array.
-            comment.symbols = allSymbolObjectsForComment;
-        }
-        if (allSymbolObjectsForComment.length === allSymbolKeys.length) {
-            // Looks like we found ALL of the requested symbols in cache. Return immediately.
-            comment.symbols = allSymbolObjectsForComment;
-            if (cback) cback();
-            return;
-        }
-
-        console.log(`Found only ${allSymbolKeys.length-getSymbolKeys.length}/${allSymbolKeys.length} symbol objects in live cache. Will now get remainder from redis...`);
-        this.redisDbClient.mget(getSymbolKeys, (err, symbolJsons) => {
-            if(err || !symbolJsons) {
-                console.log(err);
-                if (cback) cback();
-                return;
-            }
-            symbolJsons = symbolJsons.filter(Boolean); // Returns null for not found items
-            const symbolObjects = [];
-            symbolJsons.forEach((symbolJson) => {
-                if (!symbolJson) return;
-                const gotSymbolObject = JSON.parse(symbolJson);
-                allSymbolObjectsForComment.push(gotSymbolObject);
-                self.cachedSymbols.unshift(gotSymbolObject); // add to cache and correct the cache size
-                if (self.cachedSymbols.lengh > self.cachedSymbolsMaxSize) self.cachedSymbols.slice(0, self.cachedSymbolsMaxSize);
+            self.redisDbClient.throttle.getCached(thisSymbolKey, (gotSymbol) => {
+                if (gotSymbol) symbolModel.execGet(gotSymbol); // add the functionally populated symbol props. The ones produced by the customizable symbol.get function string. They are assigned to gotSymbol.funcdSymbolData and are used in UI.
+                allSymbolObjectsForComment.push(gotSymbol);
+                if (allSymbolObjectsForComment.length === allSymbolKeys.length) {
+                    comment.symbols = allSymbolObjectsForComment.filter(Boolean); // Remove falsies (not found in redis)
+                    if (cback) cback();
+                }
             });
-            comment.symbols = allSymbolObjectsForComment;
-            if (cback) cback();
         });
     }
 
@@ -358,6 +285,7 @@ class TopCommentsStats {
         // Sum the pointsEarned prop from each comment wordRef to determine the topSymbol for this comment. The topSymbol
         // represents the symbol which earned the most point SINCE the creation of the comment (rather than the most overall popular symbol in a specific timebucket).
         comment.topSymbol = null;
+        if (!comment.symbols) return;
         const symbolPointCounts = {};
         let topSymbolKey = {key: null, pointsEarned: -1};
         comment.words.forEach((wordRef) => {
@@ -373,6 +301,12 @@ class TopCommentsStats {
         if (topSymbolObj) {
             comment.topSymbol = topSymbolObj;
         }
+    }
+
+    minimizeComment(comment) { // alters comment in-place
+        // Strip any data from this comment which isn't required for stats:topComments (not needed for UI rendering, or any other logic which depends on stats:topComments redis data)
+        // 1. comment.points was already reduced to represent every word/word sequence which earned the comment points (see reduceCommentPoints). We don't need store all the word combinations to this.topComments.
+        delete comment.words;
     }
 
     isDiscardComment(comment) {
@@ -394,12 +328,12 @@ class TopCommentsStats {
     }
 
     respondToNewTraining() {
+        const self = this;
+
         // This function acts on changes to our training:notRelevant object. Once it detects a new value was added to trainingNotRelevant.lastAffected,
         // it starts an interval to repeatedly act on that change X times. This is because some of the async logic in respondToNewTraining will
         // be overwritten by in-process logic, and some now-irrelevant comments may cycle into our local this.topComments after others are removed.
         // Essentially, it may take several iterations on this logic to fully flush through cycling realtime data/
-        const self = this;
-
         self.activeTrainingCycleIterations = 5; // how many times should we repeat this logic
         self.activeTrainingCycleCount = self.activeTrainingCycleCount || 0; // how many times have we already repeated in active cycle
         if (self.activeTrainingCycleCount < self.activeTrainingCycleIterations) {
@@ -408,8 +342,9 @@ class TopCommentsStats {
                 self.respondToNewTraining();
             }, 5000);
         } else {
+            self.activeTrainingCycleCount = 0;
             self.activeTrainingCycle = null;
-            self.activeTrainingKeys = []; // JWW stopping - test this new cycle logic
+            self.activeTrainingKeys = [];
         }
 
         self.activeTrainingKeys = self.activeTrainingKeys || [];
@@ -436,23 +371,7 @@ class TopCommentsStats {
                     });
                 }
             }
-            // 3. If this is a new word being added to training:notRelevant - delete the index:wordToComments:${thisWord} so that topCommentStats stops checking comments against this word
-            if (changedKey.indexOf('word:') !== -1) {
-                const notRelevantWord = changedKey.slice(changedKey.lastIndexOf(':')+1);
-                const confirmedNotRelevant = self.trainingNotRelevant.words.findIndex((thisWord) => thisWord.word === notRelevantWord); // verify that this word is also in the trainingNotRelevant.words array
-                if (confirmedNotRelevant !== -1) {
-                    const commentIndexKey = `index:wordToComments:${notRelevantWord}`;
-                    self.redisDbClient.throttle.get(commentIndexKey, (commentIndex) => {
-                        if (!commentIndex) return;
-                        self.redisDbClient.del(commentIndexKey); // stopping - move this index:wordToComments logic back to  HbClientSocketDbResponses_admin and make this logic not async
-                        self.redisDbClient.throttle.clearPendingGet(commentIndexKey);
-                        self.redisDbClient.throttle.clearPendingSet(commentIndexKey);
-                        self.removeWordFromComments(notRelevantWord, commentIndex);
-                        self.removeWordPointsFromTopComments(notRelevantWord);
-                    });
-                }
-            }
-            // 4. If this training change deleted a comment, then it must also be locally deleted from this.topComments, and from redis throttle cache
+            // 3. If this training change deleted a comment, then it must also be locally deleted from this.topComments, and from redis throttle cache
             if (changedKey.indexOf('comment:') !== -1) {
                 // The best we can do is just assume the training change invalidates the comment from being a top comment. If this assumption is wrong, then the comment may resurface as word pointing continues.
                 const commentId = changedKey.replace('comment:', '');
@@ -518,33 +437,6 @@ class TopCommentsStats {
                 };
             });
         }
-    }
-
-    removeWordFromComments(removeWord, fromCommentIds) {
-        // Loop through every top comment in removeFromCommentIds. Fetch them from redis, remove points If we find a comment that earned points for removeWord.
-        const self = this;
-        fromCommentIds.forEach((commentId) => {
-            const commentRedisKey = `comment:${commentId}`;
-            self.redisDbClient.throttle.clearPendingGet(commentRedisKey);
-            self.redisDbClient.throttle.clearPendingSet(commentRedisKey);
-            self.redisDbClient.throttle.get(commentRedisKey, (comment) => {
-                if (!comment) return;
-                // First remove points
-                let pointsRemoved = 0;
-                for (const [pointsKey, pointsCount] of Object.entries(comment.points)) { // the points object strait from redis looks like: {"foo_bar__1616453254162": 5, etc...}
-                    if (pointsKey.search(new RegExp(`^${removeWord}__`)) !== -1) {
-                        pointsRemoved = pointsRemoved + pointsCount;
-                        delete comment.points[pointsKey];
-                    }
-                };
-                if (pointsRemoved) console.log(`Removing points for word ${removeWord} from redis comment id: ${comment.id}`);
-                // then, remove it from the words array
-                const wordIndex = comment.words.findIndex((thisWord) => thisWord.word === removeWord);
-                if (wordIndex !== -1) comment.words.splice(wordIndex, 1);
-                // save back to redis immediately
-                self.redisDbClient.set(commentRedisKey, JSON.stringify(comment)); // don't throttle this one since other processes may also be actively editing comment objects
-            });
-        });
     }
 
     newTopCommentsEntity(initial = {}) {

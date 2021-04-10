@@ -14,7 +14,7 @@ var hbClientSocketViewResponses = {
       // We are receiving the path to the view file so we can require it async
       hbClientSocketViewResponses.receiveViewResponse(message);
     }
-    if (hbClientSocketViewResponses.activeViewChangeEvents[message.channel]) {
+    if (hbClientSocketViewResponses.activeViewChangeEvents[message.channel]) { // for when message.channel === "change:redis:key"
       hbClientSocketViewResponses.activeViewChangeEvents[message.channel](message);
     }
   },

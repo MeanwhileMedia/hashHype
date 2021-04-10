@@ -9,7 +9,6 @@ import koaConvert from 'koa-convert';
 import koaStatic from 'koa-static';
 import koaSend from 'koa-send';
 import koaWebsocket from 'koa-websocket';
-import { v4 as uuidv4 } from 'uuid';
 import koaJsx from '../utils/koaJsx.js';
 import HbClientSocketDbResponses_admin from '../utils/hbClientSocketDbResponses-admin.js';
 import RedisClient from '../utils/redisClient.js';
@@ -64,27 +63,16 @@ const uiServer = {
 
     initKoaServer() {
         const self = uiServer;
-
         self.server = koaWebsocket(new Koa());
-        self.server.ws.use((ctx, next) => {
-            console.log('New socket connection.');
-            ctx.websocket.uid = uuidv4();
-            ctx.websocket.on('message', (messageJson) => { // messages are JSON with attrs "channel" and "data"
-                console.log(`New socket message: ${messageJson}`);
-                const message = JSON.parse(messageJson);
-                self.receiveSocketMessage(message, ctx.websocket);
-            });
-            return next(ctx);
-        });
 
-        // response time logger
         self.server.use((ctx, next) => {
-            const start = new Date();
+            const start = new Date(); // response time logger
             return next().then(() => {
                 const ms = new Date() - start;
                 console.log(`${ctx.request.method} ${ctx.request.url} - ${ms} ms`);
             });
         });
+        self.initDataPipeline();
         self.initAssetPipeline();
 
         self.server.listen(self.serverConfig.httpPort);
@@ -92,6 +80,74 @@ const uiServer = {
         self.server.on('error', (err) => {
             console.log(`Koa error: ${util.inspect(err)}`) //must pass all errors to hbLogger or it wont reach log server
         });
+    },
+
+    cachedServerSocketSends: {}, // {`change:${message.data.absKey}`: JSON string data, etc...} Used by fauxSocket to hold data changes in local storage until the client(s) sends it's next get request for it.
+    initDataPipeline() {
+        const self = uiServer;
+        if (false) { // JWW TODO - add a cli arg to toggle
+            // Make a route to accept incoming WebSocket messages
+            self.server.ws.use((ctx, next) => {
+                console.log('New socket connection.');
+                ctx.websocket.on('message', (messageJson) => { // messages are JSON with attrs "channel" and "data"
+                    console.log(`New socket message: ${messageJson}`);
+                    let message;
+                    try {
+                        message = JSON.parse(messageJson);
+                    } catch (error) {
+                        console.warn(`Invalid JSON passed to WebSocket. ${messageJson}`);
+                        return next(ctx);
+                    }
+                    self.receiveSocketMessage(message, ctx.websocket);
+                });
+                return next(ctx);
+            });
+        } else {
+            // Make a route for "faux socket" requests
+            self.server.use(async (ctx, next) => {
+                if (!/^\/fauxSocket.js\?/.test(ctx.request.url)) return next(ctx);
+                let message;
+                try {
+                    message = JSON.parse(ctx.request.query.message);
+                } catch (error) {
+                    console.warn(`Invalid JSON passed to fauxSocket endpoint. Url: ${request.url}`);
+                    return next(ctx);
+                }
+                ctx.type = 'application/javascript';
+                //ctx.set('Cache-Control', 'no-cache');
+
+                // Scenario 1
+                if (self.cachedServerSocketSends[message.channel]) {
+                    // Looks like the uiServer is already listening for changes to this redis key and storing locally to self.cachedServerSocketSends. Respond immediately.
+                    ctx.body = self.cachedServerSocketSends[message.channel];
+                    return;
+                }
+
+                // Scenario 2
+                const sendPromise = new Promise( (resolve, reject) => {
+                    let thisFauxSocketObj = { // JWW todo - creating a new thisFauxSocketObj for every request is a memory leak
+                        send: (responseJson) => {
+                            if (thisFauxSocketObj.wasResolved) {
+                                // Because logic below treats this like a socket, it may call this send function more than once (in an attempt to push data to the client). When that occurs,
+                                // we will instead set the new data to our local cachedServerSocketSends object so it's prepped for when the client sends another get request for it (see Scenario 1 above).
+                                const message = JSON.parse(responseJson);
+                                self.cachedServerSocketSends[message.channel] = responseJson;
+                            }
+                            resolve(responseJson);
+                            thisFauxSocketObj.wasResolved = true;
+                        },
+                        wasResolved: false
+                    };
+                    const foundChannelRoute = self.receiveSocketMessage(message, thisFauxSocketObj);
+                    if (!foundChannelRoute) {
+                        thisFauxSocketObj = null;
+                        resolve(null);
+                    }
+                });
+                const responseJson = await sendPromise;
+                ctx.body = responseJson;
+            });
+        }
     },
 
     initAssetPipeline() {
@@ -151,7 +207,7 @@ const uiServer = {
 
     changeEventThrottle: 2000, // wait time between emission of model changes to client(s)
     changeEventTstamps: {}, //for keeping track of socket emissions per channel
-    receiveSocketMessage(message, socket) {
+    receiveSocketMessage(message, socket) { // returns bool. true if a route was found for message channel.
         const self = uiServer;
 
         if (message.channel === 'viewRequest') {
@@ -177,7 +233,7 @@ const uiServer = {
                     },
                 }));
             });
-            return;
+            return true;
         } // end if (message.channel === 'viewRequest')
 
         if (message.channel === 'populateView') {
@@ -201,10 +257,11 @@ const uiServer = {
             self.redisSubClient.on('message', (channel, action) => {
                 if (action !== 'set' || channel !== keySpaceSubChannel) return;
 
-                const eventUid = keySpaceSubChannel + socket.uid;
-                if (!self.changeEventTstamps[eventUid]) self.changeEventTstamps[eventUid] = Date.now();
-                if (self.changeEventTstamps[eventUid] + self.changeEventThrottle > Date.now()) return;
-                self.changeEventTstamps[eventUid] = Date.now();
+                const eventUid = keySpaceSubChannel;
+                const now = Date.now();
+                if (!self.changeEventTstamps[eventUid]) self.changeEventTstamps[eventUid] = now;
+                if (self.changeEventTstamps[eventUid] + self.changeEventThrottle > now) return;
+                self.changeEventTstamps[eventUid] = now;
 
                 self.redisDbClient.get(message.data.absKey, (err, json) => {
                     if (err) {
@@ -219,15 +276,17 @@ const uiServer = {
                 });
             });
             self.redisSubClient.subscribe(keySpaceSubChannel);
-            return;
+            return true;
         } // end if (message.channel === 'populateView')
 
         // If this message didn't match any of the above main UI rendering channels, pass it along to the socket
         // response utils which hold logic for more specific channels.
         if (typeof self.hbClientSocketDbResponses_admin[message.channel] === 'function') {
             self.hbClientSocketDbResponses_admin[message.channel](message, socket);
+            return true;
         }
 
+        return false;
     }, // end receiveSocketMessage
 
     packedEsModuleCache: {}, //save the compiled module strings in live memory for fast cache
@@ -306,6 +365,7 @@ const uiServer = {
     initRedisDbClient(cback) {
         const self = uiServer;
         new RedisClient({
+            dbName: 'short',
             onConnect: (client) => {
                 console.log('Connected new redis client for ui server.');
                 self.redisDbClient = client;
@@ -317,6 +377,7 @@ const uiServer = {
     initRedisSubClient(cback) {
         const self = uiServer;
         new RedisClient({
+            dbName: 'short',
             onConnect: (client) => {
                 console.log('Connected new redis client for ui server.');
                 self.redisSubClient = client;

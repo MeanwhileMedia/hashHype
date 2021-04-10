@@ -54,13 +54,14 @@ class AdminTrain extends React.Component {
             return b[1] - a[1];
         });
         sortedWords.forEach((word) => {
+            const rowRef = React.createRef();
             const rowLabel = (
-                <><p>{word[0]} <b>({word[1]})</b></p></>
+                <><p>{word[0].replace(/_!!_/g, ' ')} <b>({word[1]})</b></p></>
             );
             const deletePrompt = (
                 <><p><i>Word is not relevant to:</i>
-                    <button className="button_sev1" onClick={this.deleteWordFromComment.bind(this, word[0], this.props.topTag)}>Comment</button>
-                    <button className="button_sev2" onClick={this.markWordNotRelevant.bind(this, word[0], this.props.topTag)}>All</button>
+                    <button className="button_sev1" onClick={this.deleteWordFromComment.bind(this, word[0], this.props.topTag, rowRef)}>Comment</button>
+                    <button className="button_sev2" onClick={this.markWordNotRelevant.bind(this, word[0], this.props.topTag, rowRef)}>All</button>
                 </p></>
             );
             wordsSection.push((
@@ -69,6 +70,7 @@ class AdminTrain extends React.Component {
                     label={rowLabel}
                     editIcon={'dangerous'}
                     deletePrompt={deletePrompt}
+                    ref={rowRef}
                 />
             ));
         });
@@ -77,8 +79,14 @@ class AdminTrain extends React.Component {
         let symbolsSection = [];
         this.props.topTag.symbols.forEach((symbol) => {
             const rowRef = React.createRef();
+            let symbolSymbolText = symbol.symbol.toUpperCase();
+            if (symbolSymbolText.indexOf('HTTP') !== -1) {
+                symbolSymbolText = (
+                    <a href={symbol.symbol}>Link</a>
+                );
+            }
             const rowLabel = (
-                <><p>{symbol.name} <b>({symbol.symbol.toUpperCase()})</b></p></>
+                <><p>{symbol.name} <b>({symbolSymbolText})</b></p></>
             );
             const deletePrompt = (
                 <>
@@ -158,20 +166,22 @@ class AdminTrain extends React.Component {
         this.props.hideModal();
     }
 
-    markWordNotRelevant(word, comment) {
+    markWordNotRelevant(word, comment, adminTrainRowRef) {
         // applies to all future comments, AND to this comment
         hbClientSocketDbRequests_admin.markWordNotRelevant({
             word: word, //a word combo in string format: 'buy_gme_now'
             commentId: comment.id
         });
+        adminTrainRowRef.current.hideDeletePrompt();
     }
 
-    deleteWordFromComment(word, comment) {
+    deleteWordFromComment(word, comment, adminTrainRowRef) {
         // applies only to this comment
         hbClientSocketDbRequests_admin.deleteWordFromComment({
             word: word, //a word combo in string format: 'buy_gme_now'
             commentId: comment.id
         });
+        adminTrainRowRef.current.hideDeletePrompt();
     }
 
     deleteComment(comment) {
