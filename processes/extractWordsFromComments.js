@@ -19,35 +19,18 @@ class ExtractWordsFromComments {
 
     constructor() {
         const self = this;
-        this.redisSubClient = null;
-        this.redisDbClient = null;
-        this.initRedisSubClient(() => {
-            self.initRedisDbClient(() => {
-                self.syncTrainingNotRelevant();
-                self.initKeyspaceSubscriptions();
-            });
+        this.redisClient = null;
+        this.initRedisClient(() => {
+            self.syncTrainingNotRelevant();
+            self.initKeyspaceSubscriptions();
         });
     }
 
-    initRedisSubClient(cback) {
+    initRedisClient(cback) {
         const self = this;
-        new RedisClient({
-            dbName: 'short',
-            onConnect: (client) => {
+        self.redisClient = new RedisClient({
+            onConnect: () => {
                 console.log('Connected new redis sub client for word extractor class.');
-                self.redisSubClient = client;
-                if(cback) cback();
-            }
-        });
-    }
-
-    initRedisDbClient(cback) {
-        const self = this;
-        new RedisClient({
-            dbName: 'short',
-            onConnect: (client) => {
-                console.log('Connected new redis db client for word extractor class.');
-                self.redisDbClient = client;
                 if(cback) cback();
             }
         });
@@ -55,18 +38,13 @@ class ExtractWordsFromComments {
 
     initKeyspaceSubscriptions() {
         const self = this;
-        this.redisSubClient.on('pmessage', function (matchedPattern, patternWithKey, action){
+        this.redisClient.on('pmessage', function (matchedPattern, patternWithKey, action){
             if (action !== 'set') return;
             // If this event was sent as part of the set pattern subcribed keyspace event, then it's "patternWithKey" will be: __keyspace@0__:comment:0b90a45d-283b-4716-aa14-ac9f99ac54b1
             let rawCommentKey = patternWithKey;
             rawCommentKey = rawCommentKey.replace('__keyspace@0__:', '');
-            self.redisDbClient.get(rawCommentKey, (err, commentJson) => {
-                if (err || !commentJson) {
-                    console.log(err);
-                    return;
-                }
-                self.redisDbClient.del(rawCommentKey); // We are going to reform the rawComment: into a comment:. Delete rawComment from redis.
-                const comment = JSON.parse(commentJson);
+            self.redisClient.get(rawCommentKey, (comment) => {
+                self.redisClient.del(rawCommentKey); // We are going to reform the rawComment: into a comment:. Delete rawComment from redis.
                 if (!comment || !comment.body) return;
                 self.preserveUrlsInCommentBody(comment);
                 self.extractWordSequences(comment, () => {
@@ -75,14 +53,14 @@ class ExtractWordsFromComments {
                         self.registerWordToCommentsIndex(thisWordRef.word, comment.id, () => {
                             wordsRegistered++;
                             if (wordsRegistered >= comment.words.length) {
-                                self.redisDbClient.set(`comment:${comment.id}`, JSON.stringify(comment));
+                                self.redisClient.set(`comment:${comment.id}`, comment);
                             }
                         })
                     });
                 });
             });
         });
-        this.redisSubClient.psubscribe('__keyspace@0__:rawComment*'); // flow for comments is rawComment -> newComment -> comment
+        this.redisClient.psubscribe('__keyspace@0__:rawComment*'); // flow for comments is rawComment -> newComment -> comment
     }
 
     preserveUrlsInCommentBody(comment) { // alters comment in-place
@@ -219,10 +197,10 @@ class ExtractWordsFromComments {
 
             const saveWordToRedis = (thisWordObject, saveWordToRedisCback) => {
                 const redisWordKey = self.generateWordEntityKey(thisWordObject);
-                self.redisDbClient.get(redisWordKey, (err, json) => {
+                self.redisClient.get(redisWordKey, (gotWord) => {
                     let saveWordObject = thisWordObject;
-                    if (json) {
-                        saveWordObject = JSON.parse(json);
+                    if (gotWord) {
+                        saveWordObject = gotWord;
                         saveWordObject.rawWords = saveWordObject.rawWords.concat(thisWordObject.rawWords);
                         saveWordObject.rawWords = saveWordObject.rawWords.filter((v, i, a) => a.indexOf(v) === i); // remove dups
                         saveWordObject.hasSymbols = saveWordObject.hasSymbols.concat(thisWordObject.hasSymbols);
@@ -230,7 +208,7 @@ class ExtractWordsFromComments {
                     }
                     saveWordObject.foundAt.unshift(Date.now()); // keep track of each time this word occured in a new comment
                     // Save the word object to redis
-                    self.redisDbClient.set(redisWordKey, JSON.stringify(saveWordObject), () => {
+                    self.redisClient.set(redisWordKey, saveWordObject, () => {
                         if (saveWordToRedisCback) saveWordToRedisCback();
                     });
                 });
@@ -326,8 +304,8 @@ class ExtractWordsFromComments {
         }
 
         // Now that we confirmed this word sequence has a URL in it, check if this symbol exists in redis. if not, save a new symbol object now.
-        this.redisDbClient.get(symbolKey, (err, foundSymbolJson) => {
-            if(foundSymbolJson) {
+        this.redisClient.get(symbolKey, (symbol) => {
+            if (symbol) {
                 // Symbol already exists and we have nothing to merge in at this point.
                 console.log(`Found URL symbol already exists in redis: ${symbolKey}`);
                 if (cback) cback({isSymbol: true, symbolKey: symbolKey, wordObj: wordObj});
@@ -344,7 +322,7 @@ class ExtractWordsFromComments {
                 type: 'url'
             });
             console.log(`Created new URL symbol object for ${symbolKey}`); //, newSymbolObj, wordObj);
-            self.redisDbClient.set(symbolKey, JSON.stringify(newSymbolObj), () => {
+            self.redisClient.set(symbolKey, newSymbolObj, () => {
                 if (cback) cback({isSymbol: true, symbolKey: symbolKey, wordObj: wordObj});
             });
         });
@@ -371,14 +349,13 @@ class ExtractWordsFromComments {
         // Step 2: Generate a symbol key from this word and see if it exists in redis. If it does, we still can't conclude this word matches a symbol (because
         // we only looked up its stemmed token representation). The custom match function will have more specific logic that we must now test.
         const symbolKey = `symbol:stock:${wordString}`; // `symbol:stock:gme`
-        this.redisDbClient.get(symbolKey, (err, foundSymbolJson) => {
-            if(err || !foundSymbolJson) {
+        this.redisClient.get(symbolKey, (symbol) => {
+            if(!symbol) {
                 cback({isSymbol: false});
                 return;
             }
-            const symbolData = JSON.parse(foundSymbolJson);
-            //console.log(`A possible symbol match was found (${wordString} => ${symbolData.symbol}). Will now run through match function to confirm.`)
-            const funcdSymbolData = symbolModel.execGet(symbolData); // When matching this word agains the symbol, we pass symbol data generated from the custom symbol.get logic.
+            //console.log(`A possible symbol match was found (${wordString} => ${symbol.symbol}). Will now run through match function to confirm.`)
+            const funcdSymbolData = symbolModel.execGet(symbol); // When matching this word agains the symbol, we pass symbol data generated from the custom symbol.get logic.
             const wordPassedSymbolMatch = wordObj.rawWords.some((rawWordSeq) => {
                 const rawWordSeqString = rawWordSeq.join(' '); // our custom match functions expects this to be a spaced string of tokens
                 const isMatch = symbolModel.execMatch(funcdSymbolData, rawWordSeqString, true);
@@ -391,16 +368,11 @@ class ExtractWordsFromComments {
     registerWordToCommentsIndex(wordString, commentId, cback) { // a comment index (index:wordToComments:) is an array holding comment ids
         const self = this;
         const thisIndexKey = `index:wordToComments:${wordString}`;
-        self.redisDbClient.get(thisIndexKey, (err, json) => {
-            if (err) {
-                console.log(err);
-                if (cback) cback();
-                return;
-            }
+        self.redisClient.get(thisIndexKey, (gotWordIndex) => {
             let wordToCommentsIndex = [];
-            if (json) wordToCommentsIndex = JSON.parse(json);
+            if (gotWordIndex) wordToCommentsIndex = gotWordIndex;
             if (wordToCommentsIndex.indexOf(commentId) === -1) wordToCommentsIndex.push(commentId);
-            self.redisDbClient.set(thisIndexKey, JSON.stringify(wordToCommentsIndex), () => {
+            self.redisClient.set(thisIndexKey, wordToCommentsIndex, () => {
                 if (cback) cback();
             });
         });
@@ -410,16 +382,16 @@ class ExtractWordsFromComments {
         // This function gets training:notRelevant from redis (used to ignore word combos found in comments), and adds
         // a keyspace listener so local data is always synced with redis.
         const self = this;
-        this.redisDbClient.get('training:notRelevant', (err, json) => {
-            if (err || !json) return;
-            self.trainingNotRelevant = JSON.parse(json);
+        this.redisClient.get('training:notRelevant', (trainingObj) => {
+            if (!trainingObj) return;
+            self.trainingNotRelevant = trainingObj;
         });
         if (self.trainingNotRelevantIsSynced) return;
         self.trainingNotRelevantIsSynced = true;
-        self.redisSubClient.on('message', (channel, message) => {
+        self.redisClient.on('message', (channel, message) => {
             if (channel === '__keyspace@0__:training:notRelevant') self.syncTrainingNotRelevant();
         });
-        self.redisSubClient.subscribe('__keyspace@0__:training:notRelevant');
+        self.redisClient.subscribe('__keyspace@0__:training:notRelevant');
     }
 
     isDiscardWord(wordString) { // word is in array form [symbolWord] or [bigram,word] etc

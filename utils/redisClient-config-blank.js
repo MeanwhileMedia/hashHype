@@ -13,6 +13,9 @@ module.exports = {
                     address: '',
                     redisServerPath: '',
                 },
+                // When a .set is called for a redis key, if that key matches any of the configured 'storeNamespaces' patterns, then it is stored to this database AND any
+                // other database with matching pattern. Each string here is merged into a single regex: ['^foo:bar:', '^baz:'] becomes /^foo:bar:|^baz:/
+                storeNamespaces: [], // If our semi aggressive LRU policy nukes the wrong item, redisClient.js will automatically try to recover it from the other databases which have a matching storeNamespaces pattern.
                 serverArgs: { // mapped directly to redis cli config prop names
                     port: 8170,
 
@@ -42,6 +45,7 @@ module.exports = {
                     address: '',
                     redisServerPath: '',
                 },
+                storeNamespaces: [],
                 serverArgs: { // mapped directly to redis cli config prop names
                     port: 8171,
 

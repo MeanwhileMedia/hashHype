@@ -4,12 +4,27 @@ import symbolModel from '../utils/objectModels/symbol.js';
 
 class FetchCoinAndStockSymbols {
     constructor() {
+        const self = this;
         //Config options
         this.alphaVantage = {
             apiKey: '9YGMD3F2NIKWO4CZ',
         }
         this.fetchLoopIntervalTime = 43200000; // every 12 hours
-        this.initFetchLoop();
+
+        this.redisClient = null;
+        this.initRedisClient(() => {
+            self.initFetchLoop();
+        });
+    }
+
+    initRedisClient(cback) {
+        const self = this;
+        self.redisClient = new RedisClient({
+            onConnect: (client) => {
+                console.log('Connected new redis sub client for FetchCoinAndStockSymbols class.');
+                if(cback) cback();
+            }
+        });
     }
 
     initFetchLoop() {
@@ -74,29 +89,14 @@ class FetchCoinAndStockSymbols {
 
     storeSymbolsToRedis(symbols) {
         const self = this;
-        if (!this.redisDbClient) {
-            new RedisClient({
-                dbName: 'short',
-                onConnect: (client) => {
-                    console.log('Connected new redis client for fetch coin and stock symbols class.');
-                    self.redisDbClient = client;
-                    self.storeSymbolsToRedis(symbols);
-                }
-            });
-            return;
-        }
         symbols.forEach((symbol) => {
             const symbolKey = `symbol:${symbol.type}:${symbol.symbol}`;
-            self.redisDbClient.get(symbolKey, (err, json) => {
-                if (err) {
-                    console.log(err);
-                    return;
-                }
-                if (json) {
-                    const existingSymbol = JSON.parse(json);
+            self.redisClient.get(symbolKey, (gotSymbol) => {
+                if (gotSymbol) {
+                    const existingSymbol = gotSymbol;
                     symbol = symbolModel.merge(existingSymbol, symbol);
                 }
-                self.redisDbClient.set(symbolKey, JSON.stringify(symbol));
+                self.redisClient.set(symbolKey, symbol);
             });
         });
     }

@@ -17,42 +17,25 @@ class Reddit {
         //Local vars
         this.fetchLoopInterval = null;
         this.redditApiClient = null;
-        this.redisSubClient = null;
-        this.redisDbClient = null;
+        this.redisClient = null;
 
         //This process keeps track of which comments were recently fetched it doesn't store duplicates to redis.
         this.recentCommentRecordMaxLength = 50;
         this.recentCommentRecord = [];
 
         const self = this;
-        self.initRedisSubClient(() => {
-            self.initRedisDbClient(() => {
-                self.syncTrainingNotRelevant();
-                self.createNewApiClient();
-                self.initFetchLoop();
-            });
+        self.initRedisClient(() => {
+            self.syncTrainingNotRelevant();
+            self.createNewApiClient();
+            self.initFetchLoop();
         });
     }
 
-    initRedisSubClient(cback) {
+    initRedisClient(cback) {
         const self = this;
-        new RedisClient({
-            dbName: 'short',
-            onConnect: (client) => {
+        this.redisClient = new RedisClient({
+            onConnect: () => {
                 console.log('Connected new redis sub client for topCommentStats class.');
-                self.redisSubClient = client;
-                if(cback) cback();
-            }
-        });
-    }
-
-    initRedisDbClient(cback) {
-        const self = this;
-        new RedisClient({
-            dbName: 'short',
-            onConnect: (client) => {
-                console.log('Connected new redis db client for topCommentStats class.');
-                self.redisDbClient = client;
                 if(cback) cback();
             }
         });
@@ -108,7 +91,7 @@ class Reddit {
         const self = this;
         console.log(`Now storing ${commentObjects.length} comments to redis...`);
         commentObjects.forEach((comment) => {
-            self.redisDbClient.set(`rawComment:${comment.id}`, JSON.stringify(comment));
+            self.redisClient.set(`rawComment:${comment.id}`, comment);
         });
     }
 
@@ -142,16 +125,16 @@ class Reddit {
         // This function gets training:notRelevant from redis (used in discarding comments from flagged users), and adds
         // a keyspace listener so local data is always synced with redis.
         const self = this;
-        this.redisDbClient.get('training:notRelevant', (err, json) => {
-            if (err || !json) return;
-            self.trainingNotRelevant = JSON.parse(json);
+        this.redisClient.get('training:notRelevant', (trainingObj) => {
+            if (!trainingObj) return;
+            self.trainingNotRelevant = trainingObj;
         });
         if (self.trainingNotRelevantIsSynced) return;
         self.trainingNotRelevantIsSynced = true;
-        self.redisSubClient.on('message', (channel, message) => {
+        self.redisClient.on('message', (channel, message) => {
             if (channel === '__keyspace@0__:training:notRelevant') self.syncTrainingNotRelevant();
         });
-        self.redisSubClient.subscribe('__keyspace@0__:training:notRelevant');
+        self.redisClient.subscribe('__keyspace@0__:training:notRelevant');
     }
 
     newCommentEntity(initial = {}) { // Must provide body

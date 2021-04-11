@@ -3,8 +3,7 @@ import symbolModel from '../utils/objectModels/symbol.js';
 // This file includes all the socket requests to set/alter redis data based on the trend training UI
 class HbClientSocketDbResponses_admin {
     constructor(opts) {
-        this.redisDbClient = opts.redisDbClient;
-        this.redisSubClient = opts.redisSubClient;
+        this.redisClient = opts.redisClient;
         this.trainingNotRelevantKey = 'training:notRelevant';
         this.trainingNotRelevant = null;
         this.syncTrainingNotRelevant(); // sets to this.trainingNotRelevant (from db, or as newly empty if not found in db)
@@ -49,7 +48,7 @@ class HbClientSocketDbResponses_admin {
 
         // 2. delete this word object from redis
         const wordKey = `word:${removeWord}`;
-        self.redisDbClient.del(wordKey);
+        self.redisClient.del(wordKey);
 
         // 3. add a tstamp for this training change and save to redis
         self.trainingNotRelevant.lastAffected = [];
@@ -60,14 +59,10 @@ class HbClientSocketDbResponses_admin {
 
         // 4. get the wordToCommentsIndex and remove any points earned for this word from all host comments
         const commentIndexKey = `index:wordToComments:${removeWord}`;
-        self.redisDbClient.get(commentIndexKey, (err, json) => {
-            if (err || !json) {
-                console.log(`Could not get: ${commentIndexKey}`, err);
-                return;
-            }
-            const wordToCommentsIndex = JSON.parse(json);
+        self.redisClient.get(commentIndexKey, (wordToCommentsIndex) => {
+            if (!wordToCommentsIndex) return;
             // This is the last time we will use this wordToComments index since the word is being deleted. Delete index too.
-            self.redisDbClient.del(commentIndexKey);
+            self.redisClient.del(commentIndexKey);
             // Now loop through the comment index and update all comments
             let commentsUpdated = 0;
             wordToCommentsIndex.forEach((commentId) => {
@@ -109,12 +104,8 @@ class HbClientSocketDbResponses_admin {
         const commentId = message.data.commentId;
         const commentKey = `comment:${commentId}`;
         if (!symbol || !commentId) return;
-        this.redisDbClient.get(`comment:${commentId}`, (err, json) => {
-            if (err || !json) {
-                console.log(`Could not get comment:${commentId}`, err);
-                return;
-            }
-            const comment = JSON.parse(json);
+        this.redisClient.get(`comment:${commentId}`, (comment) => {
+            if (!comment) return;
 
             //JWW STOPPING POINT -
             // 1. DONE - Build an input in adminTrain for symbols allowing code snippets for custom matching logic (many single charachters within comments
@@ -133,7 +124,7 @@ class HbClientSocketDbResponses_admin {
             // 7. Chance top comment stats to only show 2 wedges for any given symbol
             // 8. only serve admin train FE assets to requests from admin URLs. add functionality to strip JS includes of admin assets during code compilation.
             // 9. Add an "about" icon which includes disclaimer
-            // 10.
+            // 10. Add google analytics snippet to layout.html
 
             // Loop through all comment wordRefs and inspect each "hasSymbols" prop. Remove this symbol key whenever found.
             const removeSymbolKey = `symbol:${symbol.type}:${symbol.symbol}`;
@@ -158,7 +149,7 @@ class HbClientSocketDbResponses_admin {
             if (pointsRemoved) console.log(`Removed ${pointsRemoved} points from comment:${comment.id} after deleting symbol ${symbol.symbol}`);
 
             // Set comment changes and update training object lastAffected
-            self.redisDbClient.set(commentKey, JSON.stringify(comment));
+            self.redisClient.set(commentKey, comment);
 
             self.trainingNotRelevant.lastAffected = [];
             self.trainingNotRelevant.lastAffected.push({
@@ -176,7 +167,7 @@ class HbClientSocketDbResponses_admin {
         if (!commentId) return;
 
         console.log(`deleteComment: ${commentId}`);
-        this.redisDbClient.del(commentKey);
+        this.redisClient.del(commentKey);
 
         // add this new comment to our global traingin:notRelevant object
         const exists = self.trainingNotRelevant.comments.find(thisComment => thisComment.id === commentId);
@@ -201,12 +192,11 @@ class HbClientSocketDbResponses_admin {
         if (!opts || !opts.symbol || !opts.functionName || !opts.functionString) return;
         if (opts.functionName !== 'get' && opts.functionName !== 'match') return;
         const symbolRedisKey = `symbol:${opts.symbol.type}:${opts.symbol.symbol}`
-        this.redisDbClient.get(symbolRedisKey, (err, json) => {
-            if (err || !json) {
-                console.log(`Could not get ${symbolRedisKey}`, err);
+        this.redisClient.get(symbolRedisKey, (symbolRedisData) => {
+            if (!symbolRedisData) {
+                console.log(`Could not get ${symbolRedisKey}`);
                 return;
             }
-            const symbolRedisData = JSON.parse(json);
             // First run it in a try/catch before saving to redis - in case the edited function contains an error.
             try {
                 let testFunc;
@@ -226,7 +216,7 @@ class HbClientSocketDbResponses_admin {
             }
             // Looks legit, save now.
             console.log(`Saving ${opts.functionName}() function edit on symbol ${opts.symbol.symbol}:`, opts.functionString);
-            self.redisDbClient.set(symbolRedisKey, JSON.stringify(symbolRedisData));
+            self.redisClient.set(symbolRedisKey, symbolRedisData);
         });
     }
 
@@ -234,13 +224,11 @@ class HbClientSocketDbResponses_admin {
         const self = this;
         // This is not a socket message based function. It's a helper for our other socket methods in this class.
         const commentRedisKey = `comment:${commentId}`;
-        self.redisDbClient.get(commentRedisKey, (err, json) => {
-            if (err || !json) {
+        self.redisClient.get(commentRedisKey, (comment) => {
+            if (!comment) {
                 console.log(`Could not get ${commentRedisKey}`);
-                if (cback) cback(commentRedisKey);
                 return;
             }
-            const comment = JSON.parse(json);
             // First remove points
             const removeWordEscapedForRegex = removeWord.replace(/[.*+?^${}()|[\]\\]/g, '\\\$&') // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
             const removeWordRegex = new RegExp(`^(${removeWordEscapedForRegex})__`); // https://regexr.com/5q5nl
@@ -257,7 +245,7 @@ class HbClientSocketDbResponses_admin {
             if (wordIndex !== -1) comment.words.splice(wordIndex, 1);
 
             // save back to redis
-            self.redisDbClient.set(commentRedisKey, JSON.stringify(comment));
+            self.redisClient.set(commentRedisKey, comment);
             // all done
             if (cback) cback(commentRedisKey);
         });
@@ -267,32 +255,32 @@ class HbClientSocketDbResponses_admin {
         // This function gets training:notRelevant from redis (used in discarding comments from flagged users), and adds
         // a keyspace listener so local data is always synced with redis.
         const self = this;
-        this.redisDbClient.get(self.trainingNotRelevantKey, (err, json) => {
-            if (err || !json) {
+        this.redisClient.get(self.trainingNotRelevantKey, (trainingNotRelevant) => {
+            if (!trainingNotRelevant) {
                 self.trainingNotRelevant = self.createNewNotRelevantTrainingObj();
-                console.log(`Could not get ${self.trainingNotRelevantKey}`, err);
+                console.log(`Could not get ${self.trainingNotRelevantKey}`);
                 return;
             }
-            self.trainingNotRelevant = JSON.parse(json);
+            self.trainingNotRelevant = trainingNotRelevant;
         });
         if (self.trainingNotRelevantIsSynced) return;
         self.trainingNotRelevantIsSynced = true;
-        self.redisSubClient.on('message', (channel, message) => {
+        self.redisClient.on('message', (channel, message) => {
             if (channel === `__keyspace@0__:${self.trainingNotRelevantKey}`) self.syncTrainingNotRelevant();
         });
-        self.redisSubClient.subscribe(`__keyspace@0__:${self.trainingNotRelevantKey}`);
+        self.redisClient.subscribe(`__keyspace@0__:${self.trainingNotRelevantKey}`);
     }
 
     saveTrainingNotRelevant() {
         const self = this;
-        self.redisDbClient.set(self.trainingNotRelevantKey, JSON.stringify(self.trainingNotRelevant));
+        self.redisClient.set(self.trainingNotRelevantKey, self.trainingNotRelevant);
         // We automatically clear the lastAffected array on self.trainingNotRelevant after a timeout
         // (or else the last affected keys will persist upon process restarts, and they will attempt to respond again)
         if (self.lastAffectedTimeout) clearTimeout(self.lastAffectedTimeout);
         self.lastAffectedTimeout = setTimeout(() => {
             console.log('Automatically clearing trainingNotRelevant.lastAffected after timeout.');
             self.trainingNotRelevant.lastAffected = [];
-            self.redisDbClient.set(self.trainingNotRelevantKey, JSON.stringify(self.trainingNotRelevant));
+            self.redisClient.set(self.trainingNotRelevantKey, self.trainingNotRelevant);
             self.lastAffectedTimeout = null;
         }, 60000*10); // We assume 10 minutes will be enough for all processes to finish responding
     }

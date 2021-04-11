@@ -6,53 +6,162 @@ const buffer = new Buffer(cliArgs.dbs, 'base64');
 const redisDbConfigsJson = buffer.toString('ascii');
 const redisDbConfigs = JSON.parse(redisDbConfigsJson);
 
+// This extends wraps node_redis functionality. It hanldles multiple database configs, offers throttled functionality +more.
 class RedisClient {
     constructor(opts) {
-        if (!opts.dbName) {
-            console.warn(`Error. An opts.dbName is required to start a new redis client.`);
-            return;
-        }
-        opts.clientOpts = opts.clientOpts || {};
-        const thisDbConfig = redisDbConfigs[opts.dbName];
-        if (!thisDbConfig) {
-            consol.warn(`No redis config found for db named "${opts.dbName}"`);
-            return;
-        }
-        opts.clientOpts = Object.assign(thisDbConfig, opts.clientOpts);
-
-        this.client = null;
-        this.clientOpts = {
-            host: opts.clientOpts.redisHost,
-            port: opts.clientOpts.redisPort,
-            password: opts.clientOpts.redisPassword
-        };
-        this.onConnect = opts.onConnect || function (client){
-            console.log('Redis client connected.');
-        };
-        this.initClientConnection();
-        this.attachHelpersToClient();
-    }
-
-    initClientConnection() {
         const self = this;
-        this.client = redis.createClient(this.clientOpts);
-        this.client.on('connect', function() {
-            self.onConnect(self.client);
-        });
-        this.client.on("error", function(err) {
-            console.log('Redis error:', err);
+        this.clients = null;
+        this.initAllClients(() => {
+            self.attachThrottleFuncs();
+            self.throttle.initSetBatchInterval();
+            self.throttle.initGetBatchInterval();
+            self.throttle.initClearCachedGetObjectsInterval();
+            if (opts.onConnect) opts.onConnect();
         });
     }
 
-    attachHelpersToClient() {
-        this.attachThrottledActions();
+    initAllClients(cback) {
+        // assigns to this.clients object 2 clients for every db configured in redisClient-config.js -
+        // one client for db actions, and another for pubsub actions. I.e. for a machine configured with
+        // a "long" and "short" db, there would be 4 total clients connected when a new RedisClient is instantiated.
+        const self = this;
+        self.clients = {};
+        const clientConnectPromises = [];
+        for (const [thisDbName, thisDbConfig] of Object.entries(redisDbConfigs)) {
+            const clientOpts = {
+                host: thisDbConfig.redisHost,
+                port: thisDbConfig.redisPort,
+                password: thisDbConfig.redisPassword
+            };
+            clientConnectPromises.push(new Promise( (resolve, reject) => {
+                self.initClientConnection(clientOpts, (node_redis_client) => {
+                    if (node_redis_client) {
+                        self.clients[thisDbName] = self.clients[thisDbName] || {};
+                        self.clients[thisDbName].db = node_redis_client;
+                        resolve(self.clients[thisDbName].db);
+                    } else {
+                        reject(null);
+                    }
+                });
+            }));
+            clientConnectPromises.push(new Promise( (resolve, reject) => {
+                self.initClientConnection(clientOpts, (node_redis_client) => {
+                    if (node_redis_client) {
+                        self.clients[thisDbName] = self.clients[thisDbName] || {};
+                        self.clients[thisDbName].pubsub = node_redis_client;
+                        resolve(self.clients[thisDbName].pubsub);
+                    } else {
+                        reject(null);
+                    }
+                });
+            }));
+        };
+        Promise.all(clientConnectPromises).then(() => {
+            if (cback) cback();
+        });
     }
 
-    attachThrottledActions() {
+    initClientConnection(clientOpts, onConnect) {
+        const node_redis_client = redis.createClient(clientOpts);
+        node_redis_client.on('connect', function() {
+            onConnect(node_redis_client);
+        });
+        node_redis_client.on("error", function(err) {
+            console.warn('Error connectiong node_redis client:', err);
+        });
+    }
+
+    get(key, cback, dbName = 'short') {
+        const self = this;
+        self.clients[dbName].db.get(key, (err, json) => {
+            if (err) {
+                console.warn(err);
+                if (cback) cback(null);
+                return;
+            }
+            if (!json) {
+                // console.warn(`Could not find redis key: ${key}`);
+                if (cback) cback(null);
+                return;
+            }
+            let redisObject = null;
+            try {
+                redisObject = JSON.parse(json);
+            } catch (error) {
+                console.warn(`Failed to parse invalid JSON for redis key: ${key}`, error);
+                if (cback) cback(null);
+                return;
+            }
+            if (cback) cback(redisObject);
+        });
+    }
+
+    set(key, redisObj, cback, dbName = 'short') {
+        const self = this;
+        self.clients[dbName].db.set(key, JSON.stringify(redisObj), (err) => {
+            if (err) console.warn(err);
+            if (cback) cback();
+        });
+    }
+
+    mget(mgetArgs, cback, dbName = 'short') {
+        const self = this;
+        self.clients[dbName].db.mget(mgetArgs, (err, resArray) => {
+            if(err || !resArray || resArray.length === 0) {
+                console.warn(`Could not mget ${mgetArgs.length} keys from redis`, mgetArgs, err);
+                return;
+            }
+            const resObjects = [];
+            resArray.forEach((json) => {
+                if (!json) {
+                    // console.warn(`Mget could not find redis key: ${key}`);
+                    resObjects.push(null);
+                    return;
+                }
+                let redisObject = null;
+                try {
+                    redisObject = JSON.parse(json);
+                } catch (error) {
+                    console.warn(`Mget failed to parse invalid redis JSON.`);
+                    resObjects.push(null);
+                    return;
+                }
+                resObjects.push(redisObject);
+            });
+            if (cback) cback(resObjects);
+        });
+    }
+
+    mset(msetArgs, cback, dbName = 'short') {
+        const self = this;
+        self.clients[dbName].db.mset(msetArgs, cback);
+    }
+
+    del(key, cback, dbName = 'short') {
+        const self = this;
+        self.clients[dbName].db.del(key, cback);
+    }
+
+    on(msgChannel, cback, dbName = 'short') {
+        const self = this;
+        self.clients[dbName].pubsub.on(msgChannel, cback);
+    }
+
+    subscribe(msgChannel, dbName = 'short') {
+        const self = this;
+        self.clients[dbName].pubsub.subscribe(msgChannel);
+    }
+
+    psubscribe(msgChannel, dbName = 'short') {
+        const self = this;
+        self.clients[dbName].pubsub.psubscribe(msgChannel);
+    }
+
+    attachThrottleFuncs() {
+        const self = this;
         //adds client.throttled.set and client.throttled.get which will batch these redis requests then
         //fire them as mset and mget in an interval (or when the queue reaches a max size).
-        const self = this.client;
-        self.throttle = {
+        this.throttle = {
             setIntervalTime: 5000,
             maxSetBatchSize: 100,
             getIntervalTime: 3000,
@@ -118,11 +227,8 @@ class RedisClient {
                 self.throttle.pendingGetBatch = {};
 
                 console.log(`Now running batched mget for ${mgetArgs.length} keys`);
-                self.mget(mgetArgs, (err, resArray) => {
-                    if(err || !resArray || resArray.length === 0) {
-                        console.error(`Could not mget ${mgetArgs.length} keys from redis`) //:`, mgetArgs, err);
-                        return;
-                    }
+                self.mget(mgetArgs, (resArray) => {
+                    if(resArray.length === 0) return;
                     mgetArgs.forEach((key, thisKeyIndex) => {
                         const cbacksForThisKey = mgetCbacks[key];
                         if (!cbacksForThisKey || cbacksForThisKey.length === 0) return;
@@ -216,13 +322,9 @@ class RedisClient {
                 if (self.throttle.pendingSetBatch[redisKey]) delete self.throttle.pendingSetBatch[redisKey];
             }
 
+        };
+    } //end attachThrottleFuncs
 
-        }; //end self.throttle
-
-        self.throttle.initSetBatchInterval();
-        self.throttle.initGetBatchInterval();
-        self.throttle.initClearCachedGetObjectsInterval();
-    }
 }
 
 export default RedisClient;

@@ -50,13 +50,10 @@ const uiServer = {
     ],
 
     init() {
-        uiServer.initRedisDbClient( () => {
-            uiServer.initRedisSubClient( () => {
-                uiServer.initKoaServer();
-                uiServer.hbClientSocketDbResponses_admin = new HbClientSocketDbResponses_admin({
-                    redisDbClient: uiServer.redisDbClient,
-                    redisSubClient: uiServer.redisSubClient
-                });
+        uiServer.initRedisClient( () => {
+            uiServer.initKoaServer();
+            uiServer.hbClientSocketDbResponses_admin = new HbClientSocketDbResponses_admin({
+                redisClient: uiServer.redisClient
             });
         });
     }, // init
@@ -214,13 +211,9 @@ const uiServer = {
             console.log(`Incoming socket view path request: ${message.data.absKey}`);
             // This is how the front end gets populated with html (via react components).
             // The client requests the file paths by sending the absKey then dynamically adds them to the page.
-            self.redisDbClient.get(message.data.absKey, (err, json) => {
-                if (!json || err) {
-                    console.log(`Could not fetch redis data for key: ${message.data.absKey}`, err);
-                    return;
-                }
-                const redisData = JSON.parse(json);
-                if (!redisData.ui || !redisData.ui.viewPath) {
+            self.redisClient.get(message.data.absKey, (gotObj) => {
+                if (!gotObj) return;
+                if (!gotObj.ui || !gotObj.ui.viewPath) {
                     console.log(`Could not match redis data with a view (${message.data.absKey}).`);
                     return;
                 }
@@ -229,7 +222,7 @@ const uiServer = {
                     data: {
                         absKey: message.data.absKey,
                         targetEl: message.data.targetEl,
-                        viewPath: redisData.ui.viewPath,
+                        viewPath: gotObj.ui.viewPath,
                     },
                 }));
             });
@@ -241,20 +234,15 @@ const uiServer = {
             const modelChangeEventName = `change:${message.data.absKey}`;
 
             // Send data right away, then re-send any time it changes.
-            self.redisDbClient.get(message.data.absKey, (err, json) => {
-                if (!json || err) {
-                    console.log(`Could not fetch redis data for key: ${message.data.absKey}`, err);
-                    return;
-                }
-                const redisData = JSON.parse(json);
-
+            self.redisClient.get(message.data.absKey, (gotObj) => {
+                if (!gotObj) return;
                 socket.send(JSON.stringify({ // Manually send once right away to populate view
                     channel: modelChangeEventName,
-                    data: redisData,
+                    data: gotObj,
                 }));
             });
 
-            self.redisSubClient.on('message', (channel, action) => {
+            self.redisClient.on('message', (channel, action) => {
                 if (action !== 'set' || channel !== keySpaceSubChannel) return;
 
                 const eventUid = keySpaceSubChannel;
@@ -263,19 +251,15 @@ const uiServer = {
                 if (self.changeEventTstamps[eventUid] + self.changeEventThrottle > now) return;
                 self.changeEventTstamps[eventUid] = now;
 
-                self.redisDbClient.get(message.data.absKey, (err, json) => {
-                    if (err) {
-                        console.log(err);
-                        return;
-                    }
-                    const redisData = JSON.parse(json);
+                self.redisClient.get(message.data.absKey, (gotObj) => {
+                    if (!gotObj) return;
                     socket.send(JSON.stringify({ // And send again everytime the model changes on server
                         channel: modelChangeEventName,
-                        data: redisData,
+                        data: gotObj,
                     }));
                 });
             });
-            self.redisSubClient.subscribe(keySpaceSubChannel);
+            self.redisClient.subscribe(keySpaceSubChannel);
             return true;
         } // end if (message.channel === 'populateView')
 
@@ -361,30 +345,16 @@ const uiServer = {
 
     }, //end webpackCompileAsset
 
-    redisDbClient: null,
-    initRedisDbClient(cback) {
+    redisClient: null,
+    initRedisClient(cback) {
         const self = uiServer;
-        new RedisClient({
-            dbName: 'short',
+        self.redisClient = new RedisClient({
             onConnect: (client) => {
                 console.log('Connected new redis client for ui server.');
-                self.redisDbClient = client;
                 if (cback) cback();
             }
         });
-    },
-    redisSubClient: null,
-    initRedisSubClient(cback) {
-        const self = uiServer;
-        new RedisClient({
-            dbName: 'short',
-            onConnect: (client) => {
-                console.log('Connected new redis client for ui server.');
-                self.redisSubClient = client;
-                if (cback) cback();
-            }
-        });
-    },
+    }
 
 }; // end uiServer
 

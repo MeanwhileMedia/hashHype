@@ -12,43 +12,26 @@ class TopCommentsStats {
         const self = this;
         this.topCommentsStatsKey = 'stats:topComments';
         this.topComments = this.newTopCommentsEntity();
-        this.redisSubClient = null;
-        this.redisDbClient = null;
+        this.redisClient = null;
         this.maxTopCommentsPerBucket = 10;
         this.throttle = {
             storeNewTopCommentsStats: _.throttle(this.storeNewTopCommentsStats, 5000).bind(this),
         };
 
-        this.initRedisSubClient(() => {
-            self.initRedisDbClient(() => {
-                self.redisDbClient.get(this.topCommentsStatsKey, (err, json) => {
-                    if (json) this.topComments = JSON.parse(json);
-                    self.initKeyspaceSubscriptions();
-                    self.syncTrainingNotRelevant();
-                });
+        self.initRedisClient(() => {
+            self.redisClient.get(this.topCommentsStatsKey, (topCommentStatsObj) => {
+                if (topCommentStatsObj) this.topComments = topCommentStatsObj;
+                self.initKeyspaceSubscriptions();
+                self.syncTrainingNotRelevant();
             });
         });
     }
 
-    initRedisSubClient(cback) {
+    initRedisClient(cback) {
         const self = this;
-        new RedisClient({
-            dbName: 'short',
+        this.redisClient = new RedisClient({
             onConnect: (client) => {
                 console.log('Connected new redis sub client for topCommentStats class.');
-                self.redisSubClient = client;
-                if(cback) cback();
-            }
-        });
-    }
-
-    initRedisDbClient(cback) {
-        const self = this;
-        new RedisClient({
-            dbName: 'short',
-            onConnect: (client) => {
-                console.log('Connected new redis db client for topCommentStats class.');
-                self.redisDbClient = client;
                 if(cback) cback();
             }
         });
@@ -56,17 +39,17 @@ class TopCommentsStats {
 
     initKeyspaceSubscriptions() {
         const self = this;
-        this.redisSubClient.on('pmessage', function (matchedPattern, patternWithKey, action){
+        this.redisClient.on('pmessage', function (matchedPattern, patternWithKey, action){
             if (action !== 'set') return;
             // If this event was sent as part of the set pattern subcribed keyspace event, then it's "patternWithKey" will be: __keyspace@0__:comment:0b90a45d-283b-4716-aa14-ac9f99ac54b1
             let key = patternWithKey;
             key = key.replace('__keyspace@0__:', '');
-            self.redisDbClient.throttle.get(key, (gotObj) => {
+            self.redisClient.throttle.get(key, (gotObj) => {
                 if (!gotObj) return;
                 if (key.indexOf('word:') !== -1) {
                     const word = gotObj;
                     const wordIndexKey = `index:wordToComments:${word.value.join('_!!_')}`; // _!!_ is the hashHype word delimeter
-                    self.redisDbClient.throttle.get(wordIndexKey, (wordToCommentsIndex) => {
+                    self.redisClient.throttle.get(wordIndexKey, (wordToCommentsIndex) => {
                         if (!wordToCommentsIndex) return;
                         let commentsChecked = 0; // So we know when all checkWordAgainstComment calls (async) have completed
                         const commentsFound = []; // if redis could not find one or more comments, then they should be deleted from this index.
@@ -76,8 +59,8 @@ class TopCommentsStats {
                                 if (!err) commentsFound.push(thisCommentId);
                                 if (commentsChecked === wordToCommentsIndex.length && commentsFound.length !== wordToCommentsIndex.length) {
                                     // Looks like at least one of the comments for this word index was not in redis. Update the index object.
-                                    self.redisDbClient.throttle.clearPendingSet(wordIndexKey);
-                                    self.redisDbClient.set(wordIndexKey, JSON.stringify(commentsFound)); // don't throttle this update as the index innacuracy must be corrected immediately
+                                    self.redisClient.throttle.clearPendingSet(wordIndexKey);
+                                    self.redisClient.set(wordIndexKey, commentsFound); // don't throttle this update as the index innacuracy must be corrected immediately
                                 }
                             });
                         });
@@ -86,12 +69,12 @@ class TopCommentsStats {
             });
         });
         // Pattern listener for all of the different word types.
-        this.redisSubClient.psubscribe('__keyspace@0__:word*');
+        this.redisClient.psubscribe('__keyspace@0__:word*');
     }
 
     checkWordAgainstComment(word, commentId, cback) { // cback is used to pass back err message (or undefined on success)
         const self = this;
-        self.redisDbClient.throttle.get(`comment:${commentId}`, (comment) => {
+        self.redisClient.throttle.get(`comment:${commentId}`, (comment) => {
             if (!comment || self.isDiscardComment(comment)) {
                 // if this comment couldn't be found in redis, then delete from top comment stats (may have beed deleted by training or redis LRU algo)
                 console.log(`Missing comment in redis: ${commentId}`);
@@ -101,7 +84,7 @@ class TopCommentsStats {
             }
             // Quickly apply the new point and save the comment back to redis
             self.applyPointsToCommentForWord(comment, word, () => {
-                self.redisDbClient.throttle.set(`comment:${comment.id}`, comment, () => {
+                self.redisClient.throttle.set(`comment:${comment.id}`, comment, () => {
                     // Now take another look at the comment to see if it belongs in our topComments object
                     const commentClone = JSON.parse(JSON.stringify(comment));
                     self.reduceCommentPoints(commentClone);
@@ -270,7 +253,7 @@ class TopCommentsStats {
         // allSymbolObjectsForComment will be populated using getCached - our most performant redis get method, but data may be stale if other processes are manipulating the objects.
         const allSymbolObjectsForComment = [];
         allSymbolKeys.forEach((thisSymbolKey) => {
-            self.redisDbClient.throttle.getCached(thisSymbolKey, (gotSymbol) => {
+            self.redisClient.throttle.getCached(thisSymbolKey, (gotSymbol) => {
                 if (gotSymbol) symbolModel.execGet(gotSymbol); // add the functionally populated symbol props. The ones produced by the customizable symbol.get function string. They are assigned to gotSymbol.funcdSymbolData and are used in UI.
                 allSymbolObjectsForComment.push(gotSymbol);
                 if (allSymbolObjectsForComment.length === allSymbolKeys.length) {
@@ -320,7 +303,7 @@ class TopCommentsStats {
             if (notRelUserIndex !== -1) {
                 shouldDiscard = true;
                 console.log(`Comment will be deleted because user ${comment.author.name} is now not relevant: ${comment.id}`);
-                this.redisDbClient.del(`comment:${comment.id}`);
+                this.redisClient.del(`comment:${comment.id}`);
             }
         }
 
@@ -360,8 +343,8 @@ class TopCommentsStats {
         self.activeTrainingKeys.forEach((changedKey, index) => {
             // 1. First we immediately delete any throttled redis get/set commands for this key. This is somewhat invasive because all registered cbacks for getting this key will be abandoned.
             //    However, this is an all-or-nothing decision: if an object which this process manipulates was altered outside this process, then this process can't continue any pending logic on a locally cached version of that object.
-            self.redisDbClient.throttle.clearPendingGet(changedKey);
-            self.redisDbClient.throttle.clearPendingSet(changedKey);
+            self.redisClient.throttle.clearPendingGet(changedKey);
+            self.redisClient.throttle.clearPendingSet(changedKey);
             // 2. If this is a user just marked not relevant, loop through this.topComments and delete any existing comments by that user.
             if (changedKey.indexOf('user:') !== -1) {
                 const notRelevantUser = changedKey.replace('user:', '');
@@ -384,17 +367,17 @@ class TopCommentsStats {
         // This function gets training:notRelevant from redis (used in discarding comments from flagged users), and adds
         // a keyspace listener so local data is always synced with redis.
         const self = this;
-        this.redisDbClient.get('training:notRelevant', (err, json) => {
-            if (err || !json) return;
-            self.trainingNotRelevant = JSON.parse(json);
+        this.redisClient.get('training:notRelevant', (trainingObj) => {
+            if (!trainingObj) return;
+            self.trainingNotRelevant = trainingObj;
             self.respondToNewTraining();
         });
         if (self.trainingNotRelevantIsSynced) return;
         self.trainingNotRelevantIsSynced = true;
-        self.redisSubClient.on('message', (channel, message) => {
+        self.redisClient.on('message', (channel, message) => {
             if (channel === '__keyspace@0__:training:notRelevant') self.syncTrainingNotRelevant();
         });
-        self.redisSubClient.subscribe('__keyspace@0__:training:notRelevant');
+        self.redisClient.subscribe('__keyspace@0__:training:notRelevant');
     }
 
     removeCommentFromTopComments(removeCommentId) { // Alters self.topComments in place
@@ -402,8 +385,8 @@ class TopCommentsStats {
 
         // first delete any throttled redis set/get commands for this comment.
         const commentRedisKey = `comment:${removeCommentId}`;
-        self.redisDbClient.throttle.clearPendingGet(commentRedisKey);
-        self.redisDbClient.throttle.clearPendingSet(commentRedisKey);
+        self.redisClient.throttle.clearPendingGet(commentRedisKey);
+        self.redisClient.throttle.clearPendingSet(commentRedisKey);
 
         // Then delete the instance of this object stored directly on stats:topComments
         const revisedTopComments = {timeBuckets: {}};
@@ -458,7 +441,7 @@ class TopCommentsStats {
 
     storeNewTopCommentsStats() {
         this.topComments.lastUpdated = Date.now();
-        this.redisDbClient.set(this.topCommentsStatsKey, JSON.stringify(this.topComments));
+        this.redisClient.set(this.topCommentsStatsKey, this.topComments);
         console.log('Updated stats:topComments at time:', this.topComments.lastUpdated)
         //console.log(util.inspect(this.topComments, {depth: 10, colors: true}));
     }
