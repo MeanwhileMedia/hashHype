@@ -35,17 +35,6 @@ const hbClientSocketDbRequests_admin = {
       }));
   },
 
-  deleteSymbolFromComment(opts) {
-      if (!opts.symbol || !opts.commentId) return;
-      hbClient.socket.send(JSON.stringify({
-        channel: 'deleteSymbolFromComment',
-        data: {
-          symbol: opts.symbol,
-          commentId: opts.commentId
-        },
-      }));
-  },
-
   deleteComment(opts) {
       if (!opts.commentId) return;
       hbClient.socket.send(JSON.stringify({

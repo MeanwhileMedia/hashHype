@@ -69,14 +69,18 @@ class Reddit {
             console.log('Must provide subName.');
             return;
         }
-        this.redditApiClient.getNewComments(subName).then(cback);
+        this.redditApiClient.getNewComments(subName).then(cback).catch((err, foo, bar) => {
+            console.warn('Reddit API getNewComments error: ', err.error.code);
+        });
     }
 
     createCommentObjects(comment, commentObjects) {
         const self = this;
+        const createdUtc = comment.created_utc || Date.now()/1000; // Reddit reports tstamps in SECONDS
         const thisCommentObject = self.newCommentEntity({
             body: comment.body,
-            author: {name: comment.author.name}
+            author: {name: comment.author.name},
+            createdUtc: createdUtc * 1000
         });
         commentObjects.push(thisCommentObject);
         if (comment.replies && comment.replies.length > 0) {
@@ -144,12 +148,16 @@ class Reddit {
             body: initial.body || null,
             author: initial.author || {name: null},
             words: [], // array of wordRef objects { word: 'word_seq' (also redis key to word object "word:word_seq"), hasSymbols: ['symbolKey', 'symbol:stock:gme', etc] }
-            points: {}, // key: `${word.value.split('_!!_')}__${tstampForWhenTheWordWasCounted}`, value: points awarded to word occurance (int)
+            createdUtc: initial.createdUtc || Date.now(), // when the comment was posted (ms)
+            points: {
+                '1Hr': {}, // {foo_bar: 342, other_word: etc...}
+                '12Hr': {},
+                '24Hr': {},
+            },
             totalPoints: { // summed totals from the above points attr.
                 '1Hr': 0,
                 '12Hr': 0,
                 '24Hr': 0,
-                //'all': 0
             }
         }
     }

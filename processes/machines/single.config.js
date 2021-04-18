@@ -2,6 +2,11 @@
 const path = require('path');
 const redisConfigs = require('../../utils/redisClient-config.js');
 const logDir = path.resolve(process.cwd(), 'utils/logs');
+const logDay = Math.floor(Date.now() / 86400000);
+
+const getLogPath = (procName, logType) => {
+    return `${logDir}/${procName}-${logType}-${logDay}.log`;
+};
 
 const genConfigs = {
 
@@ -13,7 +18,8 @@ const genConfigs = {
                 dbName: thisRedisConfig.dbName,
                 redisHost: thisRedisConfig.hostInfo.address,
                 redisPort: thisRedisConfig.serverArgs.port,
-                redisPassword: thisRedisConfig.serverArgs.requirepass
+                redisPassword: thisRedisConfig.serverArgs.requirepass,
+                storeNamespaces: thisRedisConfig.storeNamespaces
             };
 
             let redisServerConfigString = '';
@@ -26,8 +32,8 @@ const genConfigs = {
                 args: `${redisServerConfigString}`,
                 kill_timeout : 5000, // give redis time to shutdown when pm2 kills it
                 listen_timeout : 5000, // give redis time to fully start before pm2 thinks something is wrong
-                error_file: `${logDir}/redis-${thisRedisConfig.dbName}-err.log`,
-                out_file: `${logDir}/redis-${thisRedisConfig.dbName}-out.log`,
+                error_file: getLogPath(`redis-${thisRedisConfig.dbName}`, 'err'),
+                out_file: getLogPath(`redis-${thisRedisConfig.dbName}`, 'out'),
             });
         });
 
@@ -37,7 +43,11 @@ const genConfigs = {
     apps: () => {
         const dbsJson = JSON.stringify(genConfigs.allDbClientConfigs);
         const buffer = new Buffer(dbsJson);
-        const dbsJsonBase64Encoded = buffer.toString('base64')
+        const dbsJsonBase64Encoded = buffer.toString('base64');
+
+        const cliArgs = genConfigs.extractCliArgs();
+        let inspect = '';
+        if (cliArgs.inspect) inspect = '--inspect';
 
         return [
             {
@@ -45,39 +55,53 @@ const genConfigs = {
                 script: './processes/uiServer.js',
                 args: `--dbs=${dbsJsonBase64Encoded}`,
                 interpreter_args: '-r esm',
-                error_file: logDir+'/uiServer-err.log',
-                out_file: logDir+'/uiServer-out.log',
+                error_file: getLogPath('uiServer', 'err'),
+                out_file: getLogPath('uiServer', 'out'),
             }, {
                 name: 'Fetch Reddit Comments',
                 script: './processes/fetchRedditComments.js',
                 args: `--dbs=${dbsJsonBase64Encoded}`,
                 interpreter_args: '-r esm',
-                error_file: logDir+'/fetchReddit-err.log',
-                out_file: logDir+'/fetchReddit-out.log',
+                error_file: getLogPath('fetchReddit', 'err'),
+                out_file: getLogPath('fetchReddit', 'out')
             }, {
                 name: 'Fetch Stock Symbols',
                 script: './processes/fetchCoinAndStockSymbols.js',
                 args: `--dbs=${dbsJsonBase64Encoded}`,
                 interpreter_args: '-r esm',
-                error_file: logDir+'/stockSymbols-err.log',
-                out_file: logDir+'/stockSymbols-out.log',
+                error_file: getLogPath('stockSymbols', 'err'),
+                out_file: getLogPath('stockSymbols', 'out')
             }, {
                 name: 'Comment Word Extractor',
                 script: './processes/extractWordsFromComments.js',
                 args: `--dbs=${dbsJsonBase64Encoded}`,
                 interpreter_args: '-r esm',
-                error_file: logDir+'/wordExtractor-err.log',
-                out_file: logDir+'/wordExtractor-out.log',
+                error_file: getLogPath('wordExtractor', 'err'),
+                out_file: getLogPath('wordExtractor', 'out')
             }, {
                 name: 'Top Comment Stats',
                 script: './processes/topCommentStats.js',
                 args: `--dbs=${dbsJsonBase64Encoded}`,
-                interpreter_args: '-r esm',
-                error_file: logDir+'/topComments-err.log',
-                out_file: logDir+'/topComments-out.log',
+                interpreter_args: `-r esm ${inspect}`,
+                error_file: getLogPath('topComments', 'err'),
+                out_file: getLogPath('topComments', 'out')
             }
         ];
     }, // end 'apps'
+
+    extractCliArgs: () => {
+        const cliArgsDefaults = {
+            // pass the "-- --inspect" cli arg to the pm2 start command to launch the node process in debug mode. To read the output remotely, start a new ssh tunnel:
+            // ssh -L 9221:localhost:9229 -p 8122 ubuntu@dev.meanwhile.media (where localhost:9221 is the local port that chrome dev tools will
+            // connect to, and 9229 is the port which was assigned to the node process on the remote host machine).
+            inspect: false,
+        };
+        process.argv.forEach((thisArgv) => {
+            if (thisArgv === '--inspect') cliArgsDefaults.inspect = true;
+        });
+        return cliArgsDefaults;
+    }
+
 }; // end genConfigs
 
 // Export it in pm2 config format

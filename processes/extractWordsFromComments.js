@@ -20,6 +20,7 @@ class ExtractWordsFromComments {
     constructor() {
         const self = this;
         this.redisClient = null;
+        this.trackWordsFor = 86400000; // ms (24hrs) How long should we keep tstamps stored to word:foo_bar:foundAt lists
         this.initRedisClient(() => {
             self.syncTrainingNotRelevant();
             self.initKeyspaceSubscriptions();
@@ -60,7 +61,7 @@ class ExtractWordsFromComments {
                 });
             });
         });
-        this.redisClient.psubscribe('__keyspace@0__:rawComment*'); // flow for comments is rawComment -> newComment -> comment
+        this.redisClient.psubscribe('__keyspace@0__:rawComment*');
     }
 
     preserveUrlsInCommentBody(comment) { // alters comment in-place
@@ -206,11 +207,35 @@ class ExtractWordsFromComments {
                         saveWordObject.hasSymbols = saveWordObject.hasSymbols.concat(thisWordObject.hasSymbols);
                         saveWordObject.hasSymbols = [...new Set(saveWordObject.hasSymbols)]; // remove dups
                     }
-                    saveWordObject.foundAt.unshift(Date.now()); // keep track of each time this word occured in a new comment
+
                     // Save the word object to redis
                     self.redisClient.set(redisWordKey, saveWordObject, () => {
                         if (saveWordToRedisCback) saveWordToRedisCback();
                     });
+
+                    //saveWordObject.foundAt.unshift(Date.now()); // keep track of each time this word occured in a new comment
+                    // All "foundAt" tstamps are stored to their own redis list at key: word:foo_!!_bar:foundAt
+                    const foundAtListKey = `${redisWordKey}:foundAt`; // rpush autor creates list if it does not already exist
+                    self.redisClient.rpush(foundAtListKey, [Date.now()], (listLength) => {
+                        // Now trim this "foundAt" list - remove all tstamps which are older than 24hrs old (self.trackWordsFor). For performance,
+                        // we don't want to run this logic every single time there is a word re-occurance. We establish a vague threshold for max list length.
+                        const maxListLength = self.trackWordsFor / 5000; // self.trackWordsFor is ms. Let's estimate that once we have enough tstamps to account a word recurring every 5 seconds, we start trim logic.
+                        if (listLength < maxListLength) return;
+                        console.log(`A redis list (${foundAtListKey}) will now be trimmed of all tstamps older than ${self.trackWordsFor/3600000}hrs...`);
+                        self.redisClient.lrange(foundAtListKey, 0, -1, (allFoundAtTstamps) => {
+                            let trimStart = 0; // the index in list at which tstamps stop being too old. These lists are sorted ascending.
+                            allFoundAtTstamps.some((thisTstamp, thisTstampIndex) => {
+                                const isOldTstamp = Date.now() - commentData.createdUtc > self.trackWordsFor;
+                                if (!isOldTstamp) return true; // break from loop. We have looped through all the old tstamps.
+                                trimStart = thisTstampIndex;
+                            });
+                            if (trimStart === 0) return;
+                            self.redisClient.ltrim(foundAtListKey, trimStart, -1);
+                            console.log(`Trimmed ${trimStart} items from redis list: ${foundAtListKey}`)
+                        });
+                    });
+
+
                 });
             }
 
@@ -231,6 +256,7 @@ class ExtractWordsFromComments {
                         // 1. store a symbolRef object on the comment for this single word
                         const wordRef = self.newWordRefEntity({
                             word: wordThatMatchedSymbol,
+                            type: wordType,
                             hasSymbols: [isSymbol.symbolKey]
                         });
                         commentData.words.push(wordRef);
@@ -258,6 +284,7 @@ class ExtractWordsFromComments {
                 // All bi/trigram word types will be saved to redis AFTER the symbol lookup logic is complete (whether they contain symbols or not)
                 const wordRef = self.newWordRefEntity({ // Store a wordRef object on the comment
                     word: sequenceKey,
+                    type: wordType,
                     hasSymbols: [] // will fill this array if symbols are found during our symbolMatchPromises
                 });
                 commentData.words.push(wordRef);
@@ -365,7 +392,7 @@ class ExtractWordsFromComments {
         });
     }
 
-    registerWordToCommentsIndex(wordString, commentId, cback) { // a comment index (index:wordToComments:) is an array holding comment ids
+    registerWordToCommentsIndex(wordString, commentId, cback) { // a comment index (index:wordToComments:foo_bar) is an array holding comment ids
         const self = this;
         const thisIndexKey = `index:wordToComments:${wordString}`;
         self.redisClient.get(thisIndexKey, (gotWordIndex) => {
@@ -421,14 +448,16 @@ class ExtractWordsFromComments {
             rawWords: initial.rawWords || [], // array of arrays of single strings. (as-commented after tokenized) Each matching this word (though not necc. by case or exact match)
             type: initial.type, // 'word', 'bigram', 'trigram'
             hasSymbols: initial.hasSymbols || [], // array of symbol object keys ['symbol:stock:gme', etc]
-            foundAt: [] // array of timestamps for every time this entity was found in a raw comment
+            // foundAt: [] // array of timestamps for every time this entity was found in a raw comment
         }
+        // the array of "foundAt" tstamps is stored to it's own redis list at key: word:foo_!!_bar:foundAt
     }
 
     newWordRefEntity(initial = {}) {
         // returns an initial state for a word ref (used to reference a full word object stored in redis). The word ref objects live on comment objects.
         return {
             word: initial.word, // Stringified version (foo_bar) of what would be the word.value prop on the actual word object. Can be used to form a redis key for word (word:foo_bar)
+            type: initial.type, // 'word', 'bigram', 'trigram'
             hasSymbols: initial.hasSymbols || [], // array of symbol object keys ['symbol:stock:gme', etc]
             pointsEarned: 0 // so an individual wordRef owner (like a comment object) can track how many points this word earned for it STARTING when the comment was created. (not timebucketed)
         }
