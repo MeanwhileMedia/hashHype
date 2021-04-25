@@ -12,7 +12,7 @@ const deployCodeSftpConfig = {
                 username: '',
                 password: '',
                 targetDir: '', // Relative path (to the default ssh landing DIR (users home dir)). this directory will be the parent to our app folder. After deploy, this directory will have a new folder "hashHype". FULL OVERWRITE
-                excludeDirs: [], //dir names should be DOUBLE escaped for use in a regex. i.e: ['\\.git', 'node_modules']
+                excludeDirs: [], //dir names should be DOUBLE escaped for use in a regex. i.e: ['\\.git', 'node_modules']. Can be dir or file names. The sftp lib we use matches these patterns against 'node_modules' not '/full/path/to/node_modules/'
                 wipeFirst: true // if set to true, deployCodeSftp will first delete entire app folder from target (if it already exists)
             }
         },

@@ -108,10 +108,15 @@ class HbClientSocketDbResponses_admin {
     // 3. DONE - Extract URLS from comments as a new type of symbol. Make sure none of the URL chars get extracted as words during tokenization
     // 4. DONE - disabled AOF - Adjust redis aof settings because it appears to be saving too often - also look into the minifaction feature
     // 5. DONE - update redisClient.js to overwrite the native node_redis set and get commands. Add logic to automatically set or get to the 'long' db based on a namespace configuration. This way, individual processes don't need to set up the extra "long" client and/or individually maintain the logic for which db to use.
-    //          STOPPING - look into how integer tstamps being read/written to lists without json. may need to parseInt?
-    //                   - what happens when a words "foundAt" object get's evicted because of redis's retarded LRU algo. That would drastically change all logic associated with timeBucketWordPointsForComment. Need to add logic to keep these tstamp arrays in long db once they reach a certain length.
-    // 6. Set up routine to backup redis DB (rdb) to cloud every 24hrs - AND create snapshots of stats: objects (for long term trend extraction using per-day data)
-    // 7. Chance top comment stats to only show 2 wedges for any given symbol
+    //             DONE - this is ready to test... what happens when a words "foundAt" object get's evicted from "short" because of redis's retarded LRU algo. That would drastically change all logic associated with timeBucketWordPointsForComment. Need to add logic to keep these tstamp arrays in long db once they reach a certain length.
+    //             DONE - need to design some logic for resetting "New topWordsMinCount: 6". Once it gets high during peak times, it becomes too high during slow times and words are ignored.
+    //             DONE - topCommentStats is bypassing comment preserve logic because it currently uses throttled.get. Add dynamic db to batch commands? Decision: Only added to batched.get in a non blocking manner (to preserve performance)
+    // 6. Maintenance
+    //     DONE - Set up routine to backup redis DB (rdb) to cloud every 24hrs
+    //     DONE - rotate and backup logs to cloud
+    //     DONE - log db stats in intervals so can track growth
+    //     WIP - create snapshots of stats: objects (for long term trend extraction using per-day data)
+    // 7. Change top comment stats to only show 2 wedges for any given symbol
     // 8. only serve admin train FE assets to requests from admin URLs. add functionality to strip JS includes of admin assets during code compilation.
     // 9. Add an "about" icon which includes disclaimer
     // 10. Add google analytics snippet to layout.html

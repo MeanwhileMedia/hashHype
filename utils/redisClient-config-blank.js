@@ -14,11 +14,14 @@ module.exports = {
                     address: '',
                     redisServerPath: '',
                 },
-                // When a .set is called for a redis key, if that key matches any of the configured 'storeNamespaces' patterns, then it is stored to this database AND any
-                // other database with matching pattern. Each string here is merged into a single regex: ['^foo:bar:', '^baz:'] becomes /^foo:bar:|^baz:/
                 storeNamespaces: [
-                    '.', // This should not be changed for "short. Everything is stored to the "short" term memory store. If our semi aggressive LRU policy nukes the wrong item, redisClient.js will automatically try to recover it from the other databases which have a matching storeNamespaces pattern.
+                    // When a .set is called for a redis key, if that key matches any of the configured 'storeNamespaces' patterns, then it is stored to this database AND any other database with matching pattern.
+                    {
+                        pattern: '.', // This should not be changed for "short. Everything is stored to the "short" term memory store. If our semi aggressive LRU policy nukes the wrong item, redisClient.js will automatically try to recover it from the other databases which have a matching storeNamespaces pattern.
+                        ttl: null // milliseconds. set this to null and no expire will be set for objects matching this pattern
+                    }
                 ],
+                preserveNamespaces: [], // This config is not applicable to the "short" db. See below for docs on how to use "preserveNamespaces".
                 serverArgs: { // mapped directly to redis cli config prop names
                     port: 8170,
 
@@ -26,7 +29,7 @@ module.exports = {
                     requirepass: '',
 
                     // Persistence settings
-                    dbfilename: 'dbShort.rdb',
+                    dbfilename: '00000-short.rdb', // To utilize db archive/backup functionality (in maintainLogsAndBackups) the rdb file name MUST always start with the "active day tstamp" 00000
                     dir: path.resolve(process.cwd(), './utils/db/'),
                     // appendonly: 'yes',
                     // appendfilename: 'persistDb.aof',
@@ -49,6 +52,20 @@ module.exports = {
                     redisServerPath: '',
                 },
                 storeNamespaces: [],
+                preserveNamespaces: [
+                    // preserveNamespaces is similar to storeNamespaces in that you define namespace patterns for dynamic DB logic. However, these patterns are for determining
+                    // when a key, just saved to ANY DB, should also be stored to THIS DB. E.g. a redis list of word foundAt tstamps reaches a certain length, we assume it's a popular
+                    // word and that it's record must be safely preserved in the event our "short" database gets nuked by redis' aggressive LRU eviction. When a read command attempts to find
+                    // that key in "short" and gets a null response, redisClient will automatically retry on this DB - then return the preserved data.
+                    // {
+                    //     pattern: '^word:.+:foundAt$',
+                    //     // "count" is a generic descriptor of the threshhold for when a matched key must be preserved.
+                    //     // In the case of redis lists, our preserve logic will compare "count" to the list length. Other redis object types may use "count" differently in preserve logic.
+                    //     // In the case of redis strings (json), our preserve logic will compare "count" the the json.saveCount property (incremented upon every call to redisClient.set).
+                    //     count: 100,
+                    //     ttl: null // milliseconds. set this to null and no expire will be set for objects matching this pattern
+                    // }
+                ],
                 serverArgs: {
                     port: 8171,
 
@@ -56,7 +73,7 @@ module.exports = {
                     requirepass: '',
 
                     // Persistence settings
-                    dbfilename: 'dbLong.rdb',
+                    dbfilename: '00000-long.rdb',
                     dir: path.resolve(process.cwd(), './utils/db/'),
                     // appendonly: 'yes',
                     // appendfilename: 'persistDb.aof',

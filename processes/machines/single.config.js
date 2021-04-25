@@ -1,12 +1,19 @@
 // Beware: This machine "single" is for running the all app processes on a single server computer (redis, uiServer, and ALL other processes)
+const fs = require('fs');
 const path = require('path');
 const redisConfigs = require('../../utils/redisClient-config.js');
-const logDir = path.resolve(process.cwd(), 'utils/logs');
-const logDay = Math.floor(Date.now() / 86400000);
+const googleConfigs = require('../../utils/googleClient-config.js');
 
+const rdbDir = path.resolve(process.cwd(), 'utils/db');
+const logDir = path.resolve(process.cwd(), 'utils/logs');
+const activeLogDayTstamp = '00000'; // A tstamp of zero is always used for active pm2 logs. MaintainLogsAndBackups will rotate for us into archivable day tstamps (and upload to gdrive).
 const getLogPath = (procName, logType) => {
-    return `${logDir}/${procName}-${logType}-${logDay}.log`;
+    return `${logDir}/${activeLogDayTstamp}-${procName}-${logType}.log`;
 };
+
+// Ensure all required directorties exist on local machine
+fs.mkdirSync(rdbDir, {recursive: true}); // recursive will allow this command to not error if dir already exists
+fs.mkdirSync(logDir, {recursive: true});
 
 const genConfigs = {
 
@@ -19,7 +26,8 @@ const genConfigs = {
                 redisHost: thisRedisConfig.hostInfo.address,
                 redisPort: thisRedisConfig.serverArgs.port,
                 redisPassword: thisRedisConfig.serverArgs.requirepass,
-                storeNamespaces: thisRedisConfig.storeNamespaces
+                storeNamespaces: thisRedisConfig.storeNamespaces,
+                preserveNamespaces: thisRedisConfig.preserveNamespaces
             };
 
             let redisServerConfigString = '';
@@ -42,8 +50,12 @@ const genConfigs = {
 
     apps: () => {
         const dbsJson = JSON.stringify(genConfigs.allDbClientConfigs);
-        const buffer = new Buffer(dbsJson);
-        const dbsJsonBase64Encoded = buffer.toString('base64');
+        const dbsJsonBuffer = new Buffer(dbsJson);
+        const dbsJsonBase64Encoded = dbsJsonBuffer.toString('base64');
+
+        const googleDriveConfigJson = JSON.stringify(googleConfigs.genConfigForCliArg());
+        const googleDriveConfigJsonBuffer = new Buffer(googleDriveConfigJson);
+        const googleDriveConfigJsonBase64Encoded = googleDriveConfigJsonBuffer.toString('base64');
 
         const cliArgs = genConfigs.extractCliArgs();
         let inspect = '';
@@ -53,38 +65,45 @@ const genConfigs = {
             {
                 name: 'UI Server',
                 script: './processes/uiServer.js',
-                args: `--dbs=${dbsJsonBase64Encoded}`,
-                interpreter_args: '-r esm',
+                args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
+                interpreter_args: `-r esm ${inspect}`,
                 error_file: getLogPath('uiServer', 'err'),
                 out_file: getLogPath('uiServer', 'out'),
             }, {
                 name: 'Fetch Reddit Comments',
                 script: './processes/fetchRedditComments.js',
-                args: `--dbs=${dbsJsonBase64Encoded}`,
-                interpreter_args: '-r esm',
+                args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
+                interpreter_args: `-r esm ${inspect}`,
                 error_file: getLogPath('fetchReddit', 'err'),
                 out_file: getLogPath('fetchReddit', 'out')
             }, {
                 name: 'Fetch Stock Symbols',
                 script: './processes/fetchCoinAndStockSymbols.js',
-                args: `--dbs=${dbsJsonBase64Encoded}`,
-                interpreter_args: '-r esm',
+                args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
+                interpreter_args: `-r esm ${inspect}`,
                 error_file: getLogPath('stockSymbols', 'err'),
                 out_file: getLogPath('stockSymbols', 'out')
             }, {
                 name: 'Comment Word Extractor',
                 script: './processes/extractWordsFromComments.js',
-                args: `--dbs=${dbsJsonBase64Encoded}`,
-                interpreter_args: '-r esm',
+                args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
+                interpreter_args: `-r esm ${inspect}`,
                 error_file: getLogPath('wordExtractor', 'err'),
                 out_file: getLogPath('wordExtractor', 'out')
             }, {
                 name: 'Top Comment Stats',
                 script: './processes/topCommentStats.js',
-                args: `--dbs=${dbsJsonBase64Encoded}`,
+                args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
                 interpreter_args: `-r esm ${inspect}`,
                 error_file: getLogPath('topComments', 'err'),
                 out_file: getLogPath('topComments', 'out')
+            }, {
+                name: 'MaintainLogsAndBackups',
+                script: './processes/maintainLogsAndBackups.js',
+                args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
+                interpreter_args: `-r esm ${inspect}`,
+                error_file: getLogPath('maintenance', 'err'),
+                out_file: getLogPath('maintenance', 'out')
             }
         ];
     }, // end 'apps'

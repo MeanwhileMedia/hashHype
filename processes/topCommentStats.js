@@ -16,7 +16,7 @@ class TopCommentsStats {
         this.topComments = this.newTopCommentsEntity();
 
         this.topWordsCounts = {}; // {foo_bar: 35, baz: 100, etc...} // caches counts for words found to be both top, or not.
-        this.topWordsCountsMaxLength = 100;
+        this.topWordsCountsMaxLength = 200;
         this.topWordsMinCount = 0;
 
         this.redisClient = null;
@@ -165,7 +165,7 @@ class TopCommentsStats {
                 '24Hr': {}
             };
             const now = Date.now();
-            allFoundAtTstamps.forEach((thisFoundAtTstamp) => {
+            allFoundAtTstamps.forEach((thisFoundAtTstamp) => { // thisFoundAtTstamp is actually a string, but JS will coerce it to an int during calc (subtract ONLY). https://www.codegrepper.com/code-examples/javascript/js+string+minus+number
                 if(now - msInHr < thisFoundAtTstamp) {
                     thisWordPoints['1Hr'][wordRef.word] = thisWordPoints['1Hr'][wordRef.word] || 0;
                     thisWordPoints['1Hr'][wordRef.word] = thisWordPoints['1Hr'][wordRef.word] + points;
@@ -260,25 +260,25 @@ class TopCommentsStats {
     }
 
     determineCommentTopSymbol(comment) {
-        // Sum the pointsEarned prop from each comment wordRef to determine the topSymbol for this comment. The topSymbol
-        // represents the symbol which earned the most point SINCE the creation of the comment (rather than the most overall popular symbol in a specific timebucket).
+        const self = this;
+        // Loop through comment.words, and cross against comment.points and comment.symbols to assign the winning symbol object to comment.topSymbol.
+        let topSymbolKey = null;
+        let curTopPointsCount = 0;
         comment.topSymbol = null;
-        if (!comment.symbols) return;
-        const symbolPointCounts = {};
-        let topSymbolKey = {key: null, pointsEarned: -1};
-        comment.words.forEach((wordRef) => {
-            wordRef.hasSymbols.forEach((symbolKey) => {
-                symbolPointCounts[symbolKey] = symbolPointCounts[symbolKey] || 0;
-                symbolPointCounts[symbolKey] = symbolPointCounts[symbolKey] + wordRef.pointsEarned;
-                if (symbolPointCounts[symbolKey] > topSymbolKey.pointsEarned) topSymbolKey = {key: symbolKey, pointsEarned: symbolPointCounts[symbolKey]};
-            });
+        comment.words.forEach( (thisWordRef) => {
+            if (!thisWordRef.hasSymbols || thisWordRef.hasSymbols.length === 0) return;
+            const pointsForThisSymbolWord = comment.points['1Hr'][thisWordRef.word];
+            if (!pointsForThisSymbolWord) return;
+            if (pointsForThisSymbolWord < curTopPointsCount) return;
+            // Right now we are just grabbing the first symbol from the wordRef. This is somewhat innacurate because
+            // if the wordRed contains more than one symbol, we may not be grabbing the one that earned it the most points.
+            topSymbolKey = thisWordRef.hasSymbols[0];
+            curTopPointsCount = pointsForThisSymbolWord;
         });
-        if (!topSymbolKey.key) return;
-        const topSymbolSymbol = topSymbolKey.key.split(':')[2]; // symbol:stock:gme
-        const topSymbolObj = comment.symbols.find(thisSymbolObj => thisSymbolObj.symbol === topSymbolSymbol);
-        if (topSymbolObj) {
-            comment.topSymbol = topSymbolObj;
-        }
+        if (!topSymbolKey) return;
+        const symbolSymbol = topSymbolKey.split(':').pop(); // assumes our symbol key pattern will always place thie symbol.symbol string last (i.e. symbol:stock:gme)
+        const topSymbol = comment.symbols.find(thisSymbol => thisSymbol.symbol === symbolSymbol);
+        comment.topSymbol = topSymbol || null;
     }
 
     // minimizeComment(comment) { // alters comment in-place
@@ -403,7 +403,7 @@ class TopCommentsStats {
         removeComment.words.forEach((thisWordRef) => {
             const thisIndexKey = `index:wordToComments:${thisWordRef.word}`;
             self.redisClient.throttle.get(thisIndexKey, (thisWordToCommentsIndex) => {
-                console.log(`Removing comment ${removeComment.id} from ${thisIndexKey}`);
+                // console.log(`Removing comment ${removeComment.id} from ${thisIndexKey}`);
                 const commentIdIndex = thisWordToCommentsIndex.indexOf(removeComment.id);
                 if (commentIdIndex === -1) return;
                 thisWordToCommentsIndex.splice(commentIdIndex, 1);
@@ -462,6 +462,11 @@ class TopCommentsStats {
                                 resolve();
                                 return;
                             }
+
+                            // Save the :comment again at this point so that it's saveCount prop is updated and subjected to db preserve logic.
+                            // Remember that we cannot use throttled redis commands to utilize dynamic DB functionality.
+                            self.redisClient.set(`comment:${comment.id}`, comment);
+
                             if (isTopComment.isNewTopComment) console.log(`Found new topComment:`, commentClone.body);
                             self.addSymbolsDataToComment(commentClone, () => { // To properly render this comment in the topCommentStats UI, we need to populate it's comment.symbols array.
                                 self.determineCommentTopSymbol(commentClone);
@@ -483,7 +488,6 @@ class TopCommentsStats {
         // returns an initial state for a top comment stats
         return {
             absKey: this.topCommentsStatsKey,
-            lastUpdated: Date.now(), // in case we want to rate limit this process
             timeBuckets: {
                 '1Hr': [],
                 '12Hr': [],
@@ -499,9 +503,8 @@ class TopCommentsStats {
     storeNewTopCommentsStats() {
         const self = this;
         this.refreshTopComments(() => {
-            self.topComments.lastUpdated = Date.now();
             self.redisClient.set(self.topCommentsStatsKey, self.topComments);
-            console.log('Updated stats:topComments at time:', self.topComments.lastUpdated)
+            console.log('Updated stats:topComments at time:', Date.now())
             //console.log(util.inspect(this.topComments, {depth: 10, colors: true}));
         });
     }

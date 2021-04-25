@@ -459,7 +459,6 @@ class ExtractWordsFromComments {
             word: initial.word, // Stringified version (foo_bar) of what would be the word.value prop on the actual word object. Can be used to form a redis key for word (word:foo_bar)
             type: initial.type, // 'word', 'bigram', 'trigram'
             hasSymbols: initial.hasSymbols || [], // array of symbol object keys ['symbol:stock:gme', etc]
-            pointsEarned: 0 // so an individual wordRef owner (like a comment object) can track how many points this word earned for it STARTING when the comment was created. (not timebucketed)
         }
     }
 

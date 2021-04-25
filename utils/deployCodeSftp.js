@@ -51,9 +51,9 @@ class DeployCodeSftp {
             if (self.deployConfig.excludeDirs && self.deployConfig.excludeDirs.length) {
                 let exludeRegexParts = '';
                 self.deployConfig.excludeDirs.forEach((thisPart) => {
-                    exludeRegexParts = exludeRegexParts + `(?!.*${thisPart})`
+                    exludeRegexParts = exludeRegexParts + `(?!(${thisPart}))`
                 });
-                exludeRegEx = new RegExp(`^${exludeRegexParts}.*$`, 'i');
+                exludeRegEx = new RegExp(`^${exludeRegexParts}.*$`, 'i'); // https://regexr.com/5rd3o
             }
             return self.sftpClient.uploadDir(this.localProjectDir, targetDir, exludeRegEx);
         }).then(() => {
