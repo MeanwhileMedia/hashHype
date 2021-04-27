@@ -16,6 +16,7 @@ class TopTagNetworks extends React.Component {
 
         this.state = {
             focusedTopTag: null,
+            freezeState: false, // set to true and all calls to receiveNewState (from our server socket) will be discarded.
             timeBuckets: {
                 '1hr': [],
                 '12Hr': [],
@@ -35,8 +36,12 @@ class TopTagNetworks extends React.Component {
         socketViewResponses.initViewChangeListener(wheelAbsKey, this);
     }
 
-    receiveNewState(data) {
-        this.setState(data);
+    receiveNewState(socketData) {
+        if (this.state.freezeState) {
+            // console.log('State is frozen...');
+            return;
+        }
+        this.setState(socketData);
     }
 
     render() {
@@ -57,6 +62,7 @@ class TopTagNetworks extends React.Component {
                     <TopTagWheel
                         topTags={this.state.timeBuckets['1Hr']}
                         focusTopTag={this.focusTopTag.bind(this)}
+                        toggleFreezeState={this.toggleFreezeState.bind(this)}
                     />
                     <TopTagnewsColumns
                         topTags={this.state.timeBuckets['1Hr']}
@@ -71,6 +77,11 @@ class TopTagNetworks extends React.Component {
     focusTopTag(id) {
         // The wheel was rotated and a new topTag has come into view.
         this.setState({ focusedTopTag: id });
+    }
+
+    toggleFreezeState(frozen) {
+        if (typeof frozen !== 'boolean') frozen = !this.state.freezeState;
+        this.setState({ freezeState: frozen });
     }
 
     showModal(modalContent) {

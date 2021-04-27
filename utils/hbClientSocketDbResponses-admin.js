@@ -115,11 +115,13 @@ class HbClientSocketDbResponses_admin {
     //     DONE - Set up routine to backup redis DB (rdb) to cloud every 24hrs
     //     DONE - rotate and backup logs to cloud
     //     DONE - log db stats in intervals so can track growth
-    //     WIP - create snapshots of stats: objects (for long term trend extraction using per-day data)
+    //     WONT - will use our rdb archives to access historical data. original task: create snapshots of stats: objects (for long term trend extraction using per-day data)
     // 7. Change top comment stats to only show 2 wedges for any given symbol
+    // 7.5 DONE - Duplicate identical comments by same user keep trending. Need a solution. A comment may only receive word/symbol repost points ONCE PER USER (zero times for self)??
     // 8. only serve admin train FE assets to requests from admin URLs. add functionality to strip JS includes of admin assets during code compilation.
     // 9. Add an "about" icon which includes disclaimer
-    // 10. Add google analytics snippet to layout.html
+    // 10. Mobile styles
+    // 11. Add google analytics snippet to layout.html
 
 
     deleteComment(message, socket) {

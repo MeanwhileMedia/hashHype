@@ -12,7 +12,7 @@ class TopCommentsStats {
         const self = this;
         this.topCommentsStatsKey = 'stats:topComments';
 
-        this.pendingTopCommentIds = []; // these id's are roughly estimated to become topComments. Confirmed during refreshTopComments.
+        this.pendingTopCommentIds = {}; // these id's are roughly estimated to become topComments. Confirmed during refreshTopComments. {word_!!_foo: [commentId1, commentId2], bar_!!_baz: [commentId3], etc}
         this.topComments = this.newTopCommentsEntity();
 
         this.topWordsCounts = {}; // {foo_bar: 35, baz: 100, etc...} // caches counts for words found to be both top, or not.
@@ -57,7 +57,8 @@ class TopCommentsStats {
                 const wordIndexKey = `index:wordToComments:${wordString}`;
                 self.redisClient.throttle.get(wordIndexKey, (wordToCommentsIndex) => {
                     if (!wordToCommentsIndex) return;
-                    self.pendingTopCommentIds = self.pendingTopCommentIds.concat(wordToCommentsIndex);
+                    self.pendingTopCommentIds[wordString] = self.pendingTopCommentIds[wordString] || [];
+                    self.pendingTopCommentIds[wordString] = self.pendingTopCommentIds[wordString].concat(wordToCommentsIndex);
                     self.throttle.storeNewTopCommentsStats();
                 });
             });
@@ -104,17 +105,17 @@ class TopCommentsStats {
         }, 5000);
     }
 
-    applyPointsToCommentForWord(comment, wordRef, cback) { // alters comment in-place (updates points object)
+    applyPointsToCommentForWord(comment, wordRef, allCommentsWithThisWord, cback) { // alters comment in-place (updates points object)
         const self = this;
         this.getWordPointCount(comment, wordRef, (points) => {
             // re-fetch from redis all of the foundAt tstamps for this word, and assign them to comment.points[timebucket][wordString] = totalWordPointsForThisTimebucket (int)
-            self.timeBucketWordPointsForComment(comment, wordRef, points, () => {
+            self.timeBucketWordPointsForComment(comment, wordRef, points, allCommentsWithThisWord, () => {
                 if (cback) cback();
             });
         });
     }
 
-    getWordPointCount(comment, wordRef, cback) { // May alter comment object in-place. cback returns (points int, symbolObjects array)
+    getWordPointCount(comment, wordRef, cback) {
         const self = this;
         //(0 points for words), 5 points when word is symbol
         //(5 for bigrams) x 2 when a symbol was in bigram (only multiplies max once)
@@ -140,7 +141,7 @@ class TopCommentsStats {
         if (cback) cback(points);
     } //end getWordPointCount
 
-    timeBucketWordPointsForComment(comment, wordRef, points, cback) { // alters comment in-place (updates comment.points)
+    timeBucketWordPointsForComment(comment, wordRef, points, allCommentsWithThisWord, cback) { // alters comment in-place (updates comment.points)
         const self = this;
         const foundAtListKey = `word:${wordRef.word}:foundAt`;
         self.redisClient.throttle.lrange(foundAtListKey, 0, -1, (allFoundAtTstamps) => {
@@ -149,10 +150,27 @@ class TopCommentsStats {
                 return;
             }
 
-            // First we remove the newest foundAt timestamp from this array. This is because we don't wan't to award points to this comment for it's
-            // own occurance of this word (we only award points to reoccurances in other comments). The quick and dirty way to enforce this is to just
-            // pop right off the bottom (tstamps in foundAt lists are sorted ascending).
-            allFoundAtTstamps.pop();
+            // First loop through the provided allCommentsWithThisWord array to determine if we must strip a 'deductFoundAtCount' of most recent timestamps from
+            // allFoundAtTstamps. This deductFoundAtCount is determined by a couple factors:
+            // 1. When any of allCommentsWithThisWord contain the same author as comment (an author can't boost his own prior comment, and a single comment doesn't earn points for itself)
+            // 2. When we find any duplicate authors in allCommentsWithThisWord (another user can only boost an authors comment ONCE PER WORD PER 24Hrs)
+            // This will eliminate point count inflation for identical comments from a single user, or other foulplay to influence a trend.
+            let deductFoundAtCount = 0;
+            const commentCountsForAuthorsOfThisWord = {}; // {agentOOjoe: 2, otherUser: 1, etc...}
+            allCommentsWithThisWord.forEach((thisComment) => {
+                if (!thisComment.author || !thisComment.author.name) return;
+                commentCountsForAuthorsOfThisWord[thisComment.author.name] = commentCountsForAuthorsOfThisWord[thisComment.author.name] || 0;
+                ++commentCountsForAuthorsOfThisWord[thisComment.author.name];
+            });
+            for (const [thisAuthor, commentCountForAuthorOfThisWord] of Object.entries(commentCountsForAuthorsOfThisWord)) {
+                if (thisAuthor === comment.author.name) {
+                    deductFoundAtCount = deductFoundAtCount + commentCountForAuthorOfThisWord;
+                } else {
+                    deductFoundAtCount = deductFoundAtCount + (commentCountForAuthorOfThisWord-1);
+                }
+            };
+            // if (deductFoundAtCount) console.log(`Deducting ${deductFoundAtCount} word (${wordRef.word}) foundAt occurances (${deductFoundAtCount*points} points) from comment:${comment.id} because of duplicated user commenting.`);
+            if (deductFoundAtCount !== 0) allFoundAtTstamps = allFoundAtTstamps.slice(0, deductFoundAtCount*-1); // slice off the bottom (tstamps in foundAt lists are sorted ascending)
 
             // Converts an ordered array of word foundAt tstamps into time bucketed points. Where "foo_bar" is word:  {1hr: {foo_bar: 234}, 12hr: etc...}
             // It then takes this timebucketed points object and merges into comment.points (overwriting any previous point counts for this word)
@@ -189,7 +207,7 @@ class TopCommentsStats {
 
     isTopComment(comment) {
         // this function takes the comment count stats and determines if it is ranked as a top trending comment in any of the time buckets.
-        // Alters this.topComments in-place.
+        // Alters this.topComments in-place AND comment in-place
         let isTopComment = false;
         let isNewTopComment = false; // will be true if isTopComment AND doesn't already exist on this.topComments
         for (const [bucketKey, bucketComments] of Object.entries(this.topComments.timeBuckets)) {
@@ -424,22 +442,31 @@ class TopCommentsStats {
         // which comments MIGHT become topComments. Those comment id's are added to "this.pendingTopCommentIds". This refreshTopComments function
         // then runs the full logic (in intervals) to apply points for every word in the comment and compares to all other pendingTopCommentIds AND existing
         // this.topComments to see which ones will be finalized into this.topComments and prepped for rendering.
-        const uniquePendingTopCommentIds = [...new Set(self.pendingTopCommentIds)];
-        self.pendingTopCommentIds = [];
+        const commentIdsForNewWords = self.pendingTopCommentIds; // save a local copy
+        const newWordsForCommentIds = {}; // {commentId1: ['foo_!!_bar', 'gme'], commentId2: ['tsla'], etc...} - it's a flipped version of self.pendingTopCommentIds
+        const uniquePendingTopCommentIds = [];
+        for (let [word, commentIdsForWord] of Object.entries(self.pendingTopCommentIds)) {
+            commentIdsForWord.forEach((thisCommentId) => {
+                if (uniquePendingTopCommentIds.indexOf(thisCommentId) === -1) uniquePendingTopCommentIds.push(thisCommentId);
+                newWordsForCommentIds[thisCommentId] = newWordsForCommentIds[thisCommentId] || [];
+                newWordsForCommentIds[thisCommentId].push(word);
+            });
+        };
+        self.pendingTopCommentIds = {}; // reset now as they will continue to be incoming
 
-        const allCommentRefreshPromises = [];
+        const allCommentGetPromises = [];
         uniquePendingTopCommentIds.forEach( (thisCommentId) => {
-            allCommentRefreshPromises.push(new Promise( (resolve, reject) => {
+            allCommentGetPromises.push(new Promise( (resolve, reject) => {
                 self.redisClient.throttle.get(`comment:${thisCommentId}`, (comment) => {
                     if (!comment) {
                         // if this comment couldn't be found in redis, then delete from top comment stats (may have beed deleted by training or redis LRU algo)
                         console.log(`Missing comment in redis: ${thisCommentId}`);
-                        resolve();
+                        resolve(null);
                         return;
                     }
                     if (self.isDiscardComment(comment)) {
                         self.removeCommentFromAll(comment);
-                        resolve();
+                        resolve(null);
                         return;
                     }
                     const isYoungComment = Date.now() - comment.createdUtc < self.trackCommentsFor;
@@ -447,41 +474,67 @@ class TopCommentsStats {
                         // ONLY add points and update redis for comments less than X milliseconds old.
                         console.log(`A tracked comment is now too old. Will remove: ${thisCommentId}`);
                         self.removeCommentFromAll(comment);
-                        resolve();
+                        resolve(null);
                         return;
                     }
+                    resolve(comment);
+                }); // end self.redisClient.throttle.get(`comment
+            })); // end allCommentGetPromises.push
+        }); // end this.pendingTopCommentIds.forEach
+
+        Promise.all(allCommentGetPromises).then((allComments) => {
+            const allCommentPointingPromises = [];
+            const possibleTopComments = allComments.filter(Boolean); //remove null responses (was redis 404, or was discarded, etc)
+            possibleTopComments.forEach((comment) => {
+                allCommentPointingPromises.push(new Promise( (resolve, reject) => {
                     let wordsComplete = 0;
                     comment.words.forEach( (thisWordRef) => {
-                        self.applyPointsToCommentForWord(comment, thisWordRef, () => {
+                        // Only run point updating on the words that just triggered new foundAt occurances
+                        if (newWordsForCommentIds[comment.id].indexOf(thisWordRef.word) === -1) {
                             ++wordsComplete;
-                            if (wordsComplete < comment.words.length) return;
+                            return;
+                        }
+
+                        // first we must collect all comments which are getting points re-counted for this specific word re-occurance. This list
+                        // is used by applyPointsToCommentForWord to deduct points for word re-uses by the same comment author.
+                        const allCommentsWithThisWord = [];
+                        const commentIdsForThisWord = commentIdsForNewWords[thisWordRef.word];
+                        if (commentIdsForThisWord) {
+                            possibleTopComments.forEach((possibleTopComment) => {
+                                if (commentIdsForThisWord.indexOf(possibleTopComment.id) !== -1) allCommentsWithThisWord.push(possibleTopComment);
+                            });
+                        }
+                        // Now we can proceed to add up comment.points for this word, and later determine if this comment is a topComment.
+                        self.applyPointsToCommentForWord(comment, thisWordRef, allCommentsWithThisWord, () => {
+                            ++wordsComplete;
+                            if (wordsComplete < comment.words.length) return; // Wait until all words (for this comment) are pointed before proceeding to topComment logic
+
+                            // resolve this allCommentPointingPromise without waiting on next lines. addSymbolsDataToComment takes a long time and we don't want to hold this memory while we wait.
+                            resolve();
+
                             // Now take another look at the comment to see if it belongs in our topComments object
                             const commentClone = JSON.parse(JSON.stringify(comment)); // this comment object may be a part of redis cached get so clone before we neuter it for topComments.
-                            const isTopComment = self.isTopComment(commentClone); //Alters this.topComments in-place. returns {isTopComment: bool, isNewTopComment: bool};
-                            if (!isTopComment.isTopComment) {
-                                resolve();
-                                return;
-                            }
+                            let isTopComment = self.isTopComment(commentClone); //Alters this.topComments in-place. returns {isTopComment: bool, isNewTopComment: bool};
 
                             // Save the :comment again at this point so that it's saveCount prop is updated and subjected to db preserve logic.
-                            // Remember that we cannot use throttled redis commands to utilize dynamic DB functionality.
-                            self.redisClient.set(`comment:${comment.id}`, comment);
+                            self.redisClient.set(`comment:${comment.id}`, comment); // Remember that we cannot use throttled redis commands to utilize dynamic DB functionality.
 
+                            if (!isTopComment.isTopComment) return;
                             if (isTopComment.isNewTopComment) console.log(`Found new topComment:`, commentClone.body);
+
+                            // Perform last remaining steps to mutate this comment object for use on stats:topComments
                             self.addSymbolsDataToComment(commentClone, () => { // To properly render this comment in the topCommentStats UI, we need to populate it's comment.symbols array.
                                 self.determineCommentTopSymbol(commentClone);
                                 //self.minimizeComment(commentClone);
-                                resolve();
                             });
-                        });
-                    });
-                });
-            })); // end allCommentRefreshPromises.push
-        }); // end this.pendingTopCommentIds.forEach
-
-        Promise.all(allCommentRefreshPromises).then(() => {
-            if (cback) cback();
-        });
+                        }); // end applyPointsToCommentForWord
+                    }); // end comment.words.forEach
+                })); // end allCommentPointingPromises.push
+            }); // end possibleTopComments.forEach
+            Promise.all(allCommentPointingPromises).then(() => {
+                if (cback) cback();
+            });
+        }); // end Promise.all(allCommentGetPromises)
     } // end refreshTopComments
 
     newTopCommentsEntity(initial = {}) {

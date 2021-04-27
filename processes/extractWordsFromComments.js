@@ -49,15 +49,7 @@ class ExtractWordsFromComments {
                 if (!comment || !comment.body) return;
                 self.preserveUrlsInCommentBody(comment);
                 self.extractWordSequences(comment, () => {
-                    let wordsRegistered = 0;
-                    comment.words.forEach( (thisWordRef) => {
-                        self.registerWordToCommentsIndex(thisWordRef.word, comment.id, () => {
-                            wordsRegistered++;
-                            if (wordsRegistered >= comment.words.length) {
-                                self.redisClient.set(`comment:${comment.id}`, comment);
-                            }
-                        })
-                    });
+                    self.redisClient.set(`comment:${comment.id}`, comment);
                 });
             });
         });
@@ -213,28 +205,29 @@ class ExtractWordsFromComments {
                         if (saveWordToRedisCback) saveWordToRedisCback();
                     });
 
-                    //saveWordObject.foundAt.unshift(Date.now()); // keep track of each time this word occured in a new comment
-                    // All "foundAt" tstamps are stored to their own redis list at key: word:foo_!!_bar:foundAt
-                    const foundAtListKey = `${redisWordKey}:foundAt`; // rpush autor creates list if it does not already exist
-                    self.redisClient.rpush(foundAtListKey, [Date.now()], (listLength) => {
-                        // Now trim this "foundAt" list - remove all tstamps which are older than 24hrs old (self.trackWordsFor). For performance,
-                        // we don't want to run this logic every single time there is a word re-occurance. We establish a vague threshold for max list length.
-                        const maxListLength = self.trackWordsFor / 5000; // self.trackWordsFor is ms. Let's estimate that once we have enough tstamps to account a word recurring every 5 seconds, we start trim logic.
-                        if (listLength < maxListLength) return;
-                        console.log(`A redis list (${foundAtListKey}) will now be trimmed of all tstamps older than ${self.trackWordsFor/3600000}hrs...`);
-                        self.redisClient.lrange(foundAtListKey, 0, -1, (allFoundAtTstamps) => {
-                            let trimStart = 0; // the index in list at which tstamps stop being too old. These lists are sorted ascending.
-                            allFoundAtTstamps.some((thisTstamp, thisTstampIndex) => {
-                                const isOldTstamp = Date.now() - commentData.createdUtc > self.trackWordsFor;
-                                if (!isOldTstamp) return true; // break from loop. We have looped through all the old tstamps.
-                                trimStart = thisTstampIndex;
+                    self.registerWordToCommentsIndex(saveWordObject.value.join('_!!_'), commentData.id, () => { // this needs to be done before the rpush because of topCommentsStats logic
+                        //saveWordObject.foundAt.unshift(Date.now()); // keep track of each time this word occured in a new comment
+                        // All "foundAt" tstamps are stored to their own redis list at key: word:foo_!!_bar:foundAt
+                        const foundAtListKey = `${redisWordKey}:foundAt`; // rpush autor creates list if it does not already exist
+                        self.redisClient.rpush(foundAtListKey, [Date.now()], (listLength) => {
+                            // Now trim this "foundAt" list - remove all tstamps which are older than 24hrs old (self.trackWordsFor). For performance,
+                            // we don't want to run this logic every single time there is a word re-occurance. We establish a vague threshold for max list length.
+                            const maxListLength = self.trackWordsFor / 5000; // self.trackWordsFor is ms. Let's estimate that once we have enough tstamps to account a word recurring every 5 seconds, we start trim logic.
+                            if (listLength < maxListLength) return;
+                            console.log(`A redis list (${foundAtListKey}) will now be trimmed of all tstamps older than ${self.trackWordsFor/3600000}hrs...`);
+                            self.redisClient.lrange(foundAtListKey, 0, -1, (allFoundAtTstamps) => {
+                                let trimStart = 0; // the index in list at which tstamps stop being too old. These lists are sorted ascending.
+                                allFoundAtTstamps.some((thisTstamp, thisTstampIndex) => {
+                                    const isOldTstamp = Date.now() - commentData.createdUtc > self.trackWordsFor;
+                                    if (!isOldTstamp) return true; // break from loop. We have looped through all the old tstamps.
+                                    trimStart = thisTstampIndex;
+                                });
+                                if (trimStart === 0) return;
+                                self.redisClient.ltrim(foundAtListKey, trimStart, -1);
+                                console.log(`Trimmed ${trimStart} items from redis list: ${foundAtListKey}`)
                             });
-                            if (trimStart === 0) return;
-                            self.redisClient.ltrim(foundAtListKey, trimStart, -1);
-                            console.log(`Trimmed ${trimStart} items from redis list: ${foundAtListKey}`)
                         });
                     });
-
 
                 });
             }
