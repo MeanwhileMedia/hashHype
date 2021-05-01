@@ -116,10 +116,11 @@ class HbClientSocketDbResponses_admin {
     //     DONE - rotate and backup logs to cloud
     //     DONE - log db stats in intervals so can track growth
     //     WONT - will use our rdb archives to access historical data. original task: create snapshots of stats: objects (for long term trend extraction using per-day data)
-    // 7. Change top comment stats to only show 2 wedges for any given symbol
+    // 7. DONE - Change top comment stats to only show 2 wedges for any given symbol
     // 7.5 DONE - Duplicate identical comments by same user keep trending. Need a solution. A comment may only receive word/symbol repost points ONCE PER USER (zero times for self)??
-    // 8. only serve admin train FE assets to requests from admin URLs. add functionality to strip JS includes of admin assets during code compilation.
-    // 9. Add an "about" icon which includes disclaimer
+    // 8. DONE - Need to extact stock symbols BEFORE stemming (e.g. MVIS is getting stemmed to MVI and never trends as a symbol)
+    // 8.5 WIP - only serve admin train FE assets to requests from admin URLs. add functionality to strip JS includes of admin assets during code compilation.
+    // 9. Add GNAV including an "about" icon which includes disclaimer
     // 10. Mobile styles
     // 11. Add google analytics snippet to layout.html
 

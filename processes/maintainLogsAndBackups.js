@@ -20,7 +20,7 @@ class MaintainLogsAndBackups {
         self.googleDriveClient = null;
 
         self.dbHealthLogInterval = null;
-        self.dbHealthLogIntervalTime = 60000; // once per minute. This is a sizeable log
+        self.dbHealthLogIntervalTime = 60000*5; // once per 5 minutes. This is a sizeable log
 
         self.rotateLogsInterval = null;
         self.rotateLogsIntervalTime = 60000*10; // check every 10mins. Confirm all required local log files exist according to our day tstamp naming pattern. Create a new log file when the day turns. Check logs directory for expired logs to delete from local machine.

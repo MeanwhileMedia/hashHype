@@ -41,7 +41,7 @@ class FetchCoinAndStockSymbols {
                     let symbol = thisStockData[0]; // Our alphavantage data will add "-this-that" to symbols. I.e: Goldman Sachs (symbol GS) is returned as "GS-P-D". We remove this extra info before saving.
                     symbol = symbol.split('-')[0];
                     const stockObj = symbolModel.createSymbolObject({
-                        symbol: symbol.toLowerCase(), // this prop is ALWAYS lowercased to be consistent with how we stored redis keys and words
+                        symbol: symbol.toUpperCase(), // this prop is ALWAYS uppercased for consistency
                         name: thisStockData[1],
                         type: 'stock',
                         exchange: thisStockData[2]
@@ -55,7 +55,7 @@ class FetchCoinAndStockSymbols {
                     let symbol = thisCoinData[0];
                     symbol = symbol.split('-')[0];
                     const coinObj = symbolModel.createSymbolObject({
-                        symbol: symbol.toLowerCase(), // this prop is ALWAYS lowercased to be consistent with how we stored redis keys and words
+                        symbol: symbol.toUpperCase(),
                         name: thisCoinData[1],
                         type: 'coin'
                     })

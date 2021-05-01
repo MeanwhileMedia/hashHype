@@ -107,7 +107,7 @@ const uiServer = {
                 try {
                     message = JSON.parse(ctx.request.query.message);
                 } catch (error) {
-                    console.warn(`Invalid JSON passed to fauxSocket endpoint. Url: ${request.url}`);
+                    console.warn(`Invalid JSON passed to fauxSocket endpoint. Url: ${ctx.request.url}`);
                     return next(ctx);
                 }
                 ctx.type = 'application/javascript';

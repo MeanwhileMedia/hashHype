@@ -13,7 +13,7 @@ class TopTagWheel extends React.Component {
         super(props);
         this.state = {
             // topTagStats: {},
-            topTagCount: 20, // how many topTags to show in our wheel
+            topTagCount: 10, // how many topTags to show in our wheel
         };
     }
 

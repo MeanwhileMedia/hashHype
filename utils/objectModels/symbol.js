@@ -17,7 +17,7 @@ const symbolObjModel = {
             // 'get' is the funtion that returns the props for the symbol (allowing programatic edits to symbol.name, for example)
             get: '', // generated below
             // 'match' is the function used when determining if a word/bigram/trigram contains this symbol. By default, it checks each word part of matchAgainst (trigram_example_gme) for an
-            // exact match to symbol.symbol.toLowerCase(). If found, this custom match is run AFTER the default match logic, with it's arg "isMatch" initially true.
+            // exact match to symbol.symbol.toUpperCase(). If found, this custom match is run AFTER the default match logic, with it's arg "isMatch" initially true.
             // The outcome of our default match logic is passes to this secondary match function via the (isMatch) argument.
             match: '' // generated below
         };
@@ -77,7 +77,7 @@ Required return value: isMatch (boolean)
 /* 1. Stock symbols must be commented in all caps */
 const allCapsSymbol = props.symbol.toUpperCase();
 if (matchAgainst.indexOf(allCapsSymbol) === -1) {
-isMatch = false;
+  isMatch = false;
 }
 
 return isMatch;`

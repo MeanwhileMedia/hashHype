@@ -17,7 +17,6 @@ const styles = {
         left: `-${percOverflow / 2}%`,
         width: `${100 + percOverflow}%`,
         overflow: 'visible',
-        transition: 'transform .1s',
       },
       wheel_svg: {
         overflow: 'visible',

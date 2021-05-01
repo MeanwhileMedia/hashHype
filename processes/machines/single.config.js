@@ -66,28 +66,28 @@ const genConfigs = {
                 name: 'UI Server',
                 script: './processes/uiServer.js',
                 args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
-                interpreter_args: `-r esm ${inspect}`,
+                interpreter_args: `-r esm`,
                 error_file: getLogPath('uiServer', 'err'),
                 out_file: getLogPath('uiServer', 'out'),
             }, {
                 name: 'Fetch Reddit Comments',
                 script: './processes/fetchRedditComments.js',
                 args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
-                interpreter_args: `-r esm ${inspect}`,
+                interpreter_args: `-r esm`,
                 error_file: getLogPath('fetchReddit', 'err'),
                 out_file: getLogPath('fetchReddit', 'out')
             }, {
                 name: 'Fetch Stock Symbols',
                 script: './processes/fetchCoinAndStockSymbols.js',
                 args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
-                interpreter_args: `-r esm ${inspect}`,
+                interpreter_args: `-r esm`,
                 error_file: getLogPath('stockSymbols', 'err'),
                 out_file: getLogPath('stockSymbols', 'out')
             }, {
                 name: 'Comment Word Extractor',
                 script: './processes/extractWordsFromComments.js',
                 args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
-                interpreter_args: `-r esm ${inspect}`,
+                interpreter_args: `-r esm`,
                 error_file: getLogPath('wordExtractor', 'err'),
                 out_file: getLogPath('wordExtractor', 'out')
             }, {
@@ -101,7 +101,7 @@ const genConfigs = {
                 name: 'MaintainLogsAndBackups',
                 script: './processes/maintainLogsAndBackups.js',
                 args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
-                interpreter_args: `-r esm ${inspect}`,
+                interpreter_args: `-r esm`,
                 error_file: getLogPath('maintenance', 'err'),
                 out_file: getLogPath('maintenance', 'out')
             }
@@ -110,7 +110,8 @@ const genConfigs = {
 
     extractCliArgs: () => {
         const cliArgsDefaults = {
-            // pass the "-- --inspect" cli arg to the pm2 start command to launch the node process in debug mode. To read the output remotely, start a new ssh tunnel:
+            // pass the "-- --inspect" cli arg to the pm2 start command to launch the node process in debug mode. e.g: npm run single -- -- --inspect
+            // To read the output remotely, start a new ssh tunnel:
             // ssh -L 9221:localhost:9229 -p 8122 ubuntu@dev.meanwhile.media (where localhost:9221 is the local port that chrome dev tools will
             // connect to, and 9229 is the port which was assigned to the node process on the remote host machine).
             inspect: false,

@@ -185,7 +185,7 @@ class RedisClient {
                     if (preserveToDbs.length === 0) return;
                     const preserveToNow = (countForThisData) => {
                         preserveToDbs.forEach((thisPreserveToConfig) => {
-                            if (countForThisData < thisPreserveToConfig.count) return;
+                            if (countForThisData < thisPreserveToConfig.count) return; // JWW stopping - the del command should always run on all DBS (including preserved) or else there will be a delete/recover loop 
                             commandArgs.dbName = thisPreserveToConfig.dbName;
                             commandArgs.cback = () => {
                                 // console.log(`Preserved ${commandArgs.key} ${commandArgs.command} write command to ${commandArgs.dbName} DB...`)
