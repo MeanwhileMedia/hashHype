@@ -149,6 +149,7 @@ class Reddit {
             author: initial.author || {name: null},
             words: [], // array of wordRef objects { word: 'word_seq' (also redis key to word object "word:word_seq"), hasSymbols: ['symbolKey', 'symbol:stock:gme', etc] }
             createdUtc: initial.createdUtc || Date.now(), // when the comment was posted (ms)
+            foundAt: initial.foundAt || Date.now(), // when the comment registered to hashHype
             points: {
                 '1Hr': {}, // {foo_bar: 342, other_word: etc...}
                 '12Hr': {},

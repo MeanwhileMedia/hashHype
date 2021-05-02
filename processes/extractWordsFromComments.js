@@ -342,7 +342,7 @@ class ExtractWordsFromComments {
 
                     // Save this word to it's WordToCommentsIndex (creating one if it does not yet exist)
                     self.registerWordToCommentsIndex(saveWordObject.value.join('_!!_'), commentData.id, () => { // this needs to be done before the rpush because of topCommentsStats logic
-                        self.addFoundAtTstampForWord(redisWordKey, () => {
+                        self.addFoundAtTstampForWord(redisWordKey, commentData, () => {
                             resolve(); // finally, we can resolve this wordSavePromise
                         });
                     });
@@ -368,11 +368,11 @@ class ExtractWordsFromComments {
         });
     }
 
-    addFoundAtTstampForWord(redisWordKey, cback) {
+    addFoundAtTstampForWord(redisWordKey, hostComment, cback) {
         const self = this;
         // All "foundAt" tstamps are stored to their own redis list at key: word:foo_!!_bar:foundAt
         const foundAtListKey = `${redisWordKey}:foundAt`; // rpush auto creates list if it does not already exist
-        self.redisClient.rpush(foundAtListKey, [Date.now()], (listLength) => {
+        self.redisClient.rpush(foundAtListKey, [hostComment.foundAt], (listLength) => {
             if (cback) cback(); // go ahead and return to caller, we don't need to wait on asyn cleanup tasks below
 
             // Now trim this "foundAt" list - remove all tstamps which are older than 24hrs old (self.trackWordsFor). For performance,

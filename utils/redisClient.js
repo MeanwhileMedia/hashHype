@@ -185,7 +185,11 @@ class RedisClient {
                     if (preserveToDbs.length === 0) return;
                     const preserveToNow = (countForThisData) => {
                         preserveToDbs.forEach((thisPreserveToConfig) => {
-                            if (countForThisData < thisPreserveToConfig.count) return; // JWW stopping - the del command should always run on all DBS (including preserved) or else there will be a delete/recover loop 
+                            if (countForThisData < thisPreserveToConfig.count) {
+                                if (commandArgs.command !== 'del') { // the del command should always run on all DBS (including preserved) or else there will be a delete/recover loop
+                                    return;
+                                }
+                            }
                             commandArgs.dbName = thisPreserveToConfig.dbName;
                             commandArgs.cback = () => {
                                 // console.log(`Preserved ${commandArgs.key} ${commandArgs.command} write command to ${commandArgs.dbName} DB...`)
@@ -602,11 +606,11 @@ class RedisClient {
         // ONLY non-throttled redisClient functions will follow redisConfig.storeNamespaces patterns. EVERYTHING run
         // through these functions is run against the "single" db.
         this.throttle = {
-            setIntervalTime: 5000, // stagger these so our intervals don't all hit simultaneously
+            setIntervalTime: 2000, // stagger these so our intervals don't all hit simultaneously
             maxSetBatchSize: 100, // total number of callbacks that would need to be registed to all set keys to trigger the redis request
-            getIntervalTime: 4000,
+            getIntervalTime: 900,
             maxGetBatchSize: 100,
-            lrangeIntervalTime: 3000,
+            lrangeIntervalTime: 1000,
             maxLrangeBatchSize: 500,
 
             ////////
@@ -698,7 +702,7 @@ class RedisClient {
 
             ////////
             // GET (cached)
-            cachedGetObjectsMaxSize: 200, // only stores the most recently used cached objects
+            cachedGetObjectsMaxSize: 400, // only stores the most recently used cached objects
             cachedGetObjects: [], // held as an array for quick unshift and splice (to limit cache size)
             cachedGetObjectsIndex: {}, // also maintain an index for increased performance (don't have to loop through array for every getCached request) {'redis:key': int (index within cachedGetObjects array), etc..}
             cachedGetObjectsAccessLog: [], // every time a redis key is returned via getCached (whether from cache, or from redis), it's key is pushed to this array. cachedGetObjectsAccessLog is used to meet cachedGetObjectsMaxSize in an LRU fashion.
