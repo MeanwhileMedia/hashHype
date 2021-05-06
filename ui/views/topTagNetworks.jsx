@@ -2,11 +2,11 @@ import React from '/node_modules/react';
 import Radium from '/node_modules/radium';
 import d3 from '/node_modules/d3';
 import _ from '/node_modules/underscore';
-import socketViewResponses from '../helpers/hbClientSocketViewResponses';
+import socketViewResponses from '../helpers/hbClientSocketViewResponses.js';
 import TopTagWheel from './topTagNetworks-wheel.jsx';
 import TopTagnewsColumns from './topTagNetworks-newsColumns.jsx';
 import Modal from './modal.jsx';
-import styles from './styles/topTagNetworks.css';
+import styles from './styles/topTagNetworks.css.js';
 
 class TopTagNetworks extends React.Component {
     // ////////

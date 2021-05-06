@@ -1,17 +1,27 @@
 import fs from 'fs';
 import util from 'util';
 import path from 'path';
-import http from 'http';
+import https from 'https';
 import _ from 'underscore';
 import webpack from 'webpack';
 import Koa from 'koa';
 import koaConvert from 'koa-convert';
-import koaStatic from 'koa-static';
-import koaSend from 'koa-send';
+import koaFavicon from 'koa-favicon';
 import koaWebsocket from 'koa-websocket';
-import koaJsx from '../utils/koaJsx.js';
+import koaStatic from 'koa-static';
+import hbServeJs from '../utils/hbServeJs.js';
+import hbServeHtml from '../utils/hbServeHtml.js';
 import HbClientSocketDbResponses_admin from '../utils/hbClientSocketDbResponses-admin.js';
 import RedisClient from '../utils/redisClient.js';
+
+// For self-signed certificates
+const pathToSslKey = path.resolve(process.cwd(), 'utils/certs/MeanwhileMedia.key');
+const pathToSslCert = path.resolve(process.cwd(), 'utils/certs/MeanwhileMedia.crt');
+// For certbot signed ssl certs:
+// const pathToSslKey = path.resolve(process.cwd(), 'utils/certs/meanwhile.media/privkey1.pem');
+// const pathToSslCert = path.resolve(process.cwd(), 'utils/certs/meanwhile.media/cert1.pem');
+// const pathToSslCa = path.resolve(process.cwd(), 'utils/certs/meanwhile.media/chain1.pem');
+
 
 // Koa handles all request routing and middleware for serving static files. koa.io holds our
 // socket.io server which links our views to models. Both are defined and initialized here.
@@ -19,7 +29,7 @@ const uiServer = {
 
     serverConfig: {
         rootDir: process.cwd(), //the project root
-        httpPort: 8180
+        httpsPort: 8180
     },
 
     // ES module imports in browser do not yet support "bare" module imports. Maintain a map here, and use a custom syntax to import node_modules.
@@ -43,10 +53,11 @@ const uiServer = {
     // This causes our require paths to be out of sync between server and client modules. To compensate,
     // we are setting "routeProxies" to support consistent paths, and koa's flat asset pipeline below.
     routeProxies: [
-        { target: '/ui/views/', redirect: '/', applyExtension: '.jsx' }, //applyExtension will always be appended to request.url - it allows ES import paths without extensions (for consistency with backend)
-        { target: '/ui/views/styles/', redirect: '/', applyExtension: '.js'},
-        { target: '/ui/views/styles/css/', redirect: '/css/', applyExtension: '.css'},
-        { target: '/ui/helpers/', redirect: '/', applyExtension: '.js' },
+        { target: '/ui/views/', redirect: '/' }, // applyExtension will always be appended to request.url - it allows ES import paths without extensions (for consistency with backend)
+        { target: '/ui/views/styles/', redirect: '/' },
+        { target: '/ui/helpers/', redirect: '/' },
+        { target: '/ui/layout/', redirect: '/' },
+        { target: '/ui/layout/styles/', redirect: '/styles/' },
     ],
 
     init() {
@@ -60,7 +71,22 @@ const uiServer = {
 
     initKoaServer() {
         const self = uiServer;
-        self.server = koaWebsocket(new Koa());
+        const httpsOpts = {
+            key: fs.readFileSync(pathToSslKey, 'utf8').toString(),
+            cert: fs.readFileSync(pathToSslCert, 'utf8').toString(),
+            // ca: fs.readFileSync(pathToSslCa, 'utf8').toString(), // For certbot signed ssl certs:
+        };
+
+        if (false) { // JWW TODO - add a cli arg to toggle
+            const wsOpts = {};
+            self.server = koaWebsocket(new Koa(), wsOpts, httpsOpts);
+            self.server.listen(self.serverConfig.httpsPort);
+        } else {
+            self.server = new Koa();
+            https.createServer(httpsOpts, self.server.callback()).listen(self.serverConfig.httpsPort);
+        }
+        //self.server.listen(self.serverConfig.httpsPort);
+        console.log(`Koa server is now listening on port ${self.serverConfig.httpsPort}`);
 
         self.server.use((ctx, next) => {
             const start = new Date(); // response time logger
@@ -71,9 +97,6 @@ const uiServer = {
         });
         self.initDataPipeline();
         self.initAssetPipeline();
-
-        self.server.listen(self.serverConfig.httpPort);
-        console.log(`Koa server is now listening on port ${self.serverConfig.httpPort}`);
         self.server.on('error', (err) => {
             console.log(`Koa error: ${util.inspect(err)}`) //must pass all errors to hbLogger or it wont reach log server
         });
@@ -165,26 +188,22 @@ const uiServer = {
                 if(!matchedRouteProxy) return next();
                 console.log(`Incoming request for ${request.url} matches routeProxy: ${matchedRouteProxy.target} -> ${matchedRouteProxy.redirect}`);
                 request.url = request.url.replace(matchedRouteProxy.target, matchedRouteProxy.redirect);
-                //Now also check if we should append and extension to the request.url (using applyExtension supplied in routing config above)
-                if(matchedRouteProxy.applyExtension && request.url.slice(matchedRouteProxy.applyExtension.length*-1) !== matchedRouteProxy.applyExtension){ //don't append if it's already there
-                    request.url = request.url + matchedRouteProxy.applyExtension;
-                }
                 return next();
             });
         }
 
         // Now our react components (views)
-        self.server.use(koaJsx(path.join(self.serverConfig.rootDir, 'ui', 'views'), { maxage: 1000 })); // TEMP DEV TODO cache maxage
+        self.server.use(hbServeJs(path.join(self.serverConfig.rootDir, 'ui', 'views'), { maxage: 1000 })); // maxage is in ms  TEMP DEV TODO revisit our maxage setting
 
         // Next we check for radium styles defined as js files in views/styles.
-        self.server.use(koaStatic(path.join(self.serverConfig.rootDir, 'ui', 'views', 'styles'), { maxage: 1000 }));
+        self.server.use(hbServeJs(path.join(self.serverConfig.rootDir, 'ui', 'views', 'styles'), { maxage: 1000 }));
 
         // Then our utils
-        self.server.use(koaStatic(path.join(self.serverConfig.rootDir, 'ui', 'helpers'), { maxage: 1000 }));
+        self.server.use(hbServeJs(path.join(self.serverConfig.rootDir, 'ui', 'helpers'), { maxage: 1000 }));
 
         // Check if the incoming request is for a node_modules library. If so, correct it's alias path to the actualy js file path,
         // and we also need to run it through webpack so it can be served as an ES module to the browser.
-        self.server.use(async (ctx, next) => {
+        self.server.use(async (ctx, next) => { // JWW todo - move this into a middleware file
             if (!self.bareModuleMap || !self.bareModuleMap[ctx.request.url]) return next();
             //console.log(util.inspect(ctx, {depth: 10}))
             const bareModulePath = path.resolve(self.serverConfig.rootDir, self.bareModuleMap[ctx.request.url].slice(1)); //remove leading slash
@@ -193,14 +212,52 @@ const uiServer = {
             ctx.type = 'application/javascript';
         });
 
+        // favicon
+        self.server.use(koaFavicon(path.join(self.serverConfig.rootDir, 'ui', 'images', 'favicon.ico'), { maxage: 1000 }));
+
+        // Serve html from our ui/layout directory. All html is compiled in hbServeHtml which adds reqModifier to script tags.
+        self.server.use(hbServeHtml(path.join(self.serverConfig.rootDir, 'ui', 'layout'), { maxage: 1000 }));
+
+        // Next, add support for static layout files that didn't match as HTML (like hbLayout.css). These files are not compiled.
+        self.server.use(koaStatic(path.join(self.serverConfig.rootDir, 'ui', 'layout'), { maxage: 1000 }));
+
         // If the request didn't match static resources, then we will assume they just
-        // landed at our root url, and they need hbLayout which opens a socket and loads entry point.
+        // landed at our root url, and they need hbLayout which loads entry point.
         self.server.use((ctx, next) => {
-            const baseLayoutPath = path.join('ui', 'views', 'hbLayout.html'); //koaSend uses rel paths: https://github.com/koajs/send#root-path
-            console.log(`Serving hbLayout to new client: ${baseLayoutPath}`);
-            return koaSend(ctx, baseLayoutPath);
+            console.log(`Serving hbLayout to new client session for entry point: ${ctx.request.url}`);
+            self.createOrDeleteLandingCookies(ctx);
+            ctx.request.url = 'hbLayout.html';
+            return hbServeHtml(path.join(self.serverConfig.rootDir, 'ui', 'layout'), { maxage: 1000 })(ctx, next);
         });
     }, // initAssetPipeline
+
+    createOrDeleteLandingCookies(ctx) {
+        // 1. Set all session cookies that will be a part of all future requests (httpOnly)
+        // 2. Set a reqModifier cookie based on below outcome (httpOnly: false). during FE code compile, this string is appended
+        //    to all future module import based file requests. It is a dynamic cache buster. See hbServeJs.js
+        const futureRequestModifiers = [];
+        const httpCookieSettings = {
+            secure: true,
+            httpOnly: true,
+            sameSite: 'strict',
+            overwrite: true
+        };
+        // First determine if this user gets admin access
+        if (ctx.query.fEAdmin) {
+            ctx.cookies.set('fEAdmin', ctx.query.fEAdmin, httpCookieSettings);
+            futureRequestModifiers.push('fEAdmin');
+        } else {
+            ctx.cookies.set('fEAdmin'); // empty value deletes the cookie
+        }
+        // Now set the reqModifier cookie
+        if (futureRequestModifiers.length > 0) {
+            ctx.cookies.set('reqModifier', JSON.stringify(futureRequestModifiers), httpCookieSettings);
+        } else {
+            ctx.cookies.set('reqModifier'); // empty value deletes the cookie
+        }
+    },
+
+
 
     changeEventThrottle: 2000, // wait time between emission of model changes to client(s)
     changeEventTstamps: {}, //for keeping track of socket emissions per channel

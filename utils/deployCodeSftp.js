@@ -15,7 +15,11 @@ class DeployCodeSftp {
         this.deployConfig = deployCodeSftpConfig.targets[this.cliArgs.target]();
         this.initSftpClient(this.deployConfig, () => {
             self.deployToTarget(() => {
-                if (!this.cliArgs.watch) self.sftpClient.end();
+                if (!this.cliArgs.watch) {
+                    self.npmInstallOnTarget(() => {
+                        self.sftpClient.end();
+                    });
+                }
             });
         });
 
@@ -60,6 +64,25 @@ class DeployCodeSftp {
             if (cback) cback();
         }).catch(err => {
             console.error(err);
+        });
+    }
+
+    npmInstallOnTarget(cback) {
+        const self = this;
+        const projectDir = `${self.deployConfig.targetDir}/${self.deployConfig.projectName}`;
+        self.sftpClient.client.shell(function(err, stream) { // "self.sftpClient.client" is the underlying ssh2 object (https://github.com/mscdex/ssh2)
+            if (err) {
+                console.error(err);
+                return;
+            }
+            stream.on('close', function() {
+                if (cback) cback();
+            }).on('data', function(data) {
+                console.log(data.toString());
+            }).stderr.on('data', function(data) {
+                console.log('npmInstallOnTarget STDERR: ' + data);
+            });
+            stream.end(`cd ${projectDir}\nnpm install\nexit\n`);
         });
     }
 

@@ -2,8 +2,8 @@ import React from '/node_modules/react';
 import d3 from '/node_modules/d3';
 import Radium from '/node_modules/radium';
 import _ from '/node_modules/underscore';
-import socketViewResponses from '../helpers/hbClientSocketViewResponses';
-import styles from './styles/topTagNetworks-wheel-part.css';
+import socketViewResponses from '../helpers/hbClientSocketViewResponses.js';
+import styles from './styles/topTagNetworks-wheel-part.css.js';
 
 class TopTagWheelPart extends React.Component {
   // ////////

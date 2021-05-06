@@ -1,5 +1,5 @@
 import React from '/node_modules/react';
-import styles from './styles/topTagNetworks-adminTrain.css';
+import styles from './styles/topTagNetworks-adminTrain.css.js';
 
 class AdminTrainRow extends React.Component {
     constructor(props) {

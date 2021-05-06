@@ -16,7 +16,7 @@
     "highlight.js": "^10.7.1",
     "koa": "^2.13.1",
     "koa-convert": "^2.0.0",
-    "koa-send": "^5.0.1",
+    "koa-favicon": "^2.1.0",
     "koa-static": "^5.0.0",
     "koa-websocket": "^6.0.0",
     "natural": "^4.0.0",
@@ -35,9 +35,10 @@
     "yargs": "^16.2.0"
   },
   "scripts": {
-    "deployDev01": "node -r esm ./utils/deployCodeSftp.js -target dev01",
+    "deployDev01": "npm run genSslScripts --domain=dev.meanwhile.media && node -r esm ./utils/deployCodeSftp.js -target dev01",
     "deployDev01_watch": "node -r esm ./utils/deployCodeSftp.js -target dev01_fast -watch",
-    "deployProd01": "node -r esm ./utils/deployCodeSftp.js -target prod01",
+    "deployProd01": "npm run genSslScripts --domain=hashhype.com && node -r esm ./utils/deployCodeSftp.js -target prod01",
+    "genSslScripts": "mkdir -p utils/certs && openssl req -newkey rsa:4096 -x509 -sha256 -days 3650 -nodes -out utils/certs/MeanwhileMedia.crt -keyout utils/certs/MeanwhileMedia.key -subj \"/C=US/ST=Maine/L=Portland/O=MeanwhileMedia/OU=Devs/CN=$npm_config_domain\"",
     "single": "pm2 start ./processes/machines/single.config.js",
     "pm2": "pm2"
   },

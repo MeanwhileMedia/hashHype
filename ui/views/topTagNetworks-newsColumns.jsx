@@ -1,7 +1,8 @@
 import React from '/node_modules/react';
 import _ from '/node_modules/underscore';
-import AdminTrain from './topTagNetworks-adminTrain.jsx'
-import styles from './styles/topTagNetworks-newsColumns.css';
+{/* <hbCC-fEAdmin> */} import AdminTrain from './topTagNetworks-adminTrain.jsx'; {/* </hbCC-fEAdmin> */}
+
+import styles from './styles/topTagNetworks-newsColumns.css.js';
 
 class TopTagnewsColumns extends React.Component {
     render() {
@@ -56,14 +57,17 @@ class TopTagnewsColumns extends React.Component {
                     {rightColumn}
                 </div>
                 <div style={css.newsColumns_ctrls}>
+                    {/* <hbCC-fEAdmin> */}
                     <div style={css.newsColumns_ctrls_adminModal} onClick={this.showAdminCtrlsModal.bind(this)}>
                         <span class="material-icons">settings</span>
                     </div>
+                    {/* </hbCC-fEAdmin> */}
                 </div>
             </div>
         );
     } // end render
 
+    {/* <hbCC-fEAdmin> */}
     showAdminCtrlsModal() {
         const trainingUi = (
             <AdminTrain topTag={this.activeTopTag} hideModal={this.hideAdminCtrlsModal.bind(this)}/>
@@ -76,6 +80,7 @@ class TopTagnewsColumns extends React.Component {
     hideAdminCtrlsModal() {
         this.props.modal.hide();
     }
+    {/* </hbCC-fEAdmin> */}
 }
 
 export default TopTagnewsColumns;

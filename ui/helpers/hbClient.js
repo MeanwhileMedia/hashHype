@@ -1,5 +1,5 @@
-import socketViewRequests from './hbClientSocketViewRequests';
-import socketViewResponses from './hbClientSocketViewResponses';
+import socketViewRequests from './hbClientSocketViewRequests.js';
+import socketViewResponses from './hbClientSocketViewResponses.js';
 
 // All new clients receive this file first thing. This sets up a socket connection
 // and socket events for view/template requests.

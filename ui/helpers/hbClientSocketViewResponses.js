@@ -1,7 +1,7 @@
 import React from '/node_modules/react';
 import ReactDom from '/node_modules/react-dom';
 import _ from '/node_modules/underscore';
-import socketViewRequests from './hbClientSocketViewRequests';
+import socketViewRequests from './hbClientSocketViewRequests.js';
 
 // Client side socket
 var hbClientSocketViewResponses = {

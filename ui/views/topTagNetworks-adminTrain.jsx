@@ -5,7 +5,7 @@ import highlightJsStyles from '/node_modules/highlight/jsStyles.css';
 highlight.registerLanguage('javascript', highlightJs);
 
 import AdminTrainRow from './topTagNetworks-adminTrain-row.jsx'
-import styles from './styles/topTagNetworks-adminTrain.css';
+import styles from './styles/topTagNetworks-adminTrain.css.js';
 
 import hbClientSocketDbRequests_admin from '../helpers/hbClientSocketDbRequests-admin.js';
 

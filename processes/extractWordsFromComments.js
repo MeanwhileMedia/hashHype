@@ -64,8 +64,10 @@ class ExtractWordsFromComments {
     preserveSymbolsInCommentBody(comment, cback) {
         const self = this;
         self.preserveUrlsInCommentBody(comment, () => {
-            self.preserveStockSymbolsInCommentBody(comment, () => { // JWW stopping - fix so this should find coin symbols too
-                if (cback) cback();
+            self.preserveFinanceSymbolsInCommentBody(comment, 'stock', () => {
+                self.preserveFinanceSymbolsInCommentBody(comment, 'coin', () => {
+                    if (cback) cback();
+                });
             });
         });
     }
@@ -169,7 +171,7 @@ class ExtractWordsFromComments {
         });
     }
 
-    preserveStockSymbolsInCommentBody(comment, cback) {
+    preserveFinanceSymbolsInCommentBody(comment, symbolType = 'stock', cback) { // type can be 'stock' or 'coin'
         const self = this;
         // Like "preserveUrlsInCommentBody", this command extracts potential stock symbol matches BEFORE the comment body is stemmed/tokenized in "extractWordSequences".
         // This is to preserve symbols like "MVIS" - which would get tokenized to MVI.
@@ -177,7 +179,7 @@ class ExtractWordsFromComments {
         const tokenSymbolSearchPromises = [];
         commentTokens.forEach((thisToken, thisTokenIndex) => {
             tokenSymbolSearchPromises.push(new Promise( (resolve, reject) => {
-                const symbolKey = `symbol:stock:${thisToken.toUpperCase()}`; // `symbol:stock:GME` - stock symbol object keys always make the ticker caps
+                const symbolKey = `symbol:${symbolType}:${thisToken.toUpperCase()}`; // `symbol:stock:GME` - stock symbol object keys always make the ticker caps
                 const tokenSymbolResult = {token: thisToken, normalizedToken: thisToken.toUpperCase(), symbolKey: symbolKey, matchedSymbol: null};
                 let precedingToken = null;
                 if (thisTokenIndex !== 0) precedingToken = commentTokens[thisTokenIndex-1];
@@ -220,7 +222,7 @@ class ExtractWordsFromComments {
             let idIncrement = 0;
             tokenSymbolResults.forEach((tokenSymbolResult) => {
                 if (tokenSymbolResult.matchedSymbol) {
-                    const thisStockUid = `stock${++idIncrement}symbol`;
+                    const thisStockUid = `${symbolType}${++idIncrement}symbol`;
                     const stockSymbolRegex = new RegExp(`\\b${tokenSymbolResult.token}\\b`, 'gim'); // https://regexr.com/5rrbf
                     comment.body = comment.body.replace(stockSymbolRegex, thisStockUid);
                     comment.pendingSymbols[thisStockUid] = tokenSymbolResult;
@@ -229,7 +231,7 @@ class ExtractWordsFromComments {
             if (cback) cback();
         });
 
-    } // end preserveStockSymbolsInCommentBody
+    } // end preserveFinanceSymbolsInCommentBody
 
     extractWordSequences(commentData, cback) {
         const self = this;
