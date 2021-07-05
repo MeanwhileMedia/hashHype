@@ -22,7 +22,6 @@ const styles = {
                 'display': 'flex',
                 'flex-direction': 'column',
                 'align-items': 'center',
-                'padding-bottom': '4.4rem'
             },
             adminTrain_section: {
                 'width': '30vw',

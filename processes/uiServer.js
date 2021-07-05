@@ -2,7 +2,6 @@ import fs from 'fs';
 import util from 'util';
 import path from 'path';
 import https from 'https';
-import _ from 'underscore';
 import webpack from 'webpack';
 import Koa from 'koa';
 import koaConvert from 'koa-convert';
@@ -13,6 +12,7 @@ import hbServeJs from '../utils/hbServeJs.js';
 import hbServeHtml from '../utils/hbServeHtml.js';
 import HbClientSocketDbResponses_admin from '../utils/hbClientSocketDbResponses-admin.js';
 import RedisClient from '../utils/redisClient.js';
+import hbCodeChecker from '../utils/hbCodeChecker.js';
 
 // For self-signed certificates
 const pathToSslKey = path.resolve(process.cwd(), 'utils/certs/MeanwhileMedia.key');
@@ -37,7 +37,6 @@ const uiServer = {
     // Current polyfill: 'import _ from "/node_modules/underscore"'
     // See https://medium.com/webpack/the-state-of-javascript-modules-4636d1774358
     bareModuleMap: {
-        '/node_modules/underscore': '/node_modules/underscore/underscore-min.js',
         '/node_modules/react': '/node_modules/react/cjs/react.production.min.js',
         '/node_modules/react-dom': '/node_modules/react-dom/cjs/react-dom.production.min.js',
         '/node_modules/d3': '/node_modules/d3/dist/d3.min.js',
@@ -58,6 +57,7 @@ const uiServer = {
         { target: '/ui/helpers/', redirect: '/' },
         { target: '/ui/layout/', redirect: '/' },
         { target: '/ui/layout/styles/', redirect: '/styles/' },
+        { target: '/ui/images/', redirect: '/' },
     ],
 
     init() {
@@ -182,7 +182,7 @@ const uiServer = {
             self.server.use((ctx, next) => {
                 const request = ctx.request;
                 let matchedRouteProxy;
-                _.each(self.routeProxies, (routeProxy, index) => {
+                self.routeProxies.forEach((routeProxy, index) => {
                     if (request.url.indexOf(routeProxy.target) === 0) matchedRouteProxy = routeProxy; // uses the last match
                 });
                 if(!matchedRouteProxy) return next();
@@ -207,19 +207,22 @@ const uiServer = {
             if (!self.bareModuleMap || !self.bareModuleMap[ctx.request.url]) return next();
             //console.log(util.inspect(ctx, {depth: 10}))
             const bareModulePath = path.resolve(self.serverConfig.rootDir, self.bareModuleMap[ctx.request.url].slice(1)); //remove leading slash
-            const moduleFileText = await self.packToEsModule(bareModulePath, ctx.request.url);
+            const moduleFileText = await self.packNodeModuleToEsModule(bareModulePath, ctx.request.url);
             ctx.body = moduleFileText;
             ctx.type = 'application/javascript';
         });
-
-        // favicon
-        self.server.use(koaFavicon(path.join(self.serverConfig.rootDir, 'ui', 'images', 'favicon.ico'), { maxage: 1000 }));
 
         // Serve html from our ui/layout directory. All html is compiled in hbServeHtml which adds reqModifier to script tags.
         self.server.use(hbServeHtml(path.join(self.serverConfig.rootDir, 'ui', 'layout'), { maxage: 1000 }));
 
         // Next, add support for static layout files that didn't match as HTML (like hbLayout.css). These files are not compiled.
         self.server.use(koaStatic(path.join(self.serverConfig.rootDir, 'ui', 'layout'), { maxage: 1000 }));
+
+        // favicon
+        self.server.use(koaFavicon(path.join(self.serverConfig.rootDir, 'ui', 'images', 'favicon.ico'), { maxage: 1000 }));
+
+        // Add a route for static image files
+        self.server.use(koaStatic(path.join(self.serverConfig.rootDir, 'ui', 'images'), { maxage: 1000 }));
 
         // If the request didn't match static resources, then we will assume they just
         // landed at our root url, and they need hbLayout which loads entry point.
@@ -243,7 +246,7 @@ const uiServer = {
             overwrite: true
         };
         // First determine if this user gets admin access
-        if (ctx.query.fEAdmin) {
+        if (ctx.query.fEAdmin && hbCodeChecker.shouldServeFEAdminAsset(ctx, ctx.query.fEAdmin).shouldServe) {
             ctx.cookies.set('fEAdmin', ctx.query.fEAdmin, httpCookieSettings);
             futureRequestModifiers.push('fEAdmin');
         } else {
@@ -330,8 +333,7 @@ const uiServer = {
         return false;
     }, // end receiveSocketMessage
 
-    packedEsModuleCache: {}, //save the compiled module strings in live memory for fast cache
-    packToEsModule(bareModulePath, requestedPath){ //requestedPath is the exact string declared in the import statement: import react from "node_modules/react"
+    packNodeModuleToEsModule(bareModulePath, requestedPath){ //requestedPath is the exact string declared in the import statement: import react from "node_modules/react"
         const self = uiServer;
         const snakeToCamel = (str) => str.replace(/([-_][a-z])/g, (group) => {
             return group.toUpperCase().replace('-', '').replace('_', '')
@@ -339,68 +341,83 @@ const uiServer = {
         const requestedLibName = snakeToCamel(requestedPath.split('/').pop());
 
         return new Promise( (resolve, reject) => {
-            if(self.packedEsModuleCache[bareModulePath]) {
-                console.log(`Found a cached version of requested node_module: ${bareModulePath}`);
-                resolve(self.packedEsModuleCache[bareModulePath]); //found cached entry
-                return;
-            }
-            const compiledPath = path.resolve(self.serverConfig.rootDir);
-            const compiledFilename = `bareModule_${Date.now()}.js`;
-            console.log(`Now attempting to serve request for a node_module: ${bareModulePath}`);
-
-            if(requestedPath.search(/\.css$/) !== -1) {
-                // Looks like this was an ES module request for a CSS file - wrap the css content in JS that will auto inject it to the page
-                fs.readFile(bareModulePath, (err, cssText) => {
-                    const esModuleText = `const injectCss = () => {
-                        let styleEl = document.createElement('style');
-                        styleEl.innerHTML = "${cssText}";
-                        document.body.appendChild(styleEl);
-                    };
-                    injectCss();
-                    export default injectCss;`.replace(/(\r\n|\n|\r)/gm, ""); //remove linebreaks
-                    console.log(`Compiled CSS into ES module format: ${bareModulePath}`);
-                    resolve(esModuleText);
-                });
-                return;
-            }
-
-            const wpCompiler = webpack({
-                mode: 'production',
-                entry: bareModulePath,
-                target: 'web',
-                externals: {
-                    react: 'react',
-                },
-                output: {
-                    path: compiledPath,
-                    filename: compiledFilename,
-                    libraryTarget: 'window',
-                    library: requestedLibName,
-                },
-            }, (err, stats) => {
-                if (err || stats.hasErrors() ) {
-                    console.log(`Error while webpacking requested node_modules library: ${err} ${stats}`); //${stats.toJson("minimal")}`);
+            // First check our FE js modules that have been cached to redis DB. This really only applies to dev environment because on prod everything is CDN cached.
+            const clientAssetCacheKey = `clientAssetCache:${bareModulePath}`;
+            self.redisClient.get(clientAssetCacheKey, (cachedAssetObj) => {
+                if(cachedAssetObj) {
+                    console.log(`Found a cached version of requested node_module: ${bareModulePath}`);
+                    resolve(cachedAssetObj.code);
+                    return;
                 }
-                //read local file to send back as text, then delete the local output file(s)
-                const compiledFilePath = path.resolve(compiledPath, compiledFilename);
-                fs.readFile(compiledFilePath, (err, compiledText) => {
-                    if(err) console.log(err);
-                    const esModuleText = `${compiledText} \n \n export default ${requestedLibName};`;
-                    //const esModuleText = compiledText;
-                    self.packedEsModuleCache[bareModulePath] = esModuleText;
-                    console.log(`Compiled node_modules asset into ES module format: ${bareModulePath}`); // -> ${esModuleText}`);
-                    resolve(esModuleText);
 
-                    fs.unlink(compiledFilePath, (err) => {
-                        if(err) console.log(err);
-                        fs.unlink(compiledFilePath.replace('.js', '.js.LICENSE.txt'), () => {});
+                const cachedAssetPending = {path: bareModulePath, code: ''};
+                const compiledPath = path.resolve(self.serverConfig.rootDir);
+                const compiledFilename = `bareModule_${Date.now()}.js`;
+                console.log(`Now attempting to serve request for a node_module: ${bareModulePath}`);
+
+                if(requestedPath.search(/\.css$/) !== -1) {
+                    self.packNodeModuleCssToEsModule(bareModulePath, (esModuleText) => {
+                        cachedAssetPending.code = esModuleText;
+                        resolve(cachedAssetPending.code);
+                        self.redisClient.set(clientAssetCacheKey, cachedAssetPending);
                     });
-                });
+                    return;
+                }
 
-            }); //end webpack
-        }); //end return new Promise
+                const wpCompiler = webpack({
+                    mode: 'production',
+                    entry: bareModulePath,
+                    target: 'web',
+                    externals: {
+                        react: 'react',
+                    },
+                    output: {
+                        path: compiledPath,
+                        filename: compiledFilename,
+                        libraryTarget: 'window',
+                        library: requestedLibName,
+                    },
+                }, (err, stats) => {
+                    if (err || stats.hasErrors() ) {
+                        console.log(`Error while webpacking requested node_modules library: ${err} ${stats}`); //${stats.toJson("minimal")}`);
+                    }
+                    //read local file to send back as text, then delete the local output file(s)
+                    const compiledFilePath = path.resolve(compiledPath, compiledFilename);
+                    fs.readFile(compiledFilePath, (err, compiledText) => {
+                        if(err) console.log(err);
+                        const esModuleText = `${compiledText} \n \n export default ${requestedLibName};`;
+                        // self.packedEsModuleCache[bareModulePath] = esModuleText;
+                        console.log(`Compiled node_modules asset into ES module format: ${bareModulePath}`); // -> ${esModuleText}`);
+                        cachedAssetPending.code = esModuleText;
+                        resolve(cachedAssetPending.code);
+                        self.redisClient.set(clientAssetCacheKey, cachedAssetPending);
 
-    }, //end webpackCompileAsset
+                        fs.unlink(compiledFilePath, (err) => {
+                            if(err) console.log(err);
+                            fs.unlink(compiledFilePath.replace('.js', '.js.LICENSE.txt'), () => {});
+                        });
+                    });
+                }); // end webpack
+            }); // end self.redisClient.get(clientAssetCacheKey
+        }); // end return new Promise
+
+    }, // end packNodeModuleToEsModule
+
+    packNodeModuleCssToEsModule(bareModulePath, cback) {
+        // Looks like this was an ES module request for a CSS file - wrap the css content in JS that will auto inject it to the page
+        fs.readFile(bareModulePath, (err, cssText) => {
+            const esModuleText = `const injectCss = () => {
+                let styleEl = document.createElement('style');
+                styleEl.innerHTML = "${cssText}";
+                document.body.appendChild(styleEl);
+            };
+            injectCss();
+            export default injectCss;`.replace(/(\r\n|\n|\r)/gm, ""); //remove linebreaks
+            console.log(`Compiled CSS into ES module format: ${bareModulePath}`);
+            if (cback) cback(esModuleText);
+        });
+    }, // end packNodeModuleCssToEsModule
+
 
     redisClient: null,
     initRedisClient(cback) {

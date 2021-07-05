@@ -123,7 +123,7 @@ class AdminTrain extends React.Component {
                 <div style={css.adminTrain_section}>
                     <div style={{position: 'relative'}}>
                         <h5 style={{cursor: 'ns-resize'}} onClick={this.toggleAccord.bind(this)}>Comment</h5>
-                        <p style={{position: 'absolute', right: 0, top: '-10px'}}>Points: <b>{thisView.props.topTag.totalPoints['1Hr']}</b></p>
+                        <p style={{position: 'absolute', right: 0, top: '-1.2rem'}}>Points: <b>{thisView.props.topTag.totalPoints['1Hr']}</b></p>
                     </div>
                     {commentSection}
                 </div>

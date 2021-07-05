@@ -35,11 +35,11 @@
     "yargs": "^16.2.0"
   },
   "scripts": {
-    "deployDev01": "npm run genSslScripts --domain=dev.meanwhile.media && node -r esm ./utils/deployCodeSftp.js -target dev01",
+    "deployDev01": "npm run genSslCerts --domain=dev.meanwhile.media && node -r esm ./utils/deployCodeSftp.js -target dev01",
     "deployDev01_watch": "node -r esm ./utils/deployCodeSftp.js -target dev01_fast -watch",
-    "deployProd01": "npm run genSslScripts --domain=hashhype.com && node -r esm ./utils/deployCodeSftp.js -target prod01",
-    "genSslScripts": "mkdir -p utils/certs && openssl req -newkey rsa:4096 -x509 -sha256 -days 3650 -nodes -out utils/certs/MeanwhileMedia.crt -keyout utils/certs/MeanwhileMedia.key -subj \"/C=US/ST=Maine/L=Portland/O=MeanwhileMedia/OU=Devs/CN=$npm_config_domain\"",
-    "single": "pm2 start ./processes/machines/single.config.js",
+    "deployProd01": "npm run genSslCerts --domain=hashhype.com && node -r esm ./utils/deployCodeSftp.js -target prod01",
+    "genSslCerts": "mkdir -p utils/certs && openssl req -newkey rsa:4096 -x509 -sha256 -days 3650 -nodes -out utils/certs/MeanwhileMedia.crt -keyout utils/certs/MeanwhileMedia.key -subj \"/C=US/ST=Maine/L=Portland/O=MeanwhileMedia/OU=Devs/CN=$npm_config_domain\"",
+    "single": "pm2 start ./processes/machines/single.config.js --time",
     "pm2": "pm2"
   },
   "license": "ISC",

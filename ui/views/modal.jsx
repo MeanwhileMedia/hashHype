@@ -2,6 +2,10 @@ import React from '/node_modules/react';
 import styles from './styles/modal.css.js';
 
 class Modal extends React.Component {
+    constructor(props) {
+        super(props);
+    }
+
     render() {
         if (!this.props.content) {
             console.log('Error: Modal must have content defined...');
@@ -10,18 +14,30 @@ class Modal extends React.Component {
         const thisView = this;
         const css = styles.generate(this);
 
+        let modalStyles = css.modal;
+        let modalInnerStyles = css.modal_inner;
+        const customStyleClasses = this.props.content.customStyleClasses || [];
+        customStyleClasses.forEach((thisClass) => {
+            if (css[`modal__${thisClass}`]) modalStyles = Object.assign(modalStyles, css[`modal__${thisClass}`]);
+            if (css[`modal_inner__${thisClass}`]) modalInnerStyles = Object.assign(modalInnerStyles, css[`modal_inner__${thisClass}`]);
+        });
+
         let body = this.props.content.body; // Defaults to expect a react child component
         if (typeof this.props.content.body === 'string') { // This modal also supports passing text HTML string
             body = (
-                <div style={css.body} dangerouslySetInnerHTML={{ __html: this.props.content.body }} />
+                <div style={css.modal_body} dangerouslySetInnerHTML={{ __html: this.props.content.body }} />
             );
         }
         return (
-            <div className="Modal" style={css.modal} onClick={this.hideModal.bind(this)}>
-                <h3 style={css.modal_heading}>{this.props.content.title}</h3>
-                <div style={css.modal_body_outer}>
-                    <div style={css.modal_body_inner} onClick={this.clickedChildContent.bind(this)}>
-                        {body}
+            <div className="Modal" style={modalStyles} onClick={this.hideModal.bind(this)}>
+                <div style={css.modal_inner}>
+                    {this.props.content.title &&
+                        <h3 style={css.modal_heading}>{this.props.content.title}</h3>
+                    }
+                    <div style={css.modal_body_outer}>
+                        <div style={css.modal_body_inner} onClick={this.clickedChildContent.bind(this)}>
+                            {body}
+                        </div>
                     </div>
                 </div>
             </div>

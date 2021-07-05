@@ -1,4 +1,3 @@
-import _ from '/node_modules/underscore';
 
 const styles = {
 
@@ -8,8 +7,7 @@ const styles = {
         display: 'flex',
         'flex-direction': 'row',
         'justify-content': 'space-between',
-        padding: '7vh 5%',
-        height: '100%',
+        padding: '10vh 5%',
         'box-sizing': 'border-box',
       },
       newsColumns_left: {
@@ -22,11 +20,6 @@ const styles = {
         width: '30%',
         'padding-top': '14px',
         'text-align': 'right',
-      },
-      newsColumns_ctrls: {
-          position: 'absolute',
-          top: '1rem',
-          right: '1rem'
       },
       newsAttribution: {
         'margin-top': '1.4rem',

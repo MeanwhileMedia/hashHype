@@ -1,6 +1,5 @@
 import React from '/node_modules/react';
 import ReactDom from '/node_modules/react-dom';
-import _ from '/node_modules/underscore';
 import socketViewRequests from './hbClientSocketViewRequests.js';
 
 // Client side socket
@@ -38,7 +37,7 @@ var hbClientSocketViewResponses = {
 
     hbClientSocketViewResponses.activeViewChangeEvents[socketChangeEventName] = function (message) {
       console.log('Model change sent from server. View will now update.', message.data.absKey, message.data);
-      if (_.isFunction(viewInstance.receiveNewState)) {
+      if (typeof viewInstance.receiveNewState === 'function') {
         viewInstance.receiveNewState(message.data);
       }
     };

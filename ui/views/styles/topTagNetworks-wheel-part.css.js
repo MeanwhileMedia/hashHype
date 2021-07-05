@@ -1,4 +1,3 @@
-import _ from '/node_modules/underscore';
 import d3 from '/node_modules/d3';
 import Radium from '/node_modules/radium';
 

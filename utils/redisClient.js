@@ -154,13 +154,13 @@ class RedisClient {
             let curCmdExecIndex = 0;
             const nextCmdExec = (thisCmdExec) => {
                 thisCmdExec((redisRes) => {
-                    if (redisRes === null) {
+                    if (redisRes === null || redisRes === 0) {
                         ++curCmdExecIndex;
                         if (combinedCmdExecs[curCmdExecIndex]) {
                             nextCmdExec(combinedCmdExecs[curCmdExecIndex]);
                         } else {
                             // console.warn(`Key ${commandArgs.key} was not found in any of the target DBs:`, storeToDbs)
-                            if (origCback) origCback(null);
+                            if (origCback) origCback(redisRes);
                         }
                         return;
                     }
@@ -214,6 +214,19 @@ class RedisClient {
                             }, usePreserveToConfig.dbName);
                         }
                     }
+                    if (commandArgs.command === 'zadd') { // JWW stopping - this has not been tested
+                        // Follows nearly identical logic to above rpush
+                        const redisSortedSetLength = redisRes;
+                        preserveToNow(redisSortedSetLength);
+                        if (redisSortedSetLength === 1) {
+                            const usePreserveToConfig = preserveToDbs[0];
+                            self.zrange(commandArgs.key, 0, Infinity, (resSet) => {
+                                if (resSet.length <= 1) return; // looks like this actually is a new list. Nothing was found in preserved DB.
+                                self.zadd(commandArgs.key, resSet.reverse()); // zadd expects the reverse arg sig to what zrange returns [points1, val1, points2, val2]
+                                console.log(`Restored ${commandArgs.key} redis sorted set (length ${resSet.length/2}) from preserved DB "${usePreserveToConfig.dbName}".`);
+                            }, usePreserveToConfig.dbName, 'WITHSCORES');
+                        }
+                    }
                     if (commandArgs.command === 'set' && commandArgs.saveData) {
                         // the extended set command (see below) automatically increments a "saveCount" integer every time the same object is saved. Compare that number to the configured preserveNamespaces.count param and re-save.
                         preserveToNow(commandArgs.saveData.saveCount || 0);
@@ -231,7 +244,7 @@ class RedisClient {
             dbName: null, // this will be set by determineTargetDb
             isReadOp: false, // if this is a get, lrange, etc, where a return value is expected in cback, then isReadOp will be true.
             key: null, // will not be defined in the case of batch commands (batch/mget/mset/etc)
-            saveData: null, // string or int. will only be defined for write operations
+            saveData: null, // string (set), array (zadd), array (zrem). will only be defined for write operations.
             startIndex: null, // int. will only be defined for certain list commands (lrange, ltrim)
             endIndex: null, // int. will only be defined for certain list commands (lrange, ltrim)
             ttlMs: null, // int (milliseconds). used for expire commands
@@ -318,6 +331,52 @@ class RedisClient {
             };
             return cmdArgsObj;
         }
+        if (cmdArgsObj.command === 'zadd') {
+            cmdArgsObj.isReadOp = false;
+            cmdArgsObj.key = commandArgs[0];
+            cmdArgsObj.saveData = commandArgs[1] || null;
+            cmdArgsObj.cback = commandArgs[2] || null;
+            cmdArgsObj.reformCommandArgs = () => {
+                return [cmdArgsObj.key, cmdArgsObj.saveData, cmdArgsObj.cback, cmdArgsObj.dbName];
+            };
+            return cmdArgsObj;
+        }
+        if (cmdArgsObj.command === 'zrange') {
+            cmdArgsObj.isReadOp = true;
+            cmdArgsObj.key = commandArgs[0];
+            cmdArgsObj.startIndex = commandArgs[1];
+            if (typeof cmdArgsObj.startIndex !== 'number') cmdArgsObj.startIndex = null;
+            cmdArgsObj.endIndex = commandArgs[2];
+            if (typeof cmdArgsObj.endIndex !== 'number') cmdArgsObj.endIndex = null;
+            cmdArgsObj.cback = commandArgs[3] || null;
+            cmdArgsObj.reformCommandArgs = () => {
+                return [cmdArgsObj.key, cmdArgsObj.startIndex, cmdArgsObj.endIndex, cmdArgsObj.cback, cmdArgsObj.dbName];
+            };
+            return cmdArgsObj;
+        }
+        if (cmdArgsObj.command === 'zrem') {
+            cmdArgsObj.isReadOp = false;
+            cmdArgsObj.key = commandArgs[0];
+            cmdArgsObj.saveData = commandArgs[1] || null;
+            cmdArgsObj.cback = commandArgs[2] || null;
+            cmdArgsObj.reformCommandArgs = () => {
+                return [cmdArgsObj.key, cmdArgsObj.saveData, cmdArgsObj.cback, cmdArgsObj.dbName];
+            };
+            return cmdArgsObj;
+        }
+        if (cmdArgsObj.command === 'zremrangebyscore') {
+            cmdArgsObj.isReadOp = false;
+            cmdArgsObj.key = commandArgs[0];
+            cmdArgsObj.startIndex = commandArgs[1];
+            if (typeof cmdArgsObj.startIndex !== 'number') cmdArgsObj.startIndex = null;
+            cmdArgsObj.endIndex = commandArgs[2];
+            if (typeof cmdArgsObj.endIndex !== 'number') cmdArgsObj.endIndex = null;
+            cmdArgsObj.cback = commandArgs[3] || null;
+            cmdArgsObj.reformCommandArgs = () => {
+                return [cmdArgsObj.key, cmdArgsObj.startIndex, cmdArgsObj.endIndex, cmdArgsObj.cback, cmdArgsObj.dbName];
+            };
+            return cmdArgsObj;
+        }
         if (cmdArgsObj.command === 'pexpire') {
             cmdArgsObj.isReadOp = false;
             cmdArgsObj.key = commandArgs[0];
@@ -392,7 +451,7 @@ class RedisClient {
         const self = this;
         const normalizedArgs = self.normalizeRedisCommandArgs('set', arguments);
         if (normalizedArgs.saveData) {
-             // Our extended set command automatically tracks TOTAL times this key was saved over all time (to assist preserveNamespaces logic)
+            // Our extended set command automatically tracks TOTAL times this key was saved over all time (to assist preserveNamespaces logic)
             normalizedArgs.saveData.saveCount = normalizedArgs.saveData.saveCount || 0;
             ++normalizedArgs.saveData.saveCount;
             normalizedArgs.saveData.lastUpdated = Date.now();
@@ -476,14 +535,80 @@ class RedisClient {
         });
     }
 
-    pexpire(key, ttlMs, cback, dbName) {
+    ////////
+    // Up next, Sorted Set commands. This structure is used by index:wordToComments to maintain an ordered list of commentIds which
+    // are scored using their createdAt tstamps. zrange can be used to extract onlt commentIds which fall in a certain timerange.
+    // https://github.com/NodeRedis/node-redis/blob/09f0fe822862baf0f2a5d2b37537babffaae66d8/test/commands/zadd.spec.js
+    zadd(key, addObjects, cback, dbName) {
+        // addObjects = [item1Points, item1StrValue, item2Points, item2StrValue, etc...]
+        // Each itemStrValue passed to zadd MUST already be a string. redisClient does no type conversion for zadd.
         const self = this;
-        const normalizedArgs = self.normalizeRedisCommandArgs('pexpire', arguments);
+        const normalizedArgs = self.normalizeRedisCommandArgs('zadd', arguments);
         if (!dbName) dbName = self.determineTargetDb(normalizedArgs);
         if (!dbName) return;
-        self.clients[dbName].db.pexpire(normalizedArgs.key, normalizedArgs.ttlMs, (err, res) => { // res is 1 for success, 0 for key does no exist
-            if (err) console.warn(err);
-            if (normalizedArgs.cback) normalizedArgs.cback(res);
+        self.clients[dbName].db.zadd(normalizedArgs.key, normalizedArgs.saveData, (err, itemsAddedCount) => {
+            if(err || typeof itemsAddedCount !== 'number') {
+                console.warn(`Could not zadd ${normalizedArgs.saveData.length/2} objects to redis sorted set ${normalizedArgs.key}:`, normalizedArgs.saveData, err);
+                if (normalizedArgs.cback) normalizedArgs.cback(null);
+                return;
+            }
+            if (normalizedArgs.cback) normalizedArgs.cback(itemsAddedCount);
+        });
+    }
+
+    zrange(key, startIndex, endIndex, cback, dbName, withScores = '') {
+        // Currently, hashHype zrange only supports (and defaults to) "BYSCORE" range requests. startIndex, endIndex args
+        // are the min and max score for items to be returned. withScores (disabled by default) can be sent and the return response will
+        // include values AND scores like: [item1StrValue, item1Points, item2StrValue, item2Points, etc...]
+        const self = this;
+        const normalizedArgs = self.normalizeRedisCommandArgs('zrange', arguments);
+        if (!dbName) dbName = self.determineTargetDb(normalizedArgs);
+        if (!dbName) return;
+
+        const cmdCback = (err, listItems) => {
+            // Returned "listItems" is an array of all values which fell into the provided score range (startIndex, endIndex).
+            if(err || !listItems) {
+                console.warn(`Could not zrange redis sorted set ${normalizedArgs.key}:`, err);
+                if (normalizedArgs.cback) normalizedArgs.cback([]);
+                return;
+            }
+            if (normalizedArgs.cback) normalizedArgs.cback(listItems);
+        };
+        if (withScores) {
+            self.clients[dbName].db.zrange(normalizedArgs.key, normalizedArgs.startIndex, normalizedArgs.endIndex, 'BYSCORE', 'WITHSCORES', cmdCback);
+        } else {
+            self.clients[dbName].db.zrange(normalizedArgs.key, normalizedArgs.startIndex, normalizedArgs.endIndex, 'BYSCORE', cmdCback);
+        }
+    }
+
+    zrem(key, members, cback, dbName) {
+        const self = this;
+        const normalizedArgs = self.normalizeRedisCommandArgs('zrem', arguments);
+        if (!dbName) dbName = self.determineTargetDb(normalizedArgs);
+        if (!dbName) return;
+        self.clients[dbName].db.zrem(normalizedArgs.key, normalizedArgs.saveData, (err, itemsRemovedCount) => {
+            if(err || typeof itemsRemovedCount !== 'number') {
+                console.warn(`Could not zrem ${normalizedArgs.saveData.length} objects to redis sorted set ${normalizedArgs.key}:`, normalizedArgs.saveData, err);
+                if (normalizedArgs.cback) normalizedArgs.cback(null);
+                return;
+            }
+            if (normalizedArgs.cback) normalizedArgs.cback(itemsRemovedCount);
+        });
+    }
+
+    zremrangebyscore(key, startIndex, endIndex, cback, dbName) {
+        // startIndex, endIndex args are the min and max score for items to be removed.
+        const self = this;
+        const normalizedArgs = self.normalizeRedisCommandArgs('zremrangebyscore', arguments);
+        if (!dbName) dbName = self.determineTargetDb(normalizedArgs);
+        if (!dbName) return;
+        self.clients[dbName].db.zremrangebyscore(normalizedArgs.key, normalizedArgs.startIndex, normalizedArgs.endIndex, (err, itemsRemovedCount) => {
+            if(err || typeof itemsRemovedCount !== 'number') {
+                console.warn(`Could not zremrangebyscore redis sorted set ${normalizedArgs.key}:`, err);
+                if (normalizedArgs.cback) normalizedArgs.cback(null);
+                return;
+            }
+            if (normalizedArgs.cback) normalizedArgs.cback(itemsRemovedCount);
         });
     }
 
@@ -553,6 +678,19 @@ class RedisClient {
         });
     }
 
+    /////////
+    // Other misc supported commands next.
+    pexpire(key, ttlMs, cback, dbName) {
+        const self = this;
+        const normalizedArgs = self.normalizeRedisCommandArgs('pexpire', arguments);
+        if (!dbName) dbName = self.determineTargetDb(normalizedArgs);
+        if (!dbName) return;
+        self.clients[dbName].db.pexpire(normalizedArgs.key, normalizedArgs.ttlMs, (err, res) => { // res is 1 for success, 0 for key does no exist
+            if (err) console.warn(err);
+            if (normalizedArgs.cback) normalizedArgs.cback(res);
+        });
+    }
+
     info(category = 'all', cback, dbName = 'all') {
         const self = this;
         const gotInfoForDbs = []; // Where the responses will be held for all dbs until ready for cback
@@ -609,7 +747,7 @@ class RedisClient {
             setIntervalTime: 2000, // stagger these so our intervals don't all hit simultaneously
             maxSetBatchSize: 100, // total number of callbacks that would need to be registed to all set keys to trigger the redis request
             getIntervalTime: 900,
-            maxGetBatchSize: 100,
+            maxGetBatchSize: 200,
             lrangeIntervalTime: 1000,
             maxLrangeBatchSize: 500,
 
@@ -702,7 +840,7 @@ class RedisClient {
 
             ////////
             // GET (cached)
-            cachedGetObjectsMaxSize: 400, // only stores the most recently used cached objects
+            cachedGetObjectsMaxSize: 1000, // only stores the most recently used cached objects
             cachedGetObjects: [], // held as an array for quick unshift and splice (to limit cache size)
             cachedGetObjectsIndex: {}, // also maintain an index for increased performance (don't have to loop through array for every getCached request) {'redis:key': int (index within cachedGetObjects array), etc..}
             cachedGetObjectsAccessLog: [], // every time a redis key is returned via getCached (whether from cache, or from redis), it's key is pushed to this array. cachedGetObjectsAccessLog is used to meet cachedGetObjectsMaxSize in an LRU fashion.
@@ -740,7 +878,7 @@ class RedisClient {
             trimCachedGetObjects: () => {
                 const accessLog = self.throttle.cachedGetObjectsAccessLog.reverse();
                 self.throttle.cachedGetObjectsAccessLog = [];
-                const cachedGetObjectsTargetLength = Math.round(self.throttle.cachedGetObjectsMaxSize * .8); // Free up 20% so we aren't running this cache trimming logic for every single call to getCached (after the cache has filled)
+                const cachedGetObjectsTargetLength = Math.round(self.throttle.cachedGetObjectsMaxSize * .5); // Free up 50% so we aren't running this cache trimming logic for every single call to getCached (after the cache has filled)
                 const keepRedisKeys = [];
                 accessLog.some((accessedRedisKey) => {
                     if (keepRedisKeys.indexOf(accessedRedisKey) === -1) {

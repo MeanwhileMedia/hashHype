@@ -6,7 +6,6 @@ import hbCodeChecker from './hbCodeChecker.js';
 var hbServeJs = {
 
     jsDirs: [], // the path(s) which hold our js files
-    cachedCompiledJs: {}, //Abs paths as keys holding compiled text for quick cache
 
     init(dir, opts) {
         if (hbServeJs.jsDirs.indexOf(dir) === -1) hbServeJs.jsDirs.push(dir);
@@ -60,24 +59,16 @@ var hbServeJs = {
         if (!filePath) { return undefined; }
 
         let compiled;
-        if(hbServeJs.cachedCompiledJs[ctx.request.url]) {
-            console.log(`Requested JS(X) file was found in cache: ${filePath}`);
-            compiled = {
-                code: hbServeJs.cachedCompiledJs[ctx.request.url]
-            };
-        } else {
-            const codeFile = hbCodeChecker.cleanCodeFileForFE(filePath, ctx);
-            compiled = {
-                code: codeFile.contents
-            };
-            if (hbServeJs.isJsx(ctx)) {
-                compiled = babel.transformSync(compiled.code, {
-                    presets: ['@babel/react'],
-                });
-            }
-            hbServeJs.cachedCompiledJs[ctx.request.url] = compiled.code;
-            console.log(`Requested JS(X) file was compiled: ${filePath}`);
+        const codeFile = hbCodeChecker.cleanCodeFileForFE(filePath, ctx);
+        compiled = {
+            code: codeFile.contents
+        };
+        if (hbServeJs.isJsx(ctx)) {
+            compiled = babel.transformSync(compiled.code, {
+                presets: ['@babel/react'],
+            });
         }
+        console.log(`Requested JS(X) file was compiled: ${filePath}`);
 
         return compiled.code;
     },

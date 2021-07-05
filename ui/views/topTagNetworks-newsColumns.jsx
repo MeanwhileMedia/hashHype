@@ -1,27 +1,31 @@
 import React from '/node_modules/react';
-import _ from '/node_modules/underscore';
-{/* <hbCC-fEAdmin> */} import AdminTrain from './topTagNetworks-adminTrain.jsx'; {/* </hbCC-fEAdmin> */}
-
 import styles from './styles/topTagNetworks-newsColumns.css.js';
 
 class TopTagnewsColumns extends React.Component {
     render() {
-        if (_.size(this.props.topTags) === 0) { return null; }
+        if (this.props.topTags.length === 0) { return null; }
         const thisView = this;
         const css = styles.generate(this);
 
-        thisView.activeTopTag = _.find(this.props.topTags, topTag => topTag.isFocused);
+        thisView.activeTopTag = this.props.topTags.find(topTag => topTag.isFocused);
         if (!thisView.activeTopTag) { return null; }
 
         let topSymbolName = '';
-        if (thisView.activeTopTag.topSymbol) {
-            let topSymbolNameText = thisView.activeTopTag.topSymbol.name;
-            if (thisView.activeTopTag.topSymbol.funcdSymbolData) topSymbolNameText = thisView.activeTopTag.topSymbol.funcdSymbolData.name || topSymbolNameText;
-            topSymbolName = (
-                <>
-                    <h2>{topSymbolNameText}</h2>
-                </>
-            );
+        if (thisView.activeTopTag.topSymbolHigh['1Hr'].key) {
+            let wordTopSymbolObj;
+            thisView.activeTopTag.symbols.forEach((thisSymbol) => {
+                const thisSymbolKey = `symbol:${thisSymbol.type}:${thisSymbol.symbol}`;
+                if (thisSymbolKey === thisView.activeTopTag.topSymbolHigh['1Hr'].key) wordTopSymbolObj = thisSymbol;
+            });
+            if (wordTopSymbolObj) {
+                let topSymbolNameText = wordTopSymbolObj.name;
+                if (wordTopSymbolObj.funcdSymbolData) topSymbolNameText = wordTopSymbolObj.funcdSymbolData.name || topSymbolNameText;
+                topSymbolName = (
+                    <>
+                        <h2>{topSymbolNameText}</h2>
+                    </>
+                );
+            }
         }
 
         let commentAuthorAndPoints = '';
@@ -56,31 +60,10 @@ class TopTagnewsColumns extends React.Component {
                 <div style={css.newsColumns_right}>
                     {rightColumn}
                 </div>
-                <div style={css.newsColumns_ctrls}>
-                    {/* <hbCC-fEAdmin> */}
-                    <div style={css.newsColumns_ctrls_adminModal} onClick={this.showAdminCtrlsModal.bind(this)}>
-                        <span class="material-icons">settings</span>
-                    </div>
-                    {/* </hbCC-fEAdmin> */}
-                </div>
             </div>
         );
     } // end render
 
-    {/* <hbCC-fEAdmin> */}
-    showAdminCtrlsModal() {
-        const trainingUi = (
-            <AdminTrain topTag={this.activeTopTag} hideModal={this.hideAdminCtrlsModal.bind(this)}/>
-        );
-        this.props.modal.show({
-            title: 'Relevancy Training',
-            body: trainingUi
-        });
-    }
-    hideAdminCtrlsModal() {
-        this.props.modal.hide();
-    }
-    {/* </hbCC-fEAdmin> */}
 }
 
 export default TopTagnewsColumns;

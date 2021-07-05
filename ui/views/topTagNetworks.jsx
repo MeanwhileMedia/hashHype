@@ -1,8 +1,8 @@
 import React from '/node_modules/react';
 import Radium from '/node_modules/radium';
 import d3 from '/node_modules/d3';
-import _ from '/node_modules/underscore';
 import socketViewResponses from '../helpers/hbClientSocketViewResponses.js';
+import GNav from './gNav.jsx';
 import TopTagWheel from './topTagNetworks-wheel.jsx';
 import TopTagnewsColumns from './topTagNetworks-newsColumns.jsx';
 import Modal from './modal.jsx';
@@ -18,7 +18,7 @@ class TopTagNetworks extends React.Component {
             focusedTopTag: null,
             freezeState: false, // set to true and all calls to receiveNewState (from our server socket) will be discarded.
             timeBuckets: {
-                '1hr': [],
+                '1Hr': [],
                 '12Hr': [],
                 '24Hr': [],
                 // 'all': []
@@ -27,8 +27,11 @@ class TopTagNetworks extends React.Component {
                 title: '',
                 body: '',
                 visible: false,
+                customStyleClasses: []
             },
         }
+
+        this.modalControls = this.initModalControls();
     }
 
     componentDidMount() {
@@ -48,10 +51,9 @@ class TopTagNetworks extends React.Component {
         const thisView = this;
         const css = styles.generate(this);
         const StyleRoot = Radium.StyleRoot;
-        const modalControls = { show: thisView.showModal.bind(thisView), hide: thisView.hideModal.bind(thisView) };
 
         // Note which topTag wheel part is currently focused on the topTag itself (within state.topTagStats)
-        _.find(this.state.timeBuckets['1Hr'], (topTag, key) => {
+        this.state.timeBuckets['1Hr'].find((topTag, key) => {
             topTag.id === thisView.state.focusedTopTag ? topTag.isFocused = true : topTag.isFocused = false;
             return topTag.isFocused; // break loop
         });
@@ -66,10 +68,14 @@ class TopTagNetworks extends React.Component {
                     />
                     <TopTagnewsColumns
                         topTags={this.state.timeBuckets['1Hr']}
-                        modal={modalControls}
+                        modal={this.modalControls}
                     />
                 </div>
-                <Modal content={this.state.modalContent} modal={modalControls} />
+                <Modal content={this.state.modalContent} modal={this.modalControls} />
+                <GNav
+                    topTags={this.state.timeBuckets['1Hr']}
+                    modal={this.modalControls}
+                />
             </StyleRoot>
         );
     }
@@ -84,11 +90,35 @@ class TopTagNetworks extends React.Component {
         this.setState({ freezeState: frozen });
     }
 
+    initModalControls() {
+        const thisView = this;
+        const modalControls = {
+            show: (opts) => {
+                thisView.showModal.apply(thisView, [opts]);
+                if (modalControls.onShowCbacks) modalControls.onShowCbacks.forEach(thisCback => thisCback());
+            },
+            hide: () => {
+                thisView.hideModal.apply(thisView, arguments);
+                if (modalControls.onHideCbacks) modalControls.onHideCbacks.forEach(thisCback => thisCback());
+            },
+            onHide: (thisOnHideCback) => {
+                modalControls.onHideCbacks = modalControls.onHideCbacks || [];
+                modalControls.onHideCbacks.push(thisOnHideCback);
+            },
+            onShow: (thisOnShowCback) => {
+                modalControls.onShowCbacks = modalControls.onShowCbacks || [];
+                modalControls.onShowCbacks.push(thisOnShowCback);
+            }
+        };
+        return modalControls;
+    }
+
     showModal(modalContent) {
-        modalContent = _.extend({
+        modalContent = Object.assign({
             title: '',
             body: '',
             visible: true,
+            customStyleClasses: []
         }, modalContent);
         this.setState({ modalContent: modalContent });
     }
@@ -99,6 +129,7 @@ class TopTagNetworks extends React.Component {
                 title: '',
                 body: '',
                 visible: false,
+                customStyleClasses: []
             },
         });
     }

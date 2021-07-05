@@ -31,12 +31,16 @@ class MaintainLogsAndBackups {
         self.archiveRDBInterval = null;
         self.archiveRDBIntervalTime = 60000*30; // backup all redis rdb files to cloud twice/hr. Uses day tstamp naming pattern.
 
+        self.cloudArchiveCleanupInterval = null;
+        self.cloudArchiveCleanupIntervalTime = 60000*720; // twice per 24hrs crawl the files backed up to cloud (google drive) - both logs and rdbs. Delete files older than X days.
+
         self.initRedisClient(() => {
             self.initGoogleDriveClient(() => {
                 self.initDbHealthLogInterval();
                 self.initRotateLogsInterval();
                 self.initArchiveLogsInterval();
                 self.initArchiveRDBInterval();
+                self.initCloudArchiveCleanupInterval();
             });
         });
     }
@@ -214,6 +218,52 @@ class MaintainLogsAndBackups {
                 });
             });
         }, self.archiveRDBIntervalTime);
+    }
+
+    initCloudArchiveCleanupInterval() {
+        const self = this;
+        const notExpiredDayTstamps = self.getDayTstamps(5); // Keep daily log files and daily RDB backupes in cloud for 5 days
+        const oldestNotExpiredTstamp = notExpiredDayTstamps.pop();
+        console.log(`Now checking google drive for expired archived log/db files which should be deleted...`)
+        self.googleDriveClient.files.list({}, (err, res) => {
+            if (err) {
+                console.warn(err);
+                return;
+            }
+            if (res.data && res.data.files) {
+                const listedFiles = [...res.data.files];
+                const deleteTheseFiles = [];
+                listedFiles.forEach((thisFile) => {
+                    let dayTstampForThisFileName = thisFile.name.split('-')[0];
+                    if (!dayTstampForThisFileName || dayTstampForThisFileName.length !== 5) return; // day tstamps should always be 5 chars long. see getDayTstamps below.
+                    if (parseInt(dayTstampForThisFileName) < oldestNotExpiredTstamp) {
+                        deleteTheseFiles.push(thisFile);
+                    }
+                });
+                if (deleteTheseFiles.length === 0) return;
+                const deleteThisFile = (thisFile) => {
+                    self.googleDriveClient.files.delete({fileId: thisFile.id}, (delErr, delRes) => {
+                        if (err) console.warn(err);
+                        console.log(`Cleaned up expired file from google drive: ${thisFile.name}`);
+                        ++deleteCount;
+                        setTimeout(() => {
+                            if (!deleteTheseFiles[deleteCount]) {
+                                self.initCloudArchiveCleanupInterval();
+                                return;
+                            }
+                            deleteThisFile(deleteTheseFiles[deleteCount])
+                        }, 1000)
+                    });
+                };
+                let deleteCount = 0;
+                deleteThisFile(deleteTheseFiles[deleteCount])
+            }
+        });
+
+        if (self.cloudArchiveCleanupInterval) return;
+        self.cloudArchiveCleanupInterval = setInterval(() => {
+            self.initCloudArchiveCleanupInterval();
+        }, self.cloudArchiveCleanupIntervalTime);
     }
 
     getAllLogFileNames(cback) {

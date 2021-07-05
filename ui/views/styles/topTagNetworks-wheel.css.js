@@ -1,4 +1,3 @@
-import _ from '/node_modules/underscore';
 
 const styles = {
 

@@ -1,7 +1,6 @@
 import React from '/node_modules/react';
 import d3 from '/node_modules/d3';
 import Hammer from '/node_modules/hammerjs';
-import _ from '/node_modules/underscore';
 import socketViewResponses from '../helpers/hbClientSocketViewResponses.js';
 import TopTagWheelPart from './topTagNetworks-wheel-part.jsx';
 import styles from './styles/topTagNetworks-wheel.css.js';
@@ -73,7 +72,7 @@ class TopTagWheel extends React.Component {
     }
 
     createTopTagWheelParts(css) {
-        if (_.size(this.props.topTags) === 0) { return []; }
+        if (this.props.topTags.length === 0) { return []; }
         const thisView = this;
         let hierarchyData = { name: 'topTags', children: this.props.topTags };
         let allMsgCounts = []; // for setting color and width of topTagWheelParts
@@ -102,8 +101,8 @@ class TopTagWheel extends React.Component {
         const partition = d3.partition()(hierarchyData);
 
         const topTagWheelParts = [];
-        _.each(partition.children, (partitionCoords, index) => {
-            const wheelProps = _.extend(partitionCoords, {
+        partition.children.forEach((partitionCoords, index) => {
+            const wheelProps = Object.assign(partitionCoords, {
                 key: partitionCoords.data.absKey,
                 minOuterRadius: css.minOuterRadius,
                 maxOuterRadius: css.maxOuterRadius,

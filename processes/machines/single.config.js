@@ -142,7 +142,7 @@ module.exports = {
 //     - for a maching that will run redis - perform *1 above
 //     - install node (nvm) and redis (https://redis.io/topics/quickstart)
 //     - Create self signed ssl certs OR use certbot and copy certs to utils/certs using below CLI commands:
-            // npm run genSslScripts --domain=dev.meanwhile.media (which is already part of our deploy npm scripts)
+            // npm run genSslCerts --domain=dev.meanwhile.media (which is already part of our deploy npm scripts)
             // - OR -
             // sudo snap install --classic certbot
             // sudo ln -s /snap/bin/certbot /usr/bin/certbot

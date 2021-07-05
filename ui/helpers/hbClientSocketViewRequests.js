@@ -1,5 +1,3 @@
-import _ from '/node_modules/underscore';
-
 // Client side socket
 const hbClientSocketViewRequests = {
 
@@ -8,7 +6,7 @@ const hbClientSocketViewRequests = {
     const elData = args.targetEl.dataset;
 
     // If no absKey was sent, then pull it off of the elData
-    if (_.isUndefined(args.absKey)) {
+    if (!args.absKey) {
       args.absKey = elData.viewData.absKey;
     }
 

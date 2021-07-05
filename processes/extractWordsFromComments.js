@@ -2,6 +2,7 @@ import natural from 'natural';
 import urlRegex from 'url-regex';
 import urlNormalize from 'normalize-url';
 import RedisClient from '../utils/redisClient.js';
+import commentModel from '../utils/objectModels/comment.js';
 import symbolModel from '../utils/objectModels/symbol.js';
 
 import events from 'events';
@@ -23,6 +24,14 @@ class ExtractWordsFromComments {
         const self = this;
         this.redisClient = null;
         this.trackWordsFor = 86400000; // ms (24hrs) How long should we keep tstamps stored to word:foo_bar:foundAt lists
+
+        // Every 10 minutes, all wordToCommentsIndex and word:foo_bar:foundAt redis objects are cleaned up. Comments and foundAt timestamps
+        // which are older than this.trackWordsFor will be removed from redis.
+        this.cleanupWordRecordsInterval = null;
+        this.cleanupWordRecordsIntervalTime = 6000*10;
+        this.cleanupWordRecords = []; // array of word strings
+        this.initCleanupWordRecordsInterval();
+
         this.initRedisClient(() => {
             self.syncTrainingNotRelevant();
             self.initKeyspaceSubscriptions();
@@ -52,8 +61,7 @@ class ExtractWordsFromComments {
                 comment.pendingSymbols = {};
                 self.preserveSymbolsInCommentBody(comment, () => {
                     self.extractWordSequences(comment, () => {
-                        delete comment.pendingSymbols; // was just a temporary prop for preserveSymbolsInCommentBody
-                        self.redisClient.set(`comment:${comment.id}`, comment);
+                        self.redisClient.set(`comment:${comment.id}`, commentModel.minimizeForDb(comment));
                     });
                 });
             });
@@ -115,14 +123,23 @@ class ExtractWordsFromComments {
         }
 
         // console.log(`Found ${foundUrls.length} urls in comment:${comment.id}`);
-        // comment.originalBody = `${comment.body}`; // Sometimes useful to preserve untouched body on comment object for debugging
         const urlSymbolSearchPromises = [];
         foundUrls.forEach((thisUrl) => {
             urlSymbolSearchPromises.push(new Promise( (resolve, reject) => {
+                const tokenSymbolResult = {token: thisUrl, normalizedToken: null, symbolKey: null, matchedSymbol: null}
+                let normalizedUrl;
+                try {
+                    normalizedUrl = urlNormalize(thisUrl);
+                } catch (e) {
+                    console.warn(`Could not normalize URL in comment:${comment.id}`, e);
+                    resolve(tokenSymbolResult);
+                    return;
+                }
+                tokenSymbolResult.normalizedToken = normalizedUrl;
+
                 // Generate a symbol key from this URL and see if it already exists in redis. If not, create now.
-                let normalizedUrl = urlNormalize(thisUrl);
                 const symbolKey = `symbol:url:${normalizedUrl}`; // `symbol:stock:gme`
-                const tokenSymbolResult = {token: thisUrl, normalizedToken: normalizedUrl, symbolKey: symbolKey, matchedSymbol: null}
+                tokenSymbolResult.symbolKey = symbolKey;
                 self.redisClient.get(symbolKey, (symbol) => {
                     if(symbol) {
                         // now that we have done a very basic symbol match against our redis key pattern, we will confirm the match by passing this token
@@ -201,8 +218,6 @@ class ExtractWordsFromComments {
                         resolve(tokenSymbolResult);
                         return;
                     }
-                    // now that we have done a very basic symbol match against our redis key pattern, we will confirm the match by passing this token
-                    // into the symbols customizable match function.
                     let isMatch = symbolModel.execMatch(symbol, thisToken, true);
                     if(!isMatch && precedingToken === '$') { // We manually support passing $ to the custom match function if a "$" token preceeded this stock symbol. Some custom match functions will require $ to be preset (when tokens withou $ are too too ambiguous)
                         isMatch = symbolModel.execMatch(symbol, `$${thisToken}`, true);
@@ -343,7 +358,12 @@ class ExtractWordsFromComments {
                     self.redisClient.set(redisWordKey, saveWordObject);
 
                     // Save this word to it's WordToCommentsIndex (creating one if it does not yet exist)
-                    self.registerWordToCommentsIndex(saveWordObject.value.join('_!!_'), commentData.id, () => { // this needs to be done before the rpush because of topCommentsStats logic
+                    self.registerWordToCommentsIndex(saveWordObject.value.join('_!!_'), commentData, (addedCommentToIndex) => { // this needs to be done before the rpush because of topCommentsStats logic
+                        if (!addedCommentToIndex) {
+                            // for some reason the comment id was not added to the wordToCommentsIndex. Do not proceed to add word tstamp.
+                            resolve();
+                            return;
+                        }
                         self.addFoundAtTstampForWord(redisWordKey, commentData, () => {
                             resolve(); // finally, we can resolve this wordSavePromise
                         });
@@ -357,17 +377,39 @@ class ExtractWordsFromComments {
         });
     } //end extractWordSequences
 
-    registerWordToCommentsIndex(wordString, commentId, cback) { // a comment index (index:wordToComments:foo_bar) is an array holding comment ids
+    registerWordToCommentsIndex(wordString, comment, cback) {
         const self = this;
+        // a comment index (index:wordToComments:foo_bar) is a redis sorted set of comment ids (pointed using their
+        // createdUtc tstamps). Sorted sets let us later fetch ranges based on createdUtc time frames.
+        // cback returns true if was added and saved. false otherwise.
         const thisIndexKey = `index:wordToComments:${wordString}`;
-        self.redisClient.get(thisIndexKey, (gotWordIndex) => {
-            let wordToCommentsIndex = [];
-            if (gotWordIndex) wordToCommentsIndex = gotWordIndex;
-            if (wordToCommentsIndex.indexOf(commentId) === -1) wordToCommentsIndex.push(commentId);
-            self.redisClient.set(thisIndexKey, wordToCommentsIndex, () => {
-                if (cback) cback();
-            });
+        self.redisClient.zadd(thisIndexKey, [comment.createdUtc, comment.id], (itemsAddedCount) => {
+            if (itemsAddedCount === 0) {
+                // If zadd returns 0, this implies that the item could not be added because it already existed, or the command errored.
+                console.warn(`Could not zadd comment:${comment.id} to ${thisIndexKey}. Most likely, that comment id already existed in the sorted set.`);
+                if (cback) cback(false); // return false and no word:foundAt tstamp will be registered either.
+                return;
+            }
+            if (cback) cback(true);
+
+            // We must also save a record of all words which have changed wordToCommentsIndex. This process cleans up those objects in intervals. See initCleanupWordRecordsInterval
+            self.cleanupWordRecords.push(wordString);
         });
+
+        // self.redisClient.get(thisIndexKey, (gotWordIndex) => {
+        //     let wordToCommentsIndex = [];
+        //     if (gotWordIndex) wordToCommentsIndex = gotWordIndex;
+        //     if (wordToCommentsIndex.indexOf(commentId) !== -1) {
+        //         console.warn(`Could not add comment:${commentId} to ${thisIndexKey} because it already existed.`);
+        //         if (cback) cback(false); // pass false and no foundAt tstamp will be registered either.
+        //         return;
+        //     }
+        //     wordToCommentsIndex.push(commentId);
+        //     self.redisClient.set(thisIndexKey, wordToCommentsIndex, () => {
+        //         if (cback) cback(true);
+        //     });
+        // });
+
     }
 
     addFoundAtTstampForWord(redisWordKey, hostComment, cback) {
@@ -375,25 +417,61 @@ class ExtractWordsFromComments {
         // All "foundAt" tstamps are stored to their own redis list at key: word:foo_!!_bar:foundAt
         const foundAtListKey = `${redisWordKey}:foundAt`; // rpush auto creates list if it does not already exist
         self.redisClient.rpush(foundAtListKey, [hostComment.foundAt], (listLength) => {
-            if (cback) cback(); // go ahead and return to caller, we don't need to wait on asyn cleanup tasks below
+            if (cback) cback(); // go ahead and return to caller, we don't need to wait on async cleanup tasks below
 
-            // Now trim this "foundAt" list - remove all tstamps which are older than 24hrs old (self.trackWordsFor). For performance,
-            // we don't want to run this logic every single time there is a word re-occurance. We establish a vague threshold for max list length.
-            const maxListLength = self.trackWordsFor / 5000; // self.trackWordsFor is ms. Let's estimate that once we have enough tstamps to account a word recurring every 5 seconds, we start trim logic.
-            if (listLength < maxListLength) return;
-            console.log(`A redis list (${foundAtListKey}) will now be trimmed of all tstamps older than ${self.trackWordsFor/3600000}hrs...`);
+            // // Now trim this "foundAt" list - remove all tstamps which are older than 24hrs old (self.trackWordsFor). For performance,
+            // // we don't want to run this logic every single time there is a word re-occurance. We establish a vague threshold for max list length.
+            // const maxListLength = self.trackWordsFor / 5000; // self.trackWordsFor is ms. Let's estimate that once we have enough tstamps to account a word recurring every 5 seconds, we start trim logic.
+            // if (listLength < maxListLength) return;
+            // console.log(`A redis list (${foundAtListKey}) will now be trimmed of all tstamps older than ${self.trackWordsFor/3600000}hrs...`);
+            // self.redisClient.lrange(foundAtListKey, 0, -1, (allFoundAtTstamps) => {
+            //     let trimStart = 0; // the index in list at which tstamps stop being too old. These lists are sorted ascending.
+            //     allFoundAtTstamps.some((thisTstamp, thisTstampIndex) => {
+            //         const isOldTstamp = Date.now() - thisTstamp > self.trackWordsFor;
+            //         if (!isOldTstamp) return true; // break from loop. We have looped through all the old tstamps.
+            //         trimStart = thisTstampIndex;
+            //     });
+            //     if (trimStart === 0) return;
+            //     self.redisClient.ltrim(foundAtListKey, trimStart, -1);
+            //     console.log(`Trimmed ${trimStart} items from redis list: ${foundAtListKey}`)
+            // });
+        }); // end self.redisClient.rpush(foundAtListKey
+    }
+
+    initCleanupWordRecordsInterval() {
+        const self = this;
+        const cleanupWordRecordsClone = [...self.cleanupWordRecords];
+        self.cleanupWordRecords = [];
+        console.log(`Redis word records will now be cleaned up for ${cleanupWordRecordsClone.length} words. They will be trimmed of all items older than ${self.trackWordsFor/3600000}hrs...`);
+        cleanupWordRecordsClone.forEach((thisWordStr) => {
+            // 1. Clean up the wordToCommentsIndex sorted set first
+            const thisWordToCommentsIndexKey = `index:wordToComments:${thisWordStr}`;
+            const now = Date.now();
+            const maxAge = now - self.trackWordsFor;
+            self.redisClient.zremrangebyscore(thisWordToCommentsIndexKey, 0, maxAge, (itemsRemovedCount) => {
+                if (itemsRemovedCount === 0) return;
+                console.log(`Removed ${itemsRemovedCount} items from redis sorted list: ${thisWordToCommentsIndexKey}`);
+            });
+
+            // 2. Now clean up the word:foundAt list
+            const foundAtListKey = `word:${thisWordStr}:foundAt`;
             self.redisClient.lrange(foundAtListKey, 0, -1, (allFoundAtTstamps) => {
                 let trimStart = 0; // the index in list at which tstamps stop being too old. These lists are sorted ascending.
                 allFoundAtTstamps.some((thisTstamp, thisTstampIndex) => {
-                    const isOldTstamp = Date.now() - commentData.createdUtc > self.trackWordsFor;
+                    const isOldTstamp = Date.now() - thisTstamp > self.trackWordsFor;
                     if (!isOldTstamp) return true; // break from loop. We have looped through all the old tstamps.
                     trimStart = thisTstampIndex;
                 });
                 if (trimStart === 0) return;
                 self.redisClient.ltrim(foundAtListKey, trimStart, -1);
-                console.log(`Trimmed ${trimStart} items from redis list: ${foundAtListKey}`)
+                console.log(`Trimmed ${trimStart} items from redis list: ${foundAtListKey}`);
             });
-        }); // end self.redisClient.rpush(foundAtListKey
+        });
+
+        if (self.cleanupWordRecordsInterval) return;
+        self.cleanupWordRecordsInterval = setInterval(() => {
+            self.initCleanupWordRecordsInterval();
+        }, self.cleanupWordRecordsIntervalTime);
     }
 
     syncTrainingNotRelevant() {

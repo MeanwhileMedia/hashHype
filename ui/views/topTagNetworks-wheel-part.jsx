@@ -1,7 +1,6 @@
 import React from '/node_modules/react';
 import d3 from '/node_modules/d3';
 import Radium from '/node_modules/radium';
-import _ from '/node_modules/underscore';
 import socketViewResponses from '../helpers/hbClientSocketViewResponses.js';
 import styles from './styles/topTagNetworks-wheel-part.css.js';
 
@@ -21,12 +20,19 @@ class TopTagWheelPart extends React.Component {
     const thisView = this;
     this.props.data.rank = this.props.allMsgCounts.indexOf(this.props.data.totalPoints['1Hr']) + 1;
 
-    let topSymbol = '';
-    if (this.props.data.topSymbol) topSymbol = this.props.data.topSymbol.symbol.toUpperCase();
+    let topSymbolSymbol = '';
+    if (this.props.data.topSymbolHigh['1Hr'].key) {
+        let wordTopSymbolObj;
+        thisView.props.data.symbols.forEach((thisSymbol) => {
+            const thisSymbolKey = `symbol:${thisSymbol.type}:${thisSymbol.symbol}`;
+            if (thisSymbolKey === this.props.data.topSymbolHigh['1Hr'].key) wordTopSymbolObj = thisSymbol;
+        });
+        if (wordTopSymbolObj) topSymbolSymbol = wordTopSymbolObj.symbol;
+    }
 
     const rankSpace = this.props.maxOuterRadius - this.props.minOuterRadius;
     const innerPadding = (rankSpace/2);
-    const rankPercentage = 1 - (_.max(this.props.allMsgCounts) - this.props.data.totalPoints['1Hr']) / (_.max(this.props.allMsgCounts) - _.min(this.props.allMsgCounts));
+    const rankPercentage = 1 - (Math.max(...this.props.allMsgCounts) - this.props.data.totalPoints['1Hr']) / (Math.max(...this.props.allMsgCounts) - Math.min(...this.props.allMsgCounts));
     const outerRadius = (this.props.minOuterRadius+innerPadding) + ((rankSpace-innerPadding)*rankPercentage);
 
     const x = d3.scaleLinear().range([0, 2 * Math.PI]);
@@ -50,7 +56,7 @@ class TopTagWheelPart extends React.Component {
       <g className={mainClasses} data-trend-name={this.props.data.id}>
         <path
           d={arc(this.props)}
-          style={_.extend(growthAnim, css['.wheel_part_path'])}
+          style={Object.assign(growthAnim, css['.wheel_part_path'])}
         />
         <g className="wheel_part_text" transform={`rotate(${this.computeTextRotation(this.props, x)})`}>
 
@@ -106,7 +112,7 @@ class TopTagWheelPart extends React.Component {
               dx={this.props.maxOuterRadius}
               dy="-2rem"
             >
-              {topSymbol}
+              {topSymbolSymbol}
             </text>
           </g>
 

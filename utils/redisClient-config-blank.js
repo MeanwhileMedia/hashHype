@@ -35,7 +35,7 @@ module.exports = {
                     // appendfilename: 'persistDb.aof',
 
                     // Memory settings
-                    maxmemory: '2gb',
+                    maxmemory: '1gb',
                     'maxmemory-policy': 'allkeys-lru',
                     'maxmemory-samples': 5,
 
@@ -79,7 +79,7 @@ module.exports = {
                     // appendfilename: 'persistDb.aof',
 
                     // Memory settings
-                    maxmemory: '2gb',
+                    maxmemory: '1gb',
                     'maxmemory-policy': 'volatile-lru', // evict keys by trying to remove the less recently used (LRU) keys first, but ONLY among keys that have an expire set.
                     'maxmemory-samples': 10,
 

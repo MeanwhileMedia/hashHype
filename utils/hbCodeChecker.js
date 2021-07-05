@@ -41,19 +41,17 @@ const hbCodeChecker = {
         return codeFile;
     },
 
-    shouldServeFEAdminAsset(uiServerCtx) {
+    shouldServeFEAdminAsset(uiServerCtx, adminUid = null) {
         let adminCodeStatus = {shouldServe: false, adminInfo: ''};
-        if (!uiServerCtx.cookies || !uiServerCtx.cookies.get('fEAdmin')) return adminCodeStatus;
-
-        let adminUid;
-        if (uiServerCtx.cookies && uiServerCtx.cookies.get('fEAdmin')) {
-            adminUid = uiServerCtx.cookies.get('fEAdmin');
-        } else {
-            // In some cases (if the user just landed and is starting a new session) our cookies will only be on the response object (which was not yet sent). Check there too.
-            adminUid = hbCodeChecker.getResponseCookie('fEAdmin', uiServerCtx);
-            if (!adminUid) return adminCodeStatus;
+        if (!adminUid) { // can be passed directly to this function, OR if isn't then this function will check req and res cookies
+            if (uiServerCtx.cookies && uiServerCtx.cookies.get('fEAdmin')) {
+                adminUid = uiServerCtx.cookies.get('fEAdmin');
+            } else {
+                // In some cases (if the user just landed and is starting a new session) our cookies will only be on the response object (which was not yet sent). Check there too.
+                adminUid = hbCodeChecker.getResponseCookie('fEAdmin', uiServerCtx);
+                if (!adminUid) return adminCodeStatus;
+            }
         }
-
         if (hbCodeCheckerConfig.secrets.fEAdmin.indexOf(adminUid) !== -1) {
             adminCodeStatus.shouldServe = true;
             adminCodeStatus.adminInfo = hbCodeCheckerConfig.secretUserInfo[adminUid];

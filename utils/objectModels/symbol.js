@@ -68,7 +68,7 @@ const symbolObjModel = {
             'match': '/*\nArgs available: (props, matchAgainst, isMatch)\nRequired return value: isMatch (boolean)\n*/\nreturn isMatch;'
         };
 
-        if (symbolObj.type === 'stock') {
+        if (symbolObj.type === 'stock' || symbolObj.type === 'coin') {
             defaultFuncStings.match = `/*
 Args available: (props, matchAgainst, isMatch)
 Required return value: isMatch (boolean)

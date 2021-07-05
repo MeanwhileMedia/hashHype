@@ -1,6 +1,7 @@
 import snoowrap from 'snoowrap';
-import { v4 as uuidv4 } from 'uuid';
 import RedisClient from '../utils/redisClient.js';
+import commentModel from '../utils/objectModels/comment.js';
+
 
 // This class should be run independenly in it's own node.js process. It is the most basic implementation
 // of simply pulling neww comments from a subreddit, then immediately saving them, unparsed, to redis.
@@ -8,7 +9,7 @@ import RedisClient from '../utils/redisClient.js';
 class Reddit {
     constructor() {
         //Config options
-        this.subRedditName = 'wallstreetbets';
+        this.subRedditName = 'wallstreetbets'; //'Superstonk'; //'wallstreetbets';
         this.fetchLoopIntervalTime = 5000;
 
         //Spam comment rules
@@ -62,6 +63,13 @@ class Reddit {
             clientSecret: 'dwC0N8a9H0dsM2j8qrU8O7WYc4mt1g',
             refreshToken: '517486034553-idlmDwRFIA_1o1iWE2SJuFy3UUwq-Q'
         });
+        // this.redditApiClient = new snoowrap({
+        //     userAgent: 'hashHype',
+        //     clientId: 'bgeRA6pswGCpfQ',
+        //     clientSecret: 'SEjIOW66mxc3A607hQpyBNURv_7E2g',
+        //     refreshToken: '517486034553-k4AU73eA-xYst948y8hAuT2UqoHoBw'
+        // });
+        // access token: 517486034553-hDE_ehFNsfyiNaMaqe4erGs3ofnA1g
     }
 
     fetchCommentsForSubreddit(subName, cback) {
@@ -69,33 +77,35 @@ class Reddit {
             console.log('Must provide subName.');
             return;
         }
-        this.redditApiClient.getNewComments(subName).then(cback).catch((err, foo, bar) => {
-            console.warn('Reddit API getNewComments error: ', err.error.code);
+        this.redditApiClient.getNewComments(subName).then(cback).catch((err) => {
+            if (err) console.warn('Reddit API getNewComments error...', err.error);
+            //if (err.error && err.error.code) console.warn('Error code: ', err.error.code);
         });
     }
 
     createCommentObjects(comment, commentObjects) {
         const self = this;
         const createdUtc = comment.created_utc || Date.now()/1000; // Reddit reports tstamps in SECONDS
-        const thisCommentObject = self.newCommentEntity({
+        const thisCommentObject = commentModel.createCommentObject({
             body: comment.body,
+            originalBody: comment.body,
             author: {name: comment.author.name},
             createdUtc: createdUtc * 1000
         });
         commentObjects.push(thisCommentObject);
-        if (comment.replies && comment.replies.length > 0) {
-            console.log('Comment has replies...');
-            comment.replies.forEach((reply) => {
-                self.createCommentObjects(reply, commentObjects);
-            });
-        }
+        // if (comment.replies && comment.replies.length > 0) {
+        //     console.log('Comment has replies...');
+        //     comment.replies.forEach((reply) => {
+        //         self.createCommentObjects(reply, commentObjects);
+        //     });
+        // }
     }
 
     storeCommentsToRedis(commentObjects) {
         const self = this;
         console.log(`Now storing ${commentObjects.length} comments to redis...`);
         commentObjects.forEach((comment) => {
-            self.redisClient.set(`rawComment:${comment.id}`, comment);
+            self.redisClient.set(`rawComment:${comment.id}`, commentModel.minimizeForDb(comment));
         });
     }
 
@@ -110,16 +120,38 @@ class Reddit {
         // this process includes rules around which comments should be included in trend analysis. Ie: comments that are too long... comments that look like bots or spam, etc.
         let shouldDiscard = false;
 
-        // Discard if comment is too long
-        if (rawComment.body.length > this.maxCommentLength) shouldDiscard = true;
+        // 1. Discard if comment is too long
+        if (rawComment.body.length > this.maxCommentLength) {
+            shouldDiscard = true;
+            console.warn(`Comment discarded because its body char count exceeded the max (${rawComment.body.length}/${this.maxCommentLength}): ${rawComment.body}`);
+            return shouldDiscard;
+        }
 
-        // If user has been marked as not relevant
+        // 2. Training for not relevant content
         if (this.trainingNotRelevant) {
+            // check if user has been marked as not relevant
             const notRelUserIndex = this.trainingNotRelevant.users.findIndex((thisUser) => thisUser.username === rawComment.author.name);
             if (notRelUserIndex !== -1) {
                 shouldDiscard = true;
-                console.log(`Comment discarded for not relevant user: ${rawComment.author.name}`);
+                console.warn(`Comment discarded for not relevant user: ${rawComment.author.name}`);
+                return shouldDiscard;
             }
+            // check for trainingNotRelevant.commentBodies (set in the topCommentStats process)
+            const notRelCommentBodyIndex = this.trainingNotRelevant.commentBodies.indexOf(rawComment.body);
+            if (notRelCommentBodyIndex !== -1) {
+                shouldDiscard = true;
+                console.warn(`Comment will be discarded because its body text was marked as not relevant. body:`, rawComment.body);
+                return shouldDiscard;
+            }
+        }
+
+        // 3. HashHype has a "no all-caps" rule. These comments will often trigger false positive symbol matches (because stock/coin symbols are expected to be in all caps).
+        //    Comments which no longer have case-based information become irrelevant when attempting to extract symbols and trends.
+        const allCapsBody = rawComment.body.toUpperCase();
+        if (allCapsBody === rawComment.body) {
+            shouldDiscard = true;
+            console.warn(`Comment will be discarded because it was in all caps. body:`, rawComment.body)
+            return shouldDiscard;
         }
 
         return shouldDiscard;
@@ -141,27 +173,6 @@ class Reddit {
         self.redisClient.subscribe('__keyspace@0__:training:notRelevant');
     }
 
-    newCommentEntity(initial = {}) { // Must provide body
-        // returns an initial state for a new comment object
-        return {
-            id: uuidv4(),
-            body: initial.body || null,
-            author: initial.author || {name: null},
-            words: [], // array of wordRef objects { word: 'word_seq' (also redis key to word object "word:word_seq"), hasSymbols: ['symbolKey', 'symbol:stock:gme', etc] }
-            createdUtc: initial.createdUtc || Date.now(), // when the comment was posted (ms)
-            foundAt: initial.foundAt || Date.now(), // when the comment registered to hashHype
-            points: {
-                '1Hr': {}, // {foo_bar: 342, other_word: etc...}
-                '12Hr': {},
-                '24Hr': {},
-            },
-            totalPoints: { // summed totals from the above points attr.
-                '1Hr': 0,
-                '12Hr': 0,
-                '24Hr': 0,
-            }
-        }
-    }
 }
 
 

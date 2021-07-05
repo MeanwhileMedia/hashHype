@@ -4,7 +4,7 @@ import hbCodeChecker from './hbCodeChecker.js';
 
 var hbServeHtml = {
 
-    htmlDirs: [], // the path(s) which hold our js files
+    htmlDirs: [], // the path(s) which hold our html files
 
     init(dir, opts) {
         if (hbServeHtml.htmlDirs.indexOf(dir) === -1) hbServeHtml.htmlDirs.push(dir);
