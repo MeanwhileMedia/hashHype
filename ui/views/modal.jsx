@@ -32,7 +32,10 @@ class Modal extends React.Component {
             <div className="Modal" style={modalStyles} onClick={this.hideModal.bind(this)}>
                 <div style={css.modal_inner}>
                     {this.props.content.title &&
-                        <h3 style={css.modal_heading}>{this.props.content.title}</h3>
+                        <h3 style={css.modal_title}>{this.props.content.title}</h3>
+                    }
+                    {this.props.content.subtitle &&
+                        <p style={css.modal_subtitle}>{this.props.content.subtitle}</p>
                     }
                     <div style={css.modal_body_outer}>
                         <div style={css.modal_body_inner} onClick={this.clickedChildContent.bind(this)}>

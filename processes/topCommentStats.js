@@ -22,7 +22,7 @@ class TopCommentsStats {
         this.pendingCommentIdsToWords = {}; // this index is basically the reverse of pendingWordsToTopCommentIds. Both are used in refreshTopComments.
 
         this.topComments = this.newTopCommentsEntity();
-        this.pendingTopComments = this.newTimeBucketObject();  // {'1Hr': {GME: [comment1, comment3], YOLO: [comment2, comment3, etc...]}, '12Hr': { etc... }, etc.. }
+        this.pendingTopComments = {};  // { GME: [comment1, comment3], YOLO: [comment2, comment3, etc...]} }
 
         this.topWordsCounts = {}; // {foo_bar: 35, baz: 100, etc...} // caches counts for words found to be both top, or not.
         this.topWordsCountsMaxLength = 200;
@@ -35,8 +35,9 @@ class TopCommentsStats {
         this.groupSizeForAvgPercentTopWords = 5; // We will store the percentage of words which were topWords for this many topWordsRefreshIntervals. After, the averaged percentage becomes part of the logic to update topWordsMinCount.
 
         this.redisClient = null;
-        this.maxTopCommentsPerBucket = 20;
-        this.trackCommentsFor = 86400000; // ms (24hrs) How long will we keep updating redis comment objects with recurring word points
+        this.maxTopComments = 60;
+        this.minTopCommentsWithSymbols = 20;
+        this.trackCommentsFor = 3600000; // ms (1hr) How long will we keep updating redis comment objects with recurring word points
 
         this.storeNewTopCommentsStatsThrottleTime = 5000;
         this.throttle = {
@@ -77,7 +78,7 @@ class TopCommentsStats {
                 if (!isTopWord) return;
                 ++self.lastIntervalTopWordsCount;
                 // Get all comments, less than 1hr old, which contain this word. For realtime point calculation, we only access new comments (to save on CPU).
-                self.getWordToCommentsIndexForTimeRange(wordString, 3600000, (wordToCommentsIndex) => {
+                self.getWordToCommentsIndexForTimeRange(wordString, self.trackCommentsFor, (wordToCommentsIndex) => {
                     if (!wordToCommentsIndex) return;
                     // We maintain 2 indexes of pending top words <> pending top comments. See refreshTopComments for how they are used.
                     self.pendingWordsToTopCommentIds[wordString] = self.pendingWordsToTopCommentIds[wordString] || [];
@@ -161,7 +162,7 @@ class TopCommentsStats {
             adjustedTopWordsMinCount = Math.max(Math.floor(self.topWordsMinCount * .9), 1);
             console.log(`topWordsMinCount was adjusted down after not enough words (${percentTopWordsRollingAvg}%) were deemed topWords. ${self.topWordsMinCount}->${adjustedTopWordsMinCount}`);
         } else {
-            adjustedTopWordsMinCount = Math.ceil(self.topWordsMinCount * 1.1);
+            adjustedTopWordsMinCount = Math.max(Math.ceil(self.topWordsMinCount * 1.1), 1);
             console.log(`topWordsMinCount was adjusted up to maintain CPU load. ${self.topWordsMinCount}->${adjustedTopWordsMinCount}`);
             // // Just roughly establish a minimum score based on our trimmed list of cached word counts (refreshCountForWords).
             // // We just take the count for the last word in refreshCountForWords (which has already been shortened to meet this.topWordsCountsMaxLength)
@@ -189,28 +190,26 @@ class TopCommentsStats {
         // were determined from our word:foundAt keyspace listener. However, we also need to add existing topComment words (which previously earned points) to this
         // list because they need to be kept up-to-date even if they haven't been re-commented since our last refreshTopComments interval.
         const allExistingWordToCommentIndexPromises = [];
-        for (const [bucketKey, bucketComments] of Object.entries(this.topComments.timeBuckets)) {
-            bucketComments.forEach((thisExistingTopComment) => {
-                for (const [pointedWord, points] of Object.entries(thisExistingTopComment.points['24Hr'])) { // we use the 24Hr point bucket because we want to update all stored point words, not just recently trended.
-                    if (pendingWordsToTopComments[pointedWord]) continue; // Looks like this word was naturally re-commented because it's already a part of pendingWordsToTopComments. No need to re-add now.
-                    pendingWordsToTopComments[pointedWord] = pendingWordsToTopComments[pointedWord] || [];
-                    allExistingWordToCommentIndexPromises.push(new Promise( (resolve, reject) => {
-                        self.getWordToCommentsIndexForTimeRange(pointedWord, 3600000, (wordToCommentsIndex) => { // For realtime logic, only update comments that are less than 1hr old
-                            if (!wordToCommentsIndex) {
-                                resolve();
-                                return;
-                            }
-                            wordToCommentsIndex.forEach((thisCommentId) => {
-                                pendingWordsToTopComments[pointedWord].push(thisCommentId);
-                                pendingCommentIdsToWords[thisCommentId] = pendingCommentIdsToWords[thisCommentId] || [];
-                                pendingCommentIdsToWords[thisCommentId].push(pointedWord);
-                            });
+        this.topComments.comments.forEach((thisExistingTopComment) => {
+            for (const [pointedWord, points] of Object.entries(thisExistingTopComment.points['24Hr'])) { // we use the 24Hr point bucket because we want to update all stored point words, not just recently trended.
+                if (pendingWordsToTopComments[pointedWord]) continue; // Looks like this word was naturally re-commented because it's already a part of pendingWordsToTopComments. No need to re-add now.
+                pendingWordsToTopComments[pointedWord] = pendingWordsToTopComments[pointedWord] || [];
+                allExistingWordToCommentIndexPromises.push(new Promise( (resolve, reject) => {
+                    self.getWordToCommentsIndexForTimeRange(pointedWord, self.trackCommentsFor, (wordToCommentsIndex) => { // For realtime logic, only update comments that are less than 1hr old
+                        if (!wordToCommentsIndex) {
                             resolve();
+                            return;
+                        }
+                        wordToCommentsIndex.forEach((thisCommentId) => {
+                            pendingWordsToTopComments[pointedWord].push(thisCommentId);
+                            pendingCommentIdsToWords[thisCommentId] = pendingCommentIdsToWords[thisCommentId] || [];
+                            pendingCommentIdsToWords[thisCommentId].push(pointedWord);
                         });
-                    }));
-                };
-            });
-        };
+                        resolve();
+                    });
+                }));
+            };
+        });
 
         Promise.all(allExistingWordToCommentIndexPromises).then(() => {
             // We have recorded all relevant words and comments that need to be a part of this pointing refresh, but it was fast and dirty
@@ -551,10 +550,10 @@ class TopCommentsStats {
     groupPendingTopCommentsByTopSymbols(possibleTopComments) {
         const self = this;
         // self.pendingTopComments is a temporary object populated during a batch of calls to isTopComment. Is used to group all potential top comments
-        // into symbol buckets so our  function can then select just X number of comments for each symbol when transferring this.pendingTopComments to this.topComments
-        self.pendingTopComments = this.newTimeBucketObject(); // reset for this batch of incoming topComments. Will be boiled down and transferred to this.topComments after this batch is complete.
+        // into symbol buckets so our function can then select just X number of comments for each symbol when transferring this.pendingTopComments to this.topComments
+        self.pendingTopComments = {}; // reset for this batch of incoming topComments. Will be boiled down and transferred to this.topComments after this batch is complete.
 
-        const highSymbolRecord = this.newTimeBucketObject();; // {'1Hr': {symbol:stock:GME: [comment2, comment1]}, etc...} This is used when determining highSymbolKey below. We only select 2 comments to represent any given symbol (by having it occupy the higher pointing comment.topSymbols)
+        const highSymbolRecord = this.newTimeBucketObject(); // {'1Hr': {symbol:stock:GME: [comment2, comment1]}, etc...} This is used when determining highSymbolKey below. We only select 2 comments to represent any given symbol (by having it occupy the higher pointing comment.topSymbols)
         const commentsByTopSymbol = this.newTimeBucketObject(); // {'1Hr': {'symbol:stock:GME': [(index3)comment4, (index18)comment2, (index434)comment1], 'symbol:stock:YOLO': etc... }, '12Hr': etc...}
         possibleTopComments.forEach((comment) => {
             comment.topSymbolsTotalPoints = this.newTimeBucketObject('integers');
@@ -585,10 +584,10 @@ class TopCommentsStats {
         Object.keys(commentsByTopSymbol).forEach((timeBucketKey) => {
             const commentIdsInThisTimeBucket = [];
             for (const [symbolKey, commentsForSymbol] of Object.entries(commentsByTopSymbol[timeBucketKey])) {
-                self.pendingTopComments[timeBucketKey][symbolKey] = self.pendingTopComments[timeBucketKey][symbolKey] || [];
+                self.pendingTopComments[symbolKey] = self.pendingTopComments[symbolKey] || [];
                 // If this commentsForSymbol array is for the faux symbol "noSymbols", then we will keep them all and continue loop. They will be selectively removed later after totalPoints are calculated.
                 if (symbolKey === 'noSymbols') {
-                    self.pendingTopComments[timeBucketKey][symbolKey] = self.pendingTopComments[timeBucketKey][symbolKey].concat(commentsForSymbol);
+                    self.pendingTopComments[symbolKey] = self.pendingTopComments[symbolKey].concat(commentsForSymbol);
                     continue;
                 }
                 // We must sort the commentsForSymbol for this timeBucket (because next we will shift and pop to determine the high and low scoring comments for this symbol)
@@ -599,14 +598,14 @@ class TopCommentsStats {
                 commentsForSymbol.some((thisCommentForSymbol) => {
                     if (commentIdsInThisTimeBucket.indexOf(thisCommentForSymbol.id) === -1) {
                         commentIdsInThisTimeBucket.push(thisCommentForSymbol.id);
-                        self.pendingTopComments[timeBucketKey][symbolKey].push(thisCommentForSymbol);
+                        self.pendingTopComments[symbolKey].push(thisCommentForSymbol);
                         return true; // break some loop. We have added our top scorer.
                     }
                 });
                 commentsForSymbol.reverse().some((thisCommentForSymbol) => {
                     if (commentIdsInThisTimeBucket.indexOf(thisCommentForSymbol.id) === -1) {
                         commentIdsInThisTimeBucket.push(thisCommentForSymbol.id);
-                        self.pendingTopComments[timeBucketKey][symbolKey].push(thisCommentForSymbol);
+                        self.pendingTopComments[symbolKey].push(thisCommentForSymbol);
                         return true; // break some loop. We have added our bottom scorer.
                     }
                 });
@@ -619,9 +618,9 @@ class TopCommentsStats {
     calcTotalPointsForPendingTopComments() {
         const self = this;
         // Sum total points for this comment BUT with some rules for how many symbols will count towards total, etc.
-        for (const [timeBucketKey, commentsBySymbol] of Object.entries(self.pendingTopComments)) {
-            for (const [symbolKey, comments] of Object.entries(commentsBySymbol)) {
-                comments.forEach((thisComment) => {
+        for (const [symbolKey, comments] of Object.entries(self.pendingTopComments)) {
+            comments.forEach((thisComment) => {
+                for (const [timeBucketKey, prevPoints] of Object.entries(thisComment.totalPoints)) {
                     thisComment.totalPoints[timeBucketKey] = 0;
                     thisComment.words.forEach((thisWordRef) => {
                         const pointsForThisWord = thisComment.points[timeBucketKey][thisWordRef.word];
@@ -652,9 +651,10 @@ class TopCommentsStats {
                             thisComment.totalPoints[timeBucketKey] = thisComment.totalPoints[timeBucketKey] + pointsForThisWord;
                         }
                     });
-                }); // end comments.forEach((thisComment) => {
-            }; //end for Object.entries(commentsBySymbol)) {
+                }; // end for Object.entries(thisComment.totalPoints)) {
+            }); // end comments.forEach((thisComment) => {
         }; // end for Object.entries(self.pendingTopComments)) {
+
     } // end calcTotalPointsForPendingTopComments
 
     reducePendingTopComments() {
@@ -663,29 +663,33 @@ class TopCommentsStats {
         const allUniqueTopComments = []; // this is our return value. A flattened and de-duped collection of all comments that made it into any topComments timebucket.
         const allUniqueTopCommentsIds = [];
 
-        for (const [timeBucketKey, topCommentsBySymbol] of Object.entries(self.pendingTopComments)) {
-            const commentIdsInThisTimeBucket = [];
-            const finalTopCommentsInThisTimeBucket = []; // sorted by points ascending
-            for (const [thisSymbolKey, pendingTopCommentsForThisSymbol] of Object.entries(topCommentsBySymbol)) {
-                pendingTopCommentsForThisSymbol.forEach((thisComment) => {
-                    if (commentIdsInThisTimeBucket.indexOf(thisComment.id) !== -1) return;
-                    commentIdsInThisTimeBucket.push(thisComment.id);
-                    finalTopCommentsInThisTimeBucket.push(thisComment);
-                    if (allUniqueTopCommentsIds.indexOf(thisComment.id) === -1) {
-                        // console.log(`comment:${thisComment.id} will be stored to ${self.topCommentsStatsKey}: ${thisComment.body}`);
-                        allUniqueTopCommentsIds.push(thisComment.id);
-                        allUniqueTopComments.push(thisComment);
-                    }
-                });
-            }
-            // Last thing is to sort this final set of topComments descending (totalPoints)
-            finalTopCommentsInThisTimeBucket.sort((commentA, commentB) => {
-                return commentB.totalPoints[timeBucketKey] - commentA.totalPoints[timeBucketKey];
+        const finalTopCommentIds = [];
+        const finalTopComments = []; // sorted by points ascending
+        for (const [thisSymbolKey, pendingTopCommentsForThisSymbol] of Object.entries(self.pendingTopComments)) {
+            pendingTopCommentsForThisSymbol.forEach((thisComment) => {
+                if (finalTopCommentIds.indexOf(thisComment.id) !== -1) return;
+                finalTopCommentIds.push(thisComment.id);
+                finalTopComments.push(thisComment);
+                if (allUniqueTopCommentsIds.indexOf(thisComment.id) === -1) {
+                    // console.log(`comment:${thisComment.id} will be stored to ${self.topCommentsStatsKey}: ${thisComment.body}`);
+                    allUniqueTopCommentsIds.push(thisComment.id);
+                    allUniqueTopComments.push(thisComment);
+                }
             });
-            topCommentsClone.timeBuckets[timeBucketKey] = finalTopCommentsInThisTimeBucket.slice(0, self.maxTopCommentsPerBucket); // Remove nulls because we were inserting into array at specific indexes (many indexes will be empty)
         }
+        // Last thing is to sort this final set of topComments descending (totalPoints)
+        finalTopComments.sort((commentA, commentB) => {
+            return commentB.totalPoints['1Hr'] - commentA.totalPoints['1Hr'];
+        });
+        // And trim off the lowest scoring comments (until we have the minimum required comments with symbols)
+        let topCommentsWithSymbolsCount = 0;
+        finalTopComments.some((thisTopComment) => {
+            topCommentsClone.comments.push(thisTopComment);
+            if (thisTopComment.topSymbolHigh['1Hr'].key || thisTopComment.topSymbolLow['1Hr'].key) ++topCommentsWithSymbolsCount;
+            if (topCommentsWithSymbolsCount >= self.minTopCommentsWithSymbols || topCommentsClone.comments.length >= self.maxTopComments) return true; // we have all we need break loop
+        });
 
-        self.topComments.timeBuckets = topCommentsClone.timeBuckets;
+        self.topComments.comments = topCommentsClone.comments;
         return allUniqueTopComments;
     }
 
@@ -792,11 +796,9 @@ class TopCommentsStats {
             // 2. If this is a user just marked not relevant, loop through this.topComments and delete any existing comments by that user.
             if (changedKey.indexOf('user:') !== -1) {
                 const notRelevantUser = changedKey.replace('user:', '');
-                for (const [bucketKey, bucketComments] of Object.entries(this.topComments.timeBuckets)) {
-                    bucketComments.forEach((thisComment) => {
-                        if (thisComment.author && thisComment.author.name === notRelevantUser) self.removeCommentFromTopComments(thisComment.id); // (also removes from redis throttle cache)
-                    });
-                }
+                this.topComments.comments.forEach((thisComment) => {
+                    if (thisComment.author && thisComment.author.name === notRelevantUser) self.removeCommentFromTopComments(thisComment.id); // (also removes from redis throttle cache)
+                });
             }
             // 3. If this training change deleted a comment, then it must also be locally deleted from this.topComments, and from redis throttle cache
             if (changedKey.indexOf('comment:') !== -1) {
@@ -838,18 +840,15 @@ class TopCommentsStats {
         self.redisClient.throttle.clearPendingSet(commentRedisKey);
 
         // Then delete the instance of this object stored directly on stats:topComments
-        const revisedTopComments = {timeBuckets: {}};
-        for (const [bucketKey, bucketComments] of Object.entries(this.topComments.timeBuckets)) {
-            revisedTopComments.timeBuckets[bucketKey] = revisedTopComments.timeBuckets[bucketKey] || [];
-            bucketComments.forEach((thisComment, thisCommentIndex) => {
-                if (thisComment.id !== removeCommentId) {
-                    revisedTopComments.timeBuckets[bucketKey].push(thisComment);
-                    return;
-                }
-                console.log(`Removing comment from ${this.topCommentsStatsKey} (${bucketKey}). Comment: ${removeCommentId}`);
-            });
-        }
-        this.topComments.timeBuckets = revisedTopComments.timeBuckets;
+        const revisedTopComments = {comments: []};
+        this.topComments.comments.forEach((thisComment, thisCommentIndex) => {
+            if (thisComment.id !== removeCommentId) {
+                revisedTopComments.comments.push(thisComment);
+                return;
+            }
+            console.log(`Removing comment from ${this.topCommentsStatsKey}. Comment: ${removeCommentId}`);
+        });
+        this.topComments.comments = revisedTopComments.comments;
         this.throttle.storeNewTopCommentsStats();
     }
 
@@ -869,15 +868,6 @@ class TopCommentsStats {
             self.redisClient.zrem(thisIndexKey, [commentId], (commentRemovedCount) => {
                 if (commentRemovedCount === 0) console.warn(`Could not remove comment:${commentId} from ${thisIndexKey}`);
             });
-
-            // self.redisClient.throttle.get(thisIndexKey, (thisWordToCommentsIndex) => {
-            //     // console.log(`Removing comment ${removeComment.id} from ${thisIndexKey}`);
-            //     if (!thisWordToCommentsIndex) return;
-            //     const commentIdIndex = thisWordToCommentsIndex.indexOf(commentId);
-            //     if (commentIdIndex === -1) return;
-            //     thisWordToCommentsIndex.splice(commentIdIndex, 1);
-            //     self.redisClient.throttle.set(thisIndexKey, thisWordToCommentsIndex); // note that a throttled set will not pass through to our long db. This may result in a bug where our short and long dbs are out of sync.
-            // });
         });
     }
 
@@ -901,31 +891,32 @@ class TopCommentsStats {
 
     newTimeBucketObject(bucketType = 'objects') {
         // Isolating this to ensure time key naming is consistent. bucketType can be 'objects', 'arrays', 'integers'
+        let timeBucketObject = {
+            '1Hr': {},
+            '12Hr': {},
+            '24Hr': {},
+        };
         if (bucketType === 'integers'){
-            return {
+            timeBucketObject = {
                 '1Hr': 0,
                 '12Hr': 0,
                 '24Hr': 0,
             };
         } else if (bucketType === 'arrays') {
-            return {
+            timeBucketObject = {
                 '1Hr': [],
                 '12Hr': [],
                 '24Hr': [],
             };
         }
-        return {
-            '1Hr': {},
-            '12Hr': {},
-            '24Hr': {},
-        };
+        return timeBucketObject
     }
 
     newTopCommentsEntity(initial = {}) {
         // returns an initial state for a top comment stats
         return {
             absKey: this.topCommentsStatsKey,
-            timeBuckets: this.newTimeBucketObject('arrays'),
+            comments: [],
             ui: {
                 viewPath: '/ui/views/topTagNetworks.jsx'
             }
@@ -996,7 +987,7 @@ class TopCommentsStats {
 
     logInspectTopComments() { // util for debugging
         const summTopComments = [];
-        this.topComments.timeBuckets['1Hr'].forEach((thisTopComment) => {
+        this.topComments.comments.forEach((thisTopComment) => {
             const thisSumm = {
                 id: thisTopComment.id,
                 body: thisTopComment.body,

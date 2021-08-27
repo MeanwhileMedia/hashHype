@@ -11,13 +11,15 @@ class TopTagWheel extends React.Component {
     constructor(props) {
         super(props);
         this.state = {
-            // topTagStats: {},
             topTagCount: 10, // how many topTags to show in our wheel
+            showOnlyTopTagsWithSymbols: true, // don't display an comments on our wheel unless they are associated with at least one symbol
+            showTopTagSymbolsOnlyOnce: true // our server will send a max of 2 comments to represent any single symbol. Set this true and we will only render the higher scoring one. Will only apply when showOnlyTopTagsWithSymbols == true.
         };
     }
 
     componentDidMount() {
         this.initPanListeners();
+        this.initAutoRotate();
     }
 
     componentDidUpdate() {
@@ -30,45 +32,99 @@ class TopTagWheel extends React.Component {
         }
     }
 
-    render() {
-        const thisView = this;
-        const css = styles.generate(this);
-        const topTagWheelParts = this.createTopTagWheelParts(css);
-
-        return (
-            <div className="topTagNetworks_wheel" style={css.wheel}>
-                <svg
-                    style={css.wheel_svg}
-                    preserveAspectRatio="xMinYMin meet"
-                    viewBox={`0 0 ${css.maxOuterRadius * 2} ${css.maxOuterRadius * 2}`}
-                >
-                    <g transform={`translate(${css.maxOuterRadius},${css.maxOuterRadius})`}>
-                        {topTagWheelParts}
-                    </g>
-                </svg>
-                <div style={css.wheel_panCatcher} className="panCatcher" />
-            </div>
-        );
-    } // end render
-
     initPanListeners() {
-        const thisView = this;
+        const self = this;
         const hammer = new Hammer(document.querySelector('.topTags .panCatcher'));
         hammer.on('panleft panright', (e) => {
-            thisView.props.toggleFreezeState(true);
+            self.wheelShouldAutoRotate = false; // user has taken control. End the auto rotate started upon page load.
+            self.props.toggleFreezeState(true);
             // console.log('velocity:', e.velocityX) // speed of pan (-,+)
             // console.log('deltaX:', e.deltaX) // pixel position change (-,+)
-            const curRotation = thisView.getCurrentWheelRotation();
+            const curRotation = self.getCurrentWheelRotation();
             const newRotation = Math.ceil(e.velocityX * 10 + curRotation); // We round to whole degrees to avoid jittering AND performance issues (returns if rounded angle shows no change)
             if (curRotation === newRotation) return;
             document.querySelector('.topTagNetworks_wheel').style.transform = `rotate(${newRotation}deg)`;
-            const activePartEl = thisView.determineActiveWheelPart(newRotation);
+            const activePartEl = self.determineActiveWheelPart(newRotation);
             if (!activePartEl) return;
-            thisView.props.focusTopTag(activePartEl.getAttribute('data-trend-name'));
+            self.props.focusTopTag(activePartEl.getAttribute('data-trend-name'));
         });
         hammer.on('panend pancel', (e) => {
-            thisView.props.toggleFreezeState(false);
+            self.props.toggleFreezeState(false);
         });
+    }
+
+    initAutoRotate() {
+        const self = this;
+        self.wheelShouldAutoRotate = true;
+        const incrementByDeg = 0.1;
+        const timeoutSpeed = 200;
+        setTimeout(() => {
+            if (!self.wheelShouldAutoRotate) return;
+            const curRotation = self.getCurrentWheelRotation();
+            const newRotation = curRotation - incrementByDeg;
+            document.querySelector('.topTagNetworks_wheel').style.transform = `rotate(${newRotation}deg)`;
+            const activePartEl = self.determineActiveWheelPart(newRotation);
+            if (activePartEl) self.props.focusTopTag(activePartEl.getAttribute('data-trend-name'));
+            self.initAutoRotate();
+
+            // Check if our 1st ranked topTag has reached its starting position yet.
+            if (self.didAutoRotateToStart) {
+                this.props.setPageIsReady();
+                return;
+            }
+            const firstRankedTopTag = self.props.topTags.find(thisTopTag => thisTopTag.rank === 1);
+            self.didAutoRotateToStart = self.autoRotateToTopTag(firstRankedTopTag);
+        }, timeoutSpeed);
+    }
+
+    autoRotateToTopTag(destTopTag) {
+        if (!destTopTag) return false;
+        const degreeAndOffsetRecord = []; //[{deg: 1, offset: 235}, {deg: 2, offset: 242}, etc]
+        const wheelEl = document.querySelector('.topTagNetworks_wheel');
+        const topTagTextEl = document.querySelector(`[data-trend-name="${destTopTag.id}"] .wheel_part_text`);
+        for (let deg = 0; deg <= 360; deg++) {
+            wheelEl.style.transform = `rotate(${deg}deg)`;
+            const boundingClientRect = topTagTextEl.getBoundingClientRect();
+            if (boundingClientRect.top < window.innerHeight) {
+                const textOffCenterPx = (boundingClientRect.x+boundingClientRect.width/2) - (window.innerWidth/2);
+                degreeAndOffsetRecord.push({deg: deg, offset: textOffCenterPx, top: boundingClientRect.top});
+            }
+        }
+        degreeAndOffsetRecord.sort(function(a, b) {
+            return Math.abs(a.offset) - Math.abs(b.offset);
+        });
+        wheelEl.style.transform = `rotate(${degreeAndOffsetRecord[0].deg}deg)`;
+        return true;
+    }
+
+    getCurrentWheelRotation() {
+        const wheelEl = document.querySelector('.topTagNetworks_wheel');
+        if (!wheelEl) return;
+        const curTransform = document.querySelector('.topTagNetworks_wheel').style.transform;
+        let deg;
+        if (curTransform === '') {
+            deg = 0;
+        } else {
+            deg = parseFloat(curTransform.split('(')[1]);
+        }
+        return deg;
+    }
+
+    determineActiveWheelPart(curRotation) {
+        const windowHeight = window.outerHeight;
+        const windowWidth = window.outerWidth;
+        let smallestOffset = null; // the wheel with the smallest measurement from center
+        let activeWheelPartEl = null;
+        document.querySelectorAll('.wheel_part').forEach((el) => {
+            const elBoundingClientRect = el.getBoundingClientRect();
+            const wheelCenter = elBoundingClientRect.left + elBoundingClientRect.width / 2;
+            const wheelOffCenter = Math.abs(windowWidth / 2 - wheelCenter);
+            if ((!smallestOffset || wheelOffCenter < smallestOffset) && elBoundingClientRect.top < windowHeight) {
+                smallestOffset = wheelOffCenter;
+                activeWheelPartEl = el;
+            }
+        });
+        return activeWheelPartEl;
     }
 
     createTopTagWheelParts(css) {
@@ -78,6 +134,28 @@ class TopTagWheel extends React.Component {
         let allMsgCounts = []; // for setting color and width of topTagWheelParts
 
         hierarchyData.children.sort((a, b) => b.totalPoints['1Hr'] - a.totalPoints['1Hr']);
+
+        if (this.state.showOnlyTopTagsWithSymbols) {
+            let reducedTopTags = [];
+            const reducedTopTagsBySymbol = {}; // {GME: [comment3, comment1], APPL: [comment32], etc..} - used for picking the higher scoring symbol comment when showTopTagSymbolsOnlyOnce == true
+            hierarchyData.children.forEach((thisTopTag) => {
+                const hasSymbol = thisTopTag.topSymbolHigh['1Hr'].key || thisTopTag.topSymbolLow['1Hr'].key || null;
+                if (hasSymbol) {
+                    reducedTopTagsBySymbol[hasSymbol] = reducedTopTagsBySymbol[hasSymbol] || [];
+                    reducedTopTagsBySymbol[hasSymbol].push(thisTopTag);
+                }
+            });
+            if (this.state.showTopTagSymbolsOnlyOnce) {
+                Object.values(reducedTopTagsBySymbol).forEach((theseTopTags) => {
+                    theseTopTags.sort((a, b) => b.totalPoints['1Hr'] - a.totalPoints['1Hr']);
+                    reducedTopTags.push(theseTopTags[0]);
+                });
+            } else {
+                reducedTopTags = Object.values(reducedTopTagsBySymbol).flat()
+            }
+            hierarchyData.children = reducedTopTags;
+        }
+        if (hierarchyData.children.length === 0) { return []; }
 
         hierarchyData.children = hierarchyData.children.slice(0, this.state.topTagCount);
         hierarchyData.children.forEach( (topTag) => {
@@ -106,7 +184,8 @@ class TopTagWheel extends React.Component {
                 key: partitionCoords.data.absKey,
                 minOuterRadius: css.minOuterRadius,
                 maxOuterRadius: css.maxOuterRadius,
-                allMsgCounts,
+                allMsgCounts: allMsgCounts,
+                gNav: thisView.props.gNav
             });
             topTagWheelParts.push(React.createElement(TopTagWheelPart, wheelProps));
         });
@@ -114,33 +193,26 @@ class TopTagWheel extends React.Component {
         return topTagWheelParts;
     }
 
-    getCurrentWheelRotation() {
-        const curTransform = document.querySelector('.topTagNetworks_wheel').style.transform;
-        let deg;
-        if (curTransform === '') {
-            deg = 0;
-        } else {
-            deg = parseInt(curTransform.split('(')[1]);
-        }
-        return deg;
-    }
+    render() {
+        const thisView = this;
+        const css = styles.generate(this);
+        const topTagWheelParts = this.createTopTagWheelParts(css);
 
-    determineActiveWheelPart(curRotation) {
-        const windowHeight = window.outerHeight;
-        const windowWidth = window.outerWidth;
-        let smallestOffset = null; // the wheel with the smallest measurement from center
-        let activeWheelPartEl = null;
-        document.querySelectorAll('.wheel_part').forEach((el) => {
-            const elBoundingClientRect = el.getBoundingClientRect();
-            const wheelCenter = elBoundingClientRect.left + elBoundingClientRect.width / 2;
-            const wheelOffCenter = Math.abs(windowWidth / 2 - wheelCenter);
-            if ((!smallestOffset || wheelOffCenter < smallestOffset) && elBoundingClientRect.top < windowHeight) {
-                smallestOffset = wheelOffCenter;
-                activeWheelPartEl = el;
-            }
-        });
-        return activeWheelPartEl;
-    }
+        return (
+            <div className="topTagNetworks_wheel" style={css.wheel}>
+                <svg
+                    style={css.wheel_svg}
+                    preserveAspectRatio="xMinYMin meet"
+                    viewBox={`0 0 ${css.maxOuterRadius * 2} ${css.maxOuterRadius * 2}`}
+                >
+                    <g transform={`translate(${css.maxOuterRadius},${css.maxOuterRadius})`}>
+                        {topTagWheelParts}
+                    </g>
+                </svg>
+                <div style={css.wheel_panCatcher} className="panCatcher" />
+            </div>
+        );
+    } // end render
 }
 
 export default TopTagWheel;

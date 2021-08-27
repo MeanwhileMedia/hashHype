@@ -15,14 +15,10 @@ class TopTagNetworks extends React.Component {
         super(props);
 
         this.state = {
+            pageIsReady: false, // all page content will have 0 opacity until this is set to true
             focusedTopTag: null,
             freezeState: false, // set to true and all calls to receiveNewState (from our server socket) will be discarded.
-            timeBuckets: {
-                '1Hr': [],
-                '12Hr': [],
-                '24Hr': [],
-                // 'all': []
-            },
+            comments: [],
             modalContent: {
                 title: '',
                 body: '',
@@ -32,6 +28,7 @@ class TopTagNetworks extends React.Component {
         }
 
         this.modalControls = this.initModalControls();
+        this.gNavRef = React.createRef();
     }
 
     componentDidMount() {
@@ -53,31 +50,37 @@ class TopTagNetworks extends React.Component {
         const StyleRoot = Radium.StyleRoot;
 
         // Note which topTag wheel part is currently focused on the topTag itself (within state.topTagStats)
-        this.state.timeBuckets['1Hr'].find((topTag, key) => {
+        this.state.comments.forEach((topTag, key) => {
             topTag.id === thisView.state.focusedTopTag ? topTag.isFocused = true : topTag.isFocused = false;
-            return topTag.isFocused; // break loop
         });
 
         return (
             <StyleRoot>
                 <div className="topTags" style={css.topTags}>
                     <TopTagWheel
-                        topTags={this.state.timeBuckets['1Hr']}
+                        topTags={this.state.comments}
                         focusTopTag={this.focusTopTag.bind(this)}
                         toggleFreezeState={this.toggleFreezeState.bind(this)}
+                        setPageIsReady={this.setPageIsReady.bind(this)}
+                        gNav={this.gNavRef.current}
                     />
                     <TopTagnewsColumns
-                        topTags={this.state.timeBuckets['1Hr']}
+                        topTags={this.state.comments}
                         modal={this.modalControls}
                     />
                 </div>
                 <Modal content={this.state.modalContent} modal={this.modalControls} />
                 <GNav
-                    topTags={this.state.timeBuckets['1Hr']}
+                    ref={this.gNavRef}
+                    topTags={this.state.comments}
                     modal={this.modalControls}
                 />
             </StyleRoot>
         );
+    }
+
+    setPageIsReady() {
+        this.setState({pageIsReady: true});
     }
 
     focusTopTag(id) {

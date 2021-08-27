@@ -251,14 +251,14 @@ class ExtractWordsFromComments {
     extractWordSequences(commentData, cback) {
         const self = this;
         /////////////////
-        // Form the following object from the comment body: 'Jim Cramer puts milk first in his bowl'
+        // Form the following object from the comment body: 'Jim Cramer puts milk first in his bowls'
         // const tokensToStems = [
         //     {
         //         tokenized: ['Jim', 'Cramer'], // tokenized bigram
         //         stemmed: ['jim', 'cramer'] // same bigram after stemmed too
         //     },
         //     { // we currently only save singleWordSymbols/bigrams/trigrams to redis, but since a tokenized sequence is often shortened after stemming, our token sequences will include all the way up to 6 tokens.
-        //         tokenized: ['First', 'in', 'his', 'bowl'],
+        //         tokenized: ['First', 'in', 'his', 'bowls'],
         //         stemmed: ['first', 'bowl']
         //     },
         //     // etc...
@@ -337,6 +337,7 @@ class ExtractWordsFromComments {
 
             const wordRef = self.newWordRefEntity({ // Store a wordRef object on the comment
                 word: sequenceKey,
+                rawWords: allRawTokenSequences,
                 type: wordType,
                 hasSymbols: symbolsInWord
             });
@@ -395,21 +396,6 @@ class ExtractWordsFromComments {
             // We must also save a record of all words which have changed wordToCommentsIndex. This process cleans up those objects in intervals. See initCleanupWordRecordsInterval
             self.cleanupWordRecords.push(wordString);
         });
-
-        // self.redisClient.get(thisIndexKey, (gotWordIndex) => {
-        //     let wordToCommentsIndex = [];
-        //     if (gotWordIndex) wordToCommentsIndex = gotWordIndex;
-        //     if (wordToCommentsIndex.indexOf(commentId) !== -1) {
-        //         console.warn(`Could not add comment:${commentId} to ${thisIndexKey} because it already existed.`);
-        //         if (cback) cback(false); // pass false and no foundAt tstamp will be registered either.
-        //         return;
-        //     }
-        //     wordToCommentsIndex.push(commentId);
-        //     self.redisClient.set(thisIndexKey, wordToCommentsIndex, () => {
-        //         if (cback) cback(true);
-        //     });
-        // });
-
     }
 
     addFoundAtTstampForWord(redisWordKey, hostComment, cback) {
@@ -418,23 +404,6 @@ class ExtractWordsFromComments {
         const foundAtListKey = `${redisWordKey}:foundAt`; // rpush auto creates list if it does not already exist
         self.redisClient.rpush(foundAtListKey, [hostComment.foundAt], (listLength) => {
             if (cback) cback(); // go ahead and return to caller, we don't need to wait on async cleanup tasks below
-
-            // // Now trim this "foundAt" list - remove all tstamps which are older than 24hrs old (self.trackWordsFor). For performance,
-            // // we don't want to run this logic every single time there is a word re-occurance. We establish a vague threshold for max list length.
-            // const maxListLength = self.trackWordsFor / 5000; // self.trackWordsFor is ms. Let's estimate that once we have enough tstamps to account a word recurring every 5 seconds, we start trim logic.
-            // if (listLength < maxListLength) return;
-            // console.log(`A redis list (${foundAtListKey}) will now be trimmed of all tstamps older than ${self.trackWordsFor/3600000}hrs...`);
-            // self.redisClient.lrange(foundAtListKey, 0, -1, (allFoundAtTstamps) => {
-            //     let trimStart = 0; // the index in list at which tstamps stop being too old. These lists are sorted ascending.
-            //     allFoundAtTstamps.some((thisTstamp, thisTstampIndex) => {
-            //         const isOldTstamp = Date.now() - thisTstamp > self.trackWordsFor;
-            //         if (!isOldTstamp) return true; // break from loop. We have looped through all the old tstamps.
-            //         trimStart = thisTstampIndex;
-            //     });
-            //     if (trimStart === 0) return;
-            //     self.redisClient.ltrim(foundAtListKey, trimStart, -1);
-            //     console.log(`Trimmed ${trimStart} items from redis list: ${foundAtListKey}`)
-            // });
         }); // end self.redisClient.rpush(foundAtListKey
     }
 
@@ -517,21 +486,21 @@ class ExtractWordsFromComments {
     }
 
     newWordEntity(initial = {}) { // Must provide value, and type
-        // returns an initial state for a new word, bigram, trigram object
+        // returns an initial state for a new word, bigram, trigram object. Word objects are stored as their own redis objects and contain
+        // historical data that pertain to that word on a global scale (across all comments which contained this word - for all time - since this word object was created).
         return {
             value: initial.value, // an array of words (word sequence). length 1 for type word, and for 2 bi and 3 tri gram
-            rawWords: initial.rawWords || [], // array of arrays of single strings. (as-commented after tokenized) Each matching this word (though not necc. by case or exact match)
+            rawWords: initial.rawWords || [], // array of arrays of single strings. These are all of the unstemmed token sequences which have been boiled down to match this word.value (across ALL comments)
             type: initial.type, // 'word', 'bigram', 'trigram'
             hasSymbols: initial.hasSymbols || [], // array of symbol object keys ['symbol:stock:gme', etc]
-            // foundAt: [] // array of timestamps for every time this entity was found in a raw comment
         }
-        // the array of "foundAt" tstamps is stored to it's own redis list at key: word:foo_!!_bar:foundAt
     }
 
     newWordRefEntity(initial = {}) {
         // returns an initial state for a word ref (used to reference a full word object stored in redis). The word ref objects live on comment objects.
         return {
             word: initial.word, // Stringified version (foo_bar) of what would be the word.value prop on the actual word object. Can be used to form a redis key for word (word:foo_bar)
+            rawWords: initial.rawWords || [], // when rawWords is stored on a wordRef - it is an array of ONLY the unstemmed token sequences which are found in THIS comment.
             type: initial.type, // 'word', 'bigram', 'trigram'
             hasSymbols: initial.hasSymbols || [], // array of symbol object keys ['symbol:stock:gme', etc]
         }

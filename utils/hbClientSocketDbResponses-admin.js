@@ -122,15 +122,15 @@ class HbClientSocketDbResponses_admin {
     // 8. DONE - Need to extact stock symbols BEFORE stemming (e.g. MVIS is getting stemmed to MVI and never trends as a symbol)
     // 8.5 DONE - only serve admin train FE assets to requests from admin URLs. add functionality to strip JS includes of admin assets during code compilation.
     // 9. DONE - Add improvements to topCommentHigh and topCommentLow logic so that we don't overflow our topComments with symbol duplication
-    // 9.5 WIP - Add GNAV including an "about" icon which includes disclaimer
-    // 9.6: WIP - See "Clearing LRU items.." - it tramples self. update: increased cache size AND clear percentage. Must test.
+    // 9.5 DONE - Add GNAV including an "about" icon which includes disclaimer
+    // 9.6: DONE - See "Clearing LRU items.." - it tramples self. update: increased cache size AND clear percentage. Must test.
     // 9.7: DONE - Add cleanup routine to log and db backup in maintenance process. gdrive ran out of space after just a few days
     // 9.8: DONE - add better logic for "New topWordsMinCount:" - should be set to the lowest 24Hr word count (right now is getting too high)
     // 9.9: DONE - logs need timstamps prepended
     // 9.10: "Could not find redis key in primary DB. Recovered..." appears to be occuring multiple times for same items (like a single comment), either it's fighting against redis LRU or we have an error in recovering from long->short
     // 9.11: DONE - need to take a look at removeCommentFromAll (and removeCommentFromWordToCommentIndexes) where the throttled del/set command may introduce a bug in our preserve/recover logic. We may need a solution for syncing throttled redis commands.
     //          - note that the set commands that were slaughering mem/gc were the wordToCommentIndex objects. It may be time to store these indexes in a different data format (currently JSON strings in redis)
-    // 9.12: Need to add an interval to update point counts for all comments in 12/24hr buckets (topCommentStats). The real time updates only apply to the 1hr bucket.
+    // 9.12: WONT (focusing on 1hr trend for now) - Need to add an interval to update point counts for all comments in 12/24hr buckets (topCommentStats). The real time updates only apply to the 1hr bucket.
     // 10. Mobile styles
     // 11. Add google analytics snippet to layout.html
 

@@ -11,6 +11,7 @@ import koaStatic from 'koa-static';
 import hbServeJs from '../utils/hbServeJs.js';
 import hbServeHtml from '../utils/hbServeHtml.js';
 import HbClientSocketDbResponses_admin from '../utils/hbClientSocketDbResponses-admin.js';
+import NodeMailer from '../utils/nodeMailer.js';
 import RedisClient from '../utils/redisClient.js';
 import hbCodeChecker from '../utils/hbCodeChecker.js';
 
@@ -66,6 +67,7 @@ const uiServer = {
             uiServer.hbClientSocketDbResponses_admin = new HbClientSocketDbResponses_admin({
                 redisClient: uiServer.redisClient
             });
+            uiServer.nodeMailer = new NodeMailer('joeATmeanwhile');
         });
     }, // init
 
@@ -327,6 +329,10 @@ const uiServer = {
         // response utils which hold logic for more specific channels.
         if (typeof self.hbClientSocketDbResponses_admin[message.channel] === 'function') {
             self.hbClientSocketDbResponses_admin[message.channel](message, socket);
+            return true;
+        }
+        if (typeof self.nodeMailer[message.channel] === 'function') {
+            self.nodeMailer[message.channel](message, socket);
             return true;
         }
 

@@ -17,6 +17,8 @@ const styles = {
                 'cursor': 'pointer',
                 'transition': 'color 0.2s',
                 'letter-spacing': '0.04rem',
+                'white-space': 'nowrap',
+                'user-select': 'none',
                 ':hover': {
                     'font-weight': '400',
                     'color': 'rgb(255 255 255)',
@@ -35,16 +37,6 @@ const styles = {
                 'left': '-5rem',
                 'transform': 'scale(0.6)'
             },
-
-            GNavMainMenu_about_body: {
-                'font-size': '2rem'
-            },
-            GNavMainMenu_about_tech: {
-                'font-size': '1.4rem',
-                'border-top': '1px solid #777',
-                'padding-top': '1rem',
-                'margin-top': '2rem'
-            }
         };
 
         return css;

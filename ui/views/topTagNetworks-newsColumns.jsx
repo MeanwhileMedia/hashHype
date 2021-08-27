@@ -2,6 +2,27 @@ import React from '/node_modules/react';
 import styles from './styles/topTagNetworks-newsColumns.css.js';
 
 class TopTagnewsColumns extends React.Component {
+
+    formatCommentBody(comment) {
+        let formattedBody = comment.body;
+        // We will bold any inline text which earned points for this comment. We do this by using the
+        // SHORTEST raw word sequence which belongs to each of our comment.points words.
+        const boldTheseWordSeqs = [];
+        for (let [wordStr, pointsForWord] of Object.entries(comment.points['1Hr'])) {
+            let shortestRawSequence = [];
+            const thisWordRef = comment.words.find(thisWordRef => thisWordRef.word === wordStr);
+            thisWordRef.rawWords.forEach((thisRawWordSeq) => {
+                if (!shortestRawSequence.length || (thisRawWordSeq.length < shortestRawSequence.length)) shortestRawSequence = thisRawWordSeq;
+            });
+            const rawSeqString = shortestRawSequence.join(' ');
+            if (boldTheseWordSeqs.indexOf(rawSeqString) === -1) boldTheseWordSeqs.push(rawSeqString);
+        };
+        boldTheseWordSeqs.forEach((thisRawWordSeqStr) => {
+            formattedBody = formattedBody.replace(thisRawWordSeqStr, `<strong>${thisRawWordSeqStr}</strong>`);
+        });
+        return (<span dangerouslySetInnerHTML={{ __html: formattedBody }} />);
+    }
+
     render() {
         if (this.props.topTags.length === 0) { return null; }
         const thisView = this;
@@ -33,19 +54,19 @@ class TopTagnewsColumns extends React.Component {
             commentAuthorAndPoints = (
                 <div className="topTagNetworks_newsColumns_left_author">
                     <h2>@{thisView.activeTopTag.author.name}</h2>
-                    <h4 style={css.newsColumns_left_author_h4}>Comment Points: <b>{thisView.activeTopTag.totalPoints['1Hr'].toLocaleString()}</b></h4>
                 </div>
             );
         }
 
+        const formattedCommentBody = this.formatCommentBody(thisView.activeTopTag);
         const showComment = (
             <>
-                <h4>
-                    {thisView.activeTopTag.body}
+                <h5>
+                    {formattedCommentBody}
                     {topSymbolName &&
-                        <div style={{fontWeight: 400}}>@{thisView.activeTopTag.author.name || ''}</div>
+                        <div><span style={css.newsColumns_right_author}>@{thisView.activeTopTag.author.name || ''}</span></div>
                     }
-                </h4>
+                </h5>
             </>
         );
 

@@ -23,16 +23,37 @@ const styles = {
 
 
         return {
-            // '.wheel_part': {
+            // 'wheel_part': {
             // },
-            '.wheel_part_path': {
-                stroke: '#fff',
-                fill: colorPallette[colorRank],
-                fillRule: 'evenodd',
+            'wheel_part_path': {
+                'stroke': '#fff',
+                'fill': colorPallette[colorRank],
+                'fillRule': 'evenodd',
             },
-            '.wheel_part__grew': {
-                animation: `x .2s ease ${grewFlashInterval}s ${view.state.wheelGrowthCount}`,
-                animationName: grewFlash,
+            'wheel_part_title': {
+                'opacity': 0,
+                'transition': 'opacity .4s ease-in'
+            },
+            'wheel_part_title_label': {
+                'opacity': 0,
+                'fill': '#b3b3b3',
+                'transition': 'opacity .2s ease-in .2s'
+            },
+            'wheel_part_title__symbol': {
+                'opacity': 0.2
+            },
+            'wheel_part_title__rank': {
+                'opacity': 0
+            },
+            'wheel_part_buttons': {
+                'margin-top': '1.6rem',
+                'text-align': 'center',
+                'opacity': 0,
+                'transition': 'opacity .2s ease-in .4s'
+            },
+            'wheel_part__grew': {
+                'animation': `x .2s ease ${grewFlashInterval}s ${view.state.wheelGrowthCount}`,
+                'animationName': grewFlash,
             },
         };
 

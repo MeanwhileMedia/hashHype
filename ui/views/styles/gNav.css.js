@@ -44,6 +44,17 @@ const styles = {
             GNav_theme__light: {
                 'color': '#fff',
                 'border-bottom': 'none'
+            },
+
+            GNav_section_about_body: {
+                'font-size': '2rem'
+            },
+            GNav_section_about_tech: {
+                'font-size': '1.4rem',
+                'border-top': '1px solid #777',
+                'padding-top': '1rem',
+                'margin-top': '2rem',
+                'margin-bottom': '3rem'
             }
         };
 

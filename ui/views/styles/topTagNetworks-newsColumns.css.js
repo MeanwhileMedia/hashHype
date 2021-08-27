@@ -1,43 +1,51 @@
 
 const styles = {
 
-  generate(view) {
-    const css = {
-      newsColumns: {
-        display: 'flex',
-        'flex-direction': 'row',
-        'justify-content': 'space-between',
-        padding: '10vh 5%',
-        'box-sizing': 'border-box',
-      },
-      newsColumns_left: {
-        width: '30%',
-      },
-      newsColumns_left_author_h4: {
-        'margin-top': '1rem',
-      },
-      newsColumns_right: {
-        width: '30%',
-        'padding-top': '14px',
-        'text-align': 'right',
-      },
-      newsAttribution: {
-        'margin-top': '1.4rem',
-        'text-decoration': 'none',
-        color: 'inherit',
-        'font-size': '1.4rem',
-        display: 'inline-block',
-      },
-      newsAttributionAuth: {
-        opacity: '.6',
-      },
-      newsAttributionTitle: {
-        'font-weight': '600',
-      },
-    };
+    generate(view) {
+        const css = {
+            newsColumns: {
+                'display': 'flex',
+                'flex-direction': 'row',
+                'justify-content': 'space-between',
+                'padding': '10vh 5%',
+                'box-sizing': 'border-box',
+            },
+            newsColumns_left: {
+                'width': '30%',
+            },
+            newsColumns_left_author: {
+                'margin-top': '1rem',
+            },
+            newsColumns_right: {
+                'width': '30%',
+                'padding-top': '14px',
+                'text-align': 'right',
+            },
+            newsColumns_right_author: {
+                'font-weight': '400',
+                'font-style': 'italic',
+                'margin-top': '2rem',
+                'padding-top': '0.5rem',
+                'display': 'inline-block',
+                'border-top': '1px solid rgba(0,0,0,0.15)'
+            },
+            newsAttribution: {
+                'margin-top': '1.4rem',
+                'text-decoration': 'none',
+                'color': 'inherit',
+                'font-size': '1.4rem',
+                'display': 'inline-block',
+            },
+            newsAttributionAuth: {
+                'opacity': '.6',
+            },
+            newsAttributionTitle: {
+                'font-weight': '600',
+            },
+        };
 
-    return css;
-  }, // end generate
+        return css;
+    }, // end generate
 
 };
 

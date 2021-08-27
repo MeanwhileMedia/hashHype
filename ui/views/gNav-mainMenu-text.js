@@ -5,13 +5,13 @@ HashHype summarizes internet noise
 `;
 
 const aboutBody = `\
-We all help fill the web. HashHype brings the TLDR version.
+Cut through the chatter. Be the first to react.
 `;
 
-const aboutTech = `\
-HashHype uses natural language processing to determine what people are talking about, then selects a single user comment to represent each trending topic. \
-The top trends are presented in real-time. By setting alerts, or integrating third-party actions, users can react to trends as they unfold.
-`;
+const aboutTech = (`\
+HashHype uses a natural language algorithm to determine what people are talking about, then selects a single user comment to represent each trending topic. \
+The top trends are presented in real-time. By setting alerts, or integrating third-party apps, users can <a>react to trends</a> as they unfold.
+`);
 
 /////////////
 // Disclaimer page copy

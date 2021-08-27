@@ -1,5 +1,5 @@
 # OS files
-.DS_store 
+.DS_store
 
 # Logs
 *.log
@@ -35,3 +35,4 @@ deployCodeSftp-config.js
 redisClient-config.js
 googleClient-config.js
 hbCodeChecker-config.js
+nodeMailer-config.js

@@ -11,24 +11,31 @@ const styles = {
 
     const css = {
       wheel: {
-        position: 'fixed',
-        top: `${topPos / winHeight * 100}vh`,
-        left: `-${percOverflow / 2}%`,
-        width: `${100 + percOverflow}%`,
-        overflow: 'visible',
+        'position': 'fixed',
+        'top': `${topPos / winHeight * 100}vh`,
+        'left': `-${percOverflow / 2}%`,
+        'width': `${100 + percOverflow}%`,
+        'overflow': 'visible',
       },
       wheel_svg: {
-        overflow: 'visible',
-        transition: 'transform .2s ease-in-out',
+        'overflow': 'visible',
+        'transition': 'transform .2s ease-in-out',
       },
       wheel_panCatcher: {
-        width: '100%',
-        height: '100%',
-        position: 'absolute',
-        top: 0,
-        left: 0,
+        'width': '100%',
+        'height': '100%',
+        'position': 'absolute',
+        'border-radius': '50%',
+        'top': 0,
+        'left': 0,
+        'cursor': 'ew-resize'
       },
     };
+
+    if (view.wheelShouldAutoRotate && view.didAutoRotateToStart) {
+        // upon pageload wheel rotates very slowly to intro motion. looks much better with transition
+        css.wheel.transition = 'transform .2s';
+    }
 
     css.maxOuterRadius = maxOuterRadius;
     css.minOuterRadius = minOuterRadius;

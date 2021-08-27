@@ -8,9 +8,9 @@ class ToggleSwitch extends React.Component {
 
     render() {
         return (
-            <label class="hbWidgets hbWidgets--small switch">
+            <label class="hbWidgets hbWidgets--small toggleSwitch">
                 <input type="checkbox" checked={this.props.checked}></input>
-                <div><span></span></div>
+                <div><span></span></div>    
             </label>
         );
     }

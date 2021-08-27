@@ -1,6 +1,12 @@
 import React from '/node_modules/react';
 import GNavMainMenu from './gNav-mainMenu.jsx';
+import SetTrendAction from './setTrendAction.jsx';
+import MsgBox__reqInvite from './msgBox--reqInvite.jsx'
+
+import menuText from './styles/gNav-mainMenu-text.jsx';
+
 {/* <hbCC-fEAdmin> */} import AdminTrain from './topTagNetworks-adminTrain.jsx'; {/* </hbCC-fEAdmin> */}
+
 import logo from '../images/logo.svg.js';
 import styles from './styles/gNav.css.js';
 
@@ -46,24 +52,21 @@ class GNav extends React.Component {
                             <span class="material-icons">settings</span>
                         </div>
                         {/* </hbCC-fEAdmin> */}
-                        <div style={css.GNav_right_ctrls_icon} onClick={this.showAdminCtrlsModal.bind(this)}>
+                        <div style={css.GNav_right_ctrls_icon} onClick={this.showSetTrendActionModal.bind(this)}>
                             <span class="material-icons">data_saver_on</span>
                         </div>
-                        <div style={css.GNav_right_ctrls_icon} onClick={this.showAdminCtrlsModal.bind(this)}>
+                        <div style={css.GNav_right_ctrls_icon} onClick={this.showAboutModal.bind(this)}>
                             <span class="material-icons">account_circle</span>
                         </div>
                     </div>
                 </div>
             </div>
         );
-        // <div style={css.GNav_right_ctrls_icon} onClick={this.showAdminCtrlsModal.bind(this)}>
-        //     <span class="material-icons">fmd_bad</span>
-        // </div>
     }
 
     showGNavMainMenu() {
         const mainMenu = (
-            <GNavMainMenu modal={this.props.modal}/>
+            <GNavMainMenu modal={this.props.modal} gNav={this}/>
         );
         this.props.modal.show({
             title: '',
@@ -74,6 +77,53 @@ class GNav extends React.Component {
 
     hideModal() {
         this.props.modal.hide();
+    }
+
+    showSetTrendActionModal() {
+        // JWW stopping - show proper details for activeTopTag
+
+        const setTrendActionUi = (
+            <SetTrendAction activeTopTag={this.activeTopTag} hideModal={this.hideModal.bind(this)}/>
+        );
+        this.props.modal.show({
+            title: 'Set Trend Action',
+            subtitle: 'How would you like to act on this trend in the future?',
+            body: setTrendActionUi,
+            customStyleClasses: ['align__center']
+        });
+    }
+
+    showAboutModal() {
+        const css = styles.generate(this);
+
+        const aboutBodyJsx = (
+            <div>
+                <p style={css.GNav_section_about_body}>{menuText.aboutBody}</p>
+                <p style={css.GNav_section_about_tech}>{menuText.aboutTech(this)}</p>
+                <MsgBox__reqInvite subtitle='HashHype will be open to new users soon.' />
+            </div>
+        );
+
+        this.props.modal.show({
+            title: menuText.aboutHeading,
+            body: aboutBodyJsx,
+            customStyleClasses: ['align__center']
+        });
+    }
+
+    showDisclaimerModal() {
+        const css = styles.generate(this);
+        const aboutBodyJsx = (
+            <div style={css.GNavMainMenu_disclaimer}>
+                <p>{menuText.disclaimerBody}</p>
+            </div>
+        );
+
+        this.props.modal.show({
+            title: 'Disclaimers',
+            body: aboutBodyJsx,
+            customStyleClasses: ['align__center', 'align_text__left']
+        });
     }
 
     {/* <hbCC-fEAdmin> */}

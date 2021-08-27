@@ -13,7 +13,9 @@ html {
 
 body {
     margin: 0px;
-    padding: 0px
+    padding: 0px;
+    font-size: 1.4rem;
+    font-weight: 400;
 }
 
 h2, .heading2 {
@@ -23,18 +25,27 @@ h2, .heading2 {
     line-height: 106%;
 }
 h3, .heading3 {
-    font-size: 3.4rem;
+    font-size: 5rem;
     margin: 0px;
     font-weight: 300;
     line-height: 120%;
 }
 h4, .heading4 {
-    font-size: 2.4rem;
+    font-size: 4rem;
+    margin: 0px;
+    font-weight: 300;
+    line-height: 136%;
+    text-transform: uppercase;
+    opacity: 0.4;
+    letter-spacing: 2px;
+}
+h5, .heading5 {
+    font-size: 3rem;
     margin: 0px;
     font-weight: 300;
     line-height: 136%;
 }
-h5 {
+h6 {
     text-transform: uppercase;
     font-size: 1.4rem;
     font-weight: 800;
@@ -49,46 +60,13 @@ p {
 a {
     color: inherit;
     font: inherit;
-    text-decoration: underline;
-}
-button {
-    height: 3rem;
-    box-sizing: border-box;
+    text-decoration: none;
+    border-bottom: 1px solid #8ecbe2;
     cursor: pointer;
-    background-color: rgba(0,0,0,.2);
-    border: 2px solid rgba(255,255,255,.5);
-    color: #fff;
-    border-radius: 2rem;
-    font-family: inherit;
-    font-size: 1.2rem;
-    box-shadow: none;
-    padding: .2rem 1rem;
-    padding-bottom: .3rem;
-    margin-bottom: -1rem;
-    margin-top: -1rem;
-    min-width: 5rem;
-    margin-left: .8rem;
-    transition: background-color .2s;
 }
-button.button_sev1 {
-    border-color: #ffc474;
+a:hover {
+    border-bottom: 2px solid #8ecbe2;
 }
-button.button_sev2 {
-    border-color: #fd4f4f;
-}
-button.button_disabled {
-    opacity: .4;
-}
-button:hover {
-    background-color: rgba(0,0,0,.4);
-    border-top-width: 3px;
-    border-bottom-width: 3px;
-}
-button:focus {
-    background-color: rgba(0,0,0,.4);
-    outline: none;
-}
-
 ul {
     list-style: none;
     margin: 0;
@@ -98,16 +76,11 @@ ul {
 .font__light {
     font-weight: 300;
 }
-.font__normal {
+.font__normal, strong {
     font-weight: 400;
 }
 .font__heavy, b {
     font-weight: 800;
-}
-.font__title__light {
-    text-transform: uppercase;
-    opacity: 0.4;
-    letter-spacing: 2px;
 }
 
 .material-icons {
@@ -118,4 +91,14 @@ ul {
 .material-icons:hover {
     opacity: 1;
     transform: scale(1.1);
+}
+.material-icons.material-icons__notif {
+    cursor: default;
+    opacity: 1;
+    margin-bottom: -.2rem;
+    margin-right: 0.5rem;
+    vertical-align: bottom;
+}
+.material-icons.material-icons__notif.material-icons__notif__success {
+    color: #6cc16c;
 }

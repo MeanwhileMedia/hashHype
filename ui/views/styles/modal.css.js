@@ -39,21 +39,28 @@ const styles = {
                 'margin': '0'
             },
 
-            modal_heading: {
-                'margin-bottom': '2rem',
+            modal_title: {
+                'margin-bottom': '3rem',
+            },
+            modal_subtitle: {
+                'margin': '0',
+                'margin-top': '-3rem',
+                'margin-bottom': '3rem',
             },
             modal_body: {
                 'font-size': '1.6rem',
                 'line-height': '150%',
+                'width': '100%'
             },
             modal_body_outer: {
                 'display': 'flex',
                 'flex-direction': 'column',
                 'align-items': 'center',
-                'box-sizing': 'border-box'
+                'box-sizing': 'border-box',
+                'width': '100%'
             },
             modal_body_inner: {
-
+                'width': '100%'
             }
         };
 

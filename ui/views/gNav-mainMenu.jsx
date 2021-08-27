@@ -1,7 +1,7 @@
 import React from '/node_modules/react';
 import Radium from '/node_modules/radium';
 import ToggleSwitch from './hbWidgets/toggleSwitch.jsx';
-import menuText from './styles/gNav-mainMenu-text.js';
+import Tooltip from './hbWidgets/tooltip.jsx'
 import styles from './styles/gNav-mainMenu.css.js';
 
 class GNavMainMenu extends React.Component {
@@ -13,21 +13,49 @@ class GNavMainMenu extends React.Component {
             'Social',
             'News'
         ];
+        this.gatedTrendCats = [ // these are the categories that user's must sign-in to see
+            'Coins',
+            'Social',
+            'News'
+        ];
 
         this.state = {
             activeTrendCats: [this.allTrendCats[0]],
+            blockedTrendCats: [] // trend cat strings are added here when a not-logged-in user clicks on a gated category
         };
     }
 
     toggleTrendCat(trendCatName, e) {
         const newActiveTrendCats = [...this.state.activeTrendCats];
         const reqTrendCatIsActive = this.state.activeTrendCats.indexOf(trendCatName);
+        if (this.freezTrendToggling) return;
+        if (reqTrendCatIsActive !== -1 && newActiveTrendCats.length === 1) return; // at least one category must always be active
         if (reqTrendCatIsActive !== -1) {
             newActiveTrendCats.splice(reqTrendCatIsActive, 1);
         } else {
             newActiveTrendCats.push(trendCatName);
         }
+        this.blockGatedTrendCats(trendCatName);
         this.setState({'activeTrendCats': newActiveTrendCats});
+    }
+
+    blockGatedTrendCats(trendCatName) {
+        const self = this;
+        // Check if this cat is being gated for logged in users only
+        if (self.gatedTrendCats.indexOf(trendCatName) !== -1) {
+            self.setState({'blockedTrendCats': [trendCatName]});
+            self.freezTrendToggling = true;
+            setTimeout(() => { // automatically turn toggle switch back off
+                const newActiveTrendCats = [...self.state.activeTrendCats];
+                if (newActiveTrendCats.indexOf(trendCatName) === -1) return;
+                newActiveTrendCats.splice(newActiveTrendCats.indexOf(trendCatName), 1);
+                self.freezTrendToggling = false;
+                self.setState({'activeTrendCats': newActiveTrendCats});
+            }, 500);
+            return true
+        }
+        self.setState({'blockedTrendCats': []});
+        return false;
     }
 
     render() {
@@ -41,10 +69,17 @@ class GNavMainMenu extends React.Component {
                 if (e.target.tagName === 'INPUT') return; // supress click events that bubble of from the input el changing "checked" attr
                 self.toggleTrendCat.call(self, thisTrendCatName, e);
             }
+            let loginTooltip = null;
+            if (this.state.blockedTrendCats.indexOf(thisTrendCatName) !== -1) {
+                loginTooltip = (
+                    <Tooltip icon='error' label='Log in' onClick={self.props.gNav.showAboutModal.bind(self.props.gNav)} />
+                );
+            }
             trendCatLis.push(
                 <li key={`trendCat${index}`} style={css.GNavMainMenu_li} onClick={onClick}>
                     <span style={css.GNavMainMenu_li_icon}><ToggleSwitch checked={isChecked}/></span>
                     {thisTrendCatName}
+                    {loginTooltip}
                 </li>
             );
         });
@@ -55,42 +90,11 @@ class GNavMainMenu extends React.Component {
                     {trendCatLis}
                 </ul>
                 <ul style={css.GNavMainMenu_ul__subsection}>
-                    <li key='li5' style={css.GNavMainMenu_li} onClick={this.showAboutModal.bind(this)}>About</li>
-                    <li key='li6' style={css.GNavMainMenu_li} onClick={this.showDisclaimerModal.bind(this)}>Disclaimer</li>
+                    <li key='li5' style={css.GNavMainMenu_li} onClick={this.props.gNav.showAboutModal.bind(this.props.gNav)}>About</li>
+                    <li key='li6' style={css.GNavMainMenu_li} onClick={this.props.gNav.showDisclaimerModal.bind(this.props.gNav)}>Disclaimer</li>
                 </ul>
             </nav>
         );
-    }
-
-    showAboutModal() {
-        const css = styles.generate(this);
-        const aboutBodyJsx = (
-            <div>
-                <p style={css.GNavMainMenu_about_body}>{menuText.aboutBody}</p>
-                <p style={css.GNavMainMenu_about_tech}>{menuText.aboutTech}</p>
-            </div>
-        );
-
-        this.props.modal.show({
-            title: menuText.aboutHeading,
-            body: aboutBodyJsx,
-            customStyleClasses: ['align__center']
-        });
-    }
-
-    showDisclaimerModal() {
-        const css = styles.generate(this);
-        const aboutBodyJsx = (
-            <div style={css.GNavMainMenu_disclaimer}>
-                <p>{menuText.disclaimerBody}</p>
-            </div>
-        );
-
-        this.props.modal.show({
-            title: 'Disclaimers',
-            body: aboutBodyJsx,
-            customStyleClasses: ['align__center', 'align_text__left']
-        });
     }
 
 }
