@@ -4,6 +4,7 @@ import styles from './styles/topTagNetworks-newsColumns.css.js';
 class TopTagnewsColumns extends React.Component {
 
     formatCommentBody(comment) {
+        const css = styles.generate(this);
         let formattedBody = comment.body;
         // We will bold any inline text which earned points for this comment. We do this by using the
         // SHORTEST raw word sequence which belongs to each of our comment.points words.
@@ -20,7 +21,7 @@ class TopTagnewsColumns extends React.Component {
         boldTheseWordSeqs.forEach((thisRawWordSeqStr) => {
             formattedBody = formattedBody.replace(thisRawWordSeqStr, `<strong>${thisRawWordSeqStr}</strong>`);
         });
-        return (<span dangerouslySetInnerHTML={{ __html: formattedBody }} />);
+        return (<span style={css.newsColumns_right_body} dangerouslySetInnerHTML={{ __html: formattedBody }} />);
     }
 
     render() {
@@ -61,12 +62,12 @@ class TopTagnewsColumns extends React.Component {
         const formattedCommentBody = this.formatCommentBody(thisView.activeTopTag);
         const showComment = (
             <>
-                <h5>
+                <h4>
                     {formattedCommentBody}
                     {topSymbolName &&
                         <div><span style={css.newsColumns_right_author}>@{thisView.activeTopTag.author.name || ''}</span></div>
                     }
-                </h5>
+                </h4>
             </>
         );
 

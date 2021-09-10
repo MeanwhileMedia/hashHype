@@ -1,5 +1,6 @@
 import React from '/node_modules/react';
 import Radium from '/node_modules/radium';
+import utils from '../../helpers/utils.js'
 
 class RadioSwitch extends React.Component {
     constructor(props) {
@@ -7,6 +8,10 @@ class RadioSwitch extends React.Component {
         this.state = {
             options: [...this.props.options]
         };
+    }
+
+    componentDidMount() {
+        utils.setMagicScaleElements();
     }
 
     clickedRadioOption(e) {
@@ -41,7 +46,8 @@ class RadioSwitch extends React.Component {
             radioOptions.push(
                 <span class="hbWidgets radioSwitch" onClick={(e) => self.clickedRadioOption.call(self, e)}>
                     <input type="radio" id={radioOption.label} name="radio-group" checked={isChecked} />
-                    <label for={radioOption.label}>{radioOption.label}</label>
+                    <label class="magicScale" for={radioOption.label}> {radioOption.label}</label>
+                    <span>{radioOption.label}</span>
                 </span>
             );
         });

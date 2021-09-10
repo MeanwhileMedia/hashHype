@@ -43,6 +43,7 @@ const uiServer = {
         '/node_modules/d3': '/node_modules/d3/dist/d3.min.js',
         '/node_modules/hammerjs': '/node_modules/hammerjs/hammer.min.js',
         '/node_modules/radium': '/node_modules/radium/dist/radium.min.js',
+        '/node_modules/throttle-debounce': '/node_modules/throttle-debounce/esm/index.js',
         '/node_modules/highlight': '/node_modules/highlight.js/lib/core.js',
         '/node_modules/highlight/js': '/node_modules/highlight.js/lib/languages/javascript.js',
         '/node_modules/highlight/jsStyles.css': '/node_modules/highlight.js/styles/atom-one-dark.css'

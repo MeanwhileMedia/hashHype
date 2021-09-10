@@ -1,6 +1,6 @@
 import React from '/node_modules/react';
-import d3 from '/node_modules/d3';
 import Radium from '/node_modules/radium';
+import d3 from '/node_modules/d3';
 import socketViewResponses from '../helpers/hbClientSocketViewResponses.js';
 import styles from './styles/topTagNetworks-wheel-part.css.js';
 
@@ -37,21 +37,21 @@ class TopTagWheelPart extends React.Component {
         const statsEl = (
             <g transform={`rotate(90 ${this.props.maxOuterRadius} 0)`}>
                 <text
-                    className="heading4"
-                    style={css.wheel_part_title_label}
+                    className="heading5"
+                    style={Object.assign({}, css.wheel_part_title_label, css.wheel_text__h4)}
                     textAnchor="middle"
                     x={this.props.maxOuterRadius}
-                    y={`-${statRowSpacing}rem`}
-                    dy="-5rem"
+                    y={`-${statRowSpacing}em`}
+                    dy="-1.2em"
                 >
                     Rank
                 </text>
                 <text
                     className="heading3"
-                    style={Object.assign({}, css.wheel_part_title, css.wheel_part_title__rank)}
+                    style={Object.assign({}, css.wheel_part_title, css.wheel_part_title__rank, css.wheel_text__h3)}
                     textAnchor="middle"
                     x={this.props.maxOuterRadius}
-                    y={`-${statRowSpacing}rem`}
+                    y={`-${statRowSpacing}em`}
                 >
                     {this.getNumberOrdinal(this.props.data.rank)}
                 </text>
@@ -78,31 +78,32 @@ class TopTagWheelPart extends React.Component {
         symbolStatsEl = (
             <g transform={`rotate(90 ${this.props.maxOuterRadius} 0)`}>
                 <text
-                    className="heading4"
-                    style={css.wheel_part_title_label}
+                    className="heading5"
+                    style={Object.assign({}, css.wheel_part_title_label, css.wheel_text__h4)}
                     textAnchor="middle"
                     x={this.props.maxOuterRadius}
-                    y={`-${statRowSpacing}rem`}
-                    dy="-6rem"
+                    y={`-${statRowSpacing}em`}
+                    dy="-1.5em"
                 >
                     {topSymbol.type}
                 </text>
                 <text
                     ref={this.wheelPartSymbolTitleText}
                     className="heading2"
-                    style={Object.assign({}, css.wheel_part_title, css.wheel_part_title__symbol)}
+                    style={Object.assign({}, css.wheel_part_title, css.wheel_part_title__symbol, css.wheel_text__h2)}
                     textAnchor="middle"
                     x={this.props.maxOuterRadius}
-                    y={`-${statRowSpacing}rem`}
+                    y={`-${statRowSpacing}em`}
                 >
                     {topSymbol.symbol}
                 </text>
-                <foreignObject x={this.props.maxOuterRadius-100} y='16' width="200" height="40">
-                    <div className="wheel_part_buttons" style={css.wheel_part_buttons}>
-                        <button className="button__sev1 button__light" onClick={self.props.gNav.showSetTrendActionModal.bind(self.props.gNav)}>
+                <foreignObject x={this.props.maxOuterRadius-100} y='16' width="200" height="60">
+                    <div className="wheel_part_buttons" style={Object.assign({}, css.wheel_part_buttons)}>
+                        <button className="button__sev1 button__light" onClick={self.props.gNav.showSetTrendActionModal.bind(self.props.gNav)} style={Object.assign({}, css.wheel_text__button)}>
                             <span class="material-icons">data_saver_on</span>
                             Action
                         </button>
+                        <div className="wheel_part_anchor" style={css.wheel_part_anchor}></div>
                     </div>
                 </foreignObject>
             </g>
@@ -153,14 +154,12 @@ class TopTagWheelPart extends React.Component {
             growthAnim = css['wheel_part__grew'];
         }
 
-        const statRowSpacing = Math.max(this.props.maxOuterRadius, window.outerHeight) / 100; // rem
-
-        const topTagStatsEls = this.renderActiveTopTagStats(statRowSpacing);
+        const topTagStatsEls = this.renderActiveTopTagStats(3.2);
         const topTagSymbolStatsEl = this.renderActiveTopTagSymbolStats(0);
 
         const mainClasses = `wheel_part ${this.props.data.isFocused ? 'active' : ''}`;
         return (
-            <g ref={this.wheelPartGRef} className={mainClasses} data-trend-name={this.props.data.id}>
+            <g ref={this.wheelPartGRef} className={mainClasses} data-trend-name={this.props.data.id} style={css.wheel_part}>
                 <path
                 d={arc(this.props)}
                 style={Object.assign(growthAnim, css['wheel_part_path'])}

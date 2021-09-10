@@ -7,7 +7,8 @@ const styles = {
                 'display': 'flex',
                 'flex-direction': 'row',
                 'justify-content': 'space-between',
-                'padding': '10vh 5%',
+                'padding': '12vh 5%',
+                'padding-top': 'max(12vh, 100px)',
                 'box-sizing': 'border-box',
             },
             newsColumns_left: {
@@ -18,8 +19,13 @@ const styles = {
             },
             newsColumns_right: {
                 'width': '30%',
-                'padding-top': '14px',
+                // 'padding-top': '1.4rem',
                 'text-align': 'right',
+            },
+            newsColumns_right_body: {
+                'overflow-y': 'auto',
+                'max-height': '50vh',
+                'display': 'inline-block'
             },
             newsColumns_right_author: {
                 'font-weight': '400',
@@ -33,7 +39,7 @@ const styles = {
                 'margin-top': '1.4rem',
                 'text-decoration': 'none',
                 'color': 'inherit',
-                'font-size': '1.4rem',
+                'font-size': 'max(1.4rem, 12px)',
                 'display': 'inline-block',
             },
             newsAttributionAuth: {

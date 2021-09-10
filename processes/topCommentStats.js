@@ -1,4 +1,4 @@
-import _ from 'underscore';
+import { throttle } from 'throttle-debounce';
 import util from 'util';
 import RedisClient from '../utils/redisClient.js';
 import commentModel from '../utils/objectModels/comment.js';
@@ -41,7 +41,7 @@ class TopCommentsStats {
 
         this.storeNewTopCommentsStatsThrottleTime = 5000;
         this.throttle = {
-            storeNewTopCommentsStats: _.throttle(this.storeNewTopCommentsStats, this.storeNewTopCommentsStatsThrottleTime).bind(this),
+            storeNewTopCommentsStats: throttle(this.storeNewTopCommentsStatsThrottleTime, this.storeNewTopCommentsStats).bind(this),
         };
 
         self.initRedisClient(() => {

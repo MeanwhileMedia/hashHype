@@ -23,6 +23,8 @@ class TopTagWheel extends React.Component {
     }
 
     componentDidUpdate() {
+        if (this.lastUpdated === this.props.topTagsLastUpdated) return; // we only need to run the below after we have received new stats:topComments from the server
+        this.lastUpdated = this.props.topTagsLastUpdated;
         // In case the wheel part rankings just changed, re-check that we have the correct one marked as focused
         const curRotation = this.getCurrentWheelRotation();
         const activePartEl = this.determineActiveWheelPart(curRotation);
@@ -36,6 +38,8 @@ class TopTagWheel extends React.Component {
         const self = this;
         const hammer = new Hammer(document.querySelector('.topTags .panCatcher'));
         hammer.on('panleft panright', (e) => {
+            const wheelEl = document.querySelector('.topTagNetworks_wheel');
+            if (!wheelEl) return;
             self.wheelShouldAutoRotate = false; // user has taken control. End the auto rotate started upon page load.
             self.props.toggleFreezeState(true);
             // console.log('velocity:', e.velocityX) // speed of pan (-,+)
@@ -43,7 +47,7 @@ class TopTagWheel extends React.Component {
             const curRotation = self.getCurrentWheelRotation();
             const newRotation = Math.ceil(e.velocityX * 10 + curRotation); // We round to whole degrees to avoid jittering AND performance issues (returns if rounded angle shows no change)
             if (curRotation === newRotation) return;
-            document.querySelector('.topTagNetworks_wheel').style.transform = `rotate(${newRotation}deg)`;
+            wheelEl.style.transform = `rotate(${newRotation}deg)`;
             const activePartEl = self.determineActiveWheelPart(newRotation);
             if (!activePartEl) return;
             self.props.focusTopTag(activePartEl.getAttribute('data-trend-name'));
@@ -78,10 +82,21 @@ class TopTagWheel extends React.Component {
     }
 
     autoRotateToTopTag(destTopTag) {
-        if (!destTopTag) return false;
+        this.getTopTagWheelPosDeg(destTopTag);
+        if (!this.topTagWheelPosDegs[destTopTag.id]) return false;
+        const wheelEl = document.querySelector('.topTagNetworks_wheel');
+        wheelEl.style.transform = `rotate(${this.topTagWheelPosDegs[destTopTag.id]}deg)`;
+        return true;
+    }
+
+    getTopTagWheelPosDeg(destTopTag) {
+        if (!destTopTag) return;
+        this.topTagWheelPosDegs = this.topTagWheelPosDegs || {};
+
         const degreeAndOffsetRecord = []; //[{deg: 1, offset: 235}, {deg: 2, offset: 242}, etc]
         const wheelEl = document.querySelector('.topTagNetworks_wheel');
         const topTagTextEl = document.querySelector(`[data-trend-name="${destTopTag.id}"] .wheel_part_text`);
+        if (!topTagTextEl) return;
         for (let deg = 0; deg <= 360; deg++) {
             wheelEl.style.transform = `rotate(${deg}deg)`;
             const boundingClientRect = topTagTextEl.getBoundingClientRect();
@@ -93,8 +108,8 @@ class TopTagWheel extends React.Component {
         degreeAndOffsetRecord.sort(function(a, b) {
             return Math.abs(a.offset) - Math.abs(b.offset);
         });
-        wheelEl.style.transform = `rotate(${degreeAndOffsetRecord[0].deg}deg)`;
-        return true;
+        if (!degreeAndOffsetRecord[0]) return;
+        this.topTagWheelPosDegs[destTopTag.id] = degreeAndOffsetRecord[0].deg;
     }
 
     getCurrentWheelRotation() {
@@ -111,17 +126,15 @@ class TopTagWheel extends React.Component {
     }
 
     determineActiveWheelPart(curRotation) {
-        const windowHeight = window.outerHeight;
-        const windowWidth = window.outerWidth;
+        const viewportBoundingRect = document.querySelector('#main').getBoundingClientRect();
         let smallestOffset = null; // the wheel with the smallest measurement from center
         let activeWheelPartEl = null;
-        document.querySelectorAll('.wheel_part').forEach((el) => {
-            const elBoundingClientRect = el.getBoundingClientRect();
-            const wheelCenter = elBoundingClientRect.left + elBoundingClientRect.width / 2;
-            const wheelOffCenter = Math.abs(windowWidth / 2 - wheelCenter);
-            if ((!smallestOffset || wheelOffCenter < smallestOffset) && elBoundingClientRect.top < windowHeight) {
+        document.querySelectorAll('.wheel_part .wheel_part_anchor').forEach((thisWheelEl) => {
+            const wheelElBoundingRect = thisWheelEl.getBoundingClientRect();
+            const wheelOffCenter = Math.abs(wheelElBoundingRect.left - viewportBoundingRect.width / 2);
+            if ((!smallestOffset || wheelOffCenter < smallestOffset) && wheelElBoundingRect.top < viewportBoundingRect.height) {
                 smallestOffset = wheelOffCenter;
-                activeWheelPartEl = el;
+                activeWheelPartEl = thisWheelEl.closest('.wheel_part');
             }
         });
         return activeWheelPartEl;

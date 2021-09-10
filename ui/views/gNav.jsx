@@ -1,7 +1,9 @@
 import React from '/node_modules/react';
+import Radium from '/node_modules/radium';
 import GNavMainMenu from './gNav-mainMenu.jsx';
 import SetTrendAction from './setTrendAction.jsx';
 import MsgBox__reqInvite from './msgBox--reqInvite.jsx'
+import utils from '../helpers/utils.js'
 
 import menuText from './styles/gNav-mainMenu-text.jsx';
 
@@ -23,6 +25,10 @@ class GNav extends React.Component {
         this.props.modal.onShow(() => {
             this.setState({customStyleClasses: ['GNav_theme__light']});
         });
+    }
+
+    componentDidMount() {
+        utils.setMagicScaleElements();
     }
 
     render() {
@@ -49,14 +55,14 @@ class GNav extends React.Component {
                     <div className="GNav_right_ctrls" style={css.GNav_right_ctrls}>
                         {/* <hbCC-fEAdmin> */}
                         <div style={css.GNav_right_ctrls_icon} onClick={this.showAdminCtrlsModal.bind(this)}>
-                            <span class="material-icons">settings</span>
+                            <span class="material-icons material-icons-res-large">settings</span>
                         </div>
                         {/* </hbCC-fEAdmin> */}
                         <div style={css.GNav_right_ctrls_icon} onClick={this.showSetTrendActionModal.bind(this)}>
-                            <span class="material-icons">data_saver_on</span>
+                            <span class="material-icons material-icons-res-large">data_saver_on</span>
                         </div>
                         <div style={css.GNav_right_ctrls_icon} onClick={this.showAboutModal.bind(this)}>
-                            <span class="material-icons">account_circle</span>
+                            <span class="material-icons material-icons-res-large">account_circle</span>
                         </div>
                     </div>
                 </div>
@@ -98,7 +104,7 @@ class GNav extends React.Component {
 
         const aboutBodyJsx = (
             <div>
-                <p style={css.GNav_section_about_body}>{menuText.aboutBody}</p>
+                <h4 style={css.GNav_section_about_body}>{menuText.aboutBody}</h4>
                 <p style={css.GNav_section_about_tech}>{menuText.aboutTech(this)}</p>
                 <MsgBox__reqInvite subtitle='HashHype will be open to new users soon.' />
             </div>
@@ -141,4 +147,4 @@ class GNav extends React.Component {
 
 } // end gnav class
 
-export default GNav;
+export default Radium(GNav);

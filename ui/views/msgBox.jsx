@@ -15,7 +15,7 @@ class MsgBox extends React.Component {
 
         return (
             <div style={Object.assign({}, css.msgBox, extraStyles)} className="msgBox">
-                <h5 style={css.msgBox_title}>{this.props.title}</h5>
+                <h4 style={css.msgBox_title}>{this.props.title}</h4>
                 <p style={css.msgBox_subtitle}>{this.props.subtitle}</p>
                 <div style={css.msgBox_body}>{this.props.body}</div>
             </div>

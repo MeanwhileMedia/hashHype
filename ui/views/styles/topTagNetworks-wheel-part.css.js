@@ -1,5 +1,6 @@
 import d3 from '/node_modules/d3';
 import Radium from '/node_modules/radium';
+import utils from '../../helpers/utils.js'
 
 const styles = {
 
@@ -21,10 +22,16 @@ const styles = {
         const viewRefreshRate = 2; // (s) try to keep in sync with hbKoa.socketEventThrottle. Hardcoded for now.
         const grewFlashInterval = viewRefreshRate / Math.min(view.state.wheelGrowthCount, 10);
 
+        // because our SVG viewport scales, our text elements don't show our true rem scaling. Our wheel has it's
+        // own static font-size which is based on the scaled magicScreenMeasure.
 
         return {
-            // 'wheel_part': {
-            // },
+            'wheel_part': {
+                'font-size': `${Math.max(utils.curMagicScreenMeasure*.9, 10)}px`,
+                '@media only screen and (max-width: 1024px)': {
+                    'font-size': `${Math.max(utils.curMagicScreenMeasure*.4, 6)}px`,
+                },
+            },
             'wheel_part_path': {
                 'stroke': '#fff',
                 'fill': colorPallette[colorRank],
@@ -37,7 +44,7 @@ const styles = {
             'wheel_part_title_label': {
                 'opacity': 0,
                 'fill': '#b3b3b3',
-                'transition': 'opacity .2s ease-in .2s'
+                'transition': 'opacity .2s ease-in .2s',
             },
             'wheel_part_title__symbol': {
                 'opacity': 0.2
@@ -46,15 +53,21 @@ const styles = {
                 'opacity': 0
             },
             'wheel_part_buttons': {
-                'margin-top': '1.6rem',
+                'margin-top': '2.4em',
                 'text-align': 'center',
                 'opacity': 0,
                 'transition': 'opacity .2s ease-in .4s'
+            },
+            'wheel_part_anchor': { // for getting accurate wheel part position readings using getBoundingClientRect
+                'width': '1px',
+                'height': '1px',
+                'margin': '0 auto',
             },
             'wheel_part__grew': {
                 'animation': `x .2s ease ${grewFlashInterval}s ${view.state.wheelGrowthCount}`,
                 'animationName': grewFlash,
             },
+
         };
 
     }, // end generate

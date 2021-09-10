@@ -28,7 +28,7 @@ class AdminTrain extends React.Component {
                 editIcon={'dangerous'}
                 deletePrompt={(
                     <><p><i>Comment is not relevant?</i>
-                        <button className="button_sev1" onClick={this.deleteComment.bind(this, this.props.topTag)}>Confirm</button>
+                        <button className="button__sev1" onClick={this.deleteComment.bind(this, this.props.topTag)}>Confirm</button>
                     </p></>
                 )}
             />
@@ -42,7 +42,7 @@ class AdminTrain extends React.Component {
                 editIcon={'dangerous'}
                 deletePrompt={(
                     <><p><i>User is not relevant?</i>
-                        <button className="button_sev1" onClick={this.markUserNotRelevant.bind(this, this.props.topTag.author.name, this.props.topTag)}>Confirm</button>
+                        <button className="button__sev1" onClick={this.markUserNotRelevant.bind(this, this.props.topTag.author.name, this.props.topTag)}>Confirm</button>
                     </p></>
                 )}
             />
@@ -60,8 +60,8 @@ class AdminTrain extends React.Component {
             );
             const deletePrompt = (
                 <><p><i>Word is not relevant to:</i>
-                    <button className="button_sev1" onClick={this.deleteWordFromComment.bind(this, word[0], this.props.topTag, rowRef)}>Comment</button>
-                    <button className="button_sev2" onClick={this.markWordNotRelevant.bind(this, word[0], this.props.topTag, rowRef)}>All</button>
+                    <button className="button__sev1" onClick={this.deleteWordFromComment.bind(this, word[0], this.props.topTag, rowRef)}>Comment</button>
+                    <button className="button__sev2" onClick={this.markWordNotRelevant.bind(this, word[0], this.props.topTag, rowRef)}>All</button>
                 </p></>
             );
             wordsSection.push((
@@ -91,8 +91,8 @@ class AdminTrain extends React.Component {
             const deletePrompt = (
                 <>
                     <p><i>Customize function:</i>
-                        <button className="editFuncButton button_sev1" onClick={ (e) => { thisView.initSymbolCodeEdit.call(thisView, e, symbol, 'get', rowRef) } }>get ( )</button>
-                        <button className="editFuncButton button_sev1" onClick={ (e) => { thisView.initSymbolCodeEdit.call(thisView, e, symbol, 'match', rowRef) } }>match ( )</button>
+                        <button className="editFuncButton button__sev1" onClick={ (e) => { thisView.initSymbolCodeEdit.call(thisView, e, symbol, 'get', rowRef) } }>get ( )</button>
+                        <button className="editFuncButton button__sev1" onClick={ (e) => { thisView.initSymbolCodeEdit.call(thisView, e, symbol, 'match', rowRef) } }>match ( )</button>
                     </p>
                     <div className="adminTrain_section_code" style={css.adminTrain_section_code}>
                         <pre>
@@ -101,7 +101,7 @@ class AdminTrain extends React.Component {
                         </pre>
                         <div style={css.adminTrain_section_code_buttons}>
                             <button onClick={thisView.exitSymbolFunctionEdit.bind(thisView, 'cancel')}>Cancel</button>
-                            <button className="button_sev2" onClick={this.exitSymbolFunctionEdit.bind(this, 'save')}>Save</button>
+                            <button className="button__sev2" onClick={this.exitSymbolFunctionEdit.bind(this, 'save')}>Save</button>
                         </div>
                     </div>
                 </>

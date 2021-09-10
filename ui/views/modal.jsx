@@ -1,4 +1,5 @@
 import React from '/node_modules/react';
+import Radium from '/node_modules/radium';
 import styles from './styles/modal.css.js';
 
 class Modal extends React.Component {
@@ -56,4 +57,4 @@ class Modal extends React.Component {
     }
 }
 
-export default Modal;
+export default Radium(Modal);

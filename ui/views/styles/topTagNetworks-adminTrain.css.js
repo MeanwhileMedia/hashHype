@@ -6,10 +6,10 @@ const styles = {
             'display': 'inline-block',
             'width': '100%',
             'box-sizing': 'border-box',
-            'min-height': '80px',
+            'min-height': '8rem',
             'border': '1px solid #fff',
             'border-radius': '4px',
-            'font-size': '1.4rem',
+            'font-size': 'max(1.4rem, 12px)',
             'padding': '1rem',
             'padding-bottom': '4rem',
             'outline': 'none',
@@ -24,7 +24,7 @@ const styles = {
                 'align-items': 'center',
             },
             adminTrain_section: {
-                'width': '30vw',
+                'width': '100%',
                 'text-align': 'left',
                 'margin-bottom': '2rem'
             },

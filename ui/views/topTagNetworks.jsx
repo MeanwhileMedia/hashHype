@@ -1,7 +1,9 @@
 import React from '/node_modules/react';
 import Radium from '/node_modules/radium';
 import d3 from '/node_modules/d3';
+import throttleDebounce from '/node_modules/throttle-debounce';
 import socketViewResponses from '../helpers/hbClientSocketViewResponses.js';
+import utils from '../helpers/utils.js'
 import GNav from './gNav.jsx';
 import TopTagWheel from './topTagNetworks-wheel.jsx';
 import TopTagnewsColumns from './topTagNetworks-newsColumns.jsx';
@@ -19,6 +21,7 @@ class TopTagNetworks extends React.Component {
             focusedTopTag: null,
             freezeState: false, // set to true and all calls to receiveNewState (from our server socket) will be discarded.
             comments: [],
+            topTagsLastUpdated: Date.now(), // when was the last time we got a fresh stats:topComments from the server
             modalContent: {
                 title: '',
                 body: '',
@@ -41,6 +44,7 @@ class TopTagNetworks extends React.Component {
             // console.log('State is frozen...');
             return;
         }
+        socketData.topTagsLastUpdated = Date.now();
         this.setState(socketData);
     }
 
@@ -59,7 +63,8 @@ class TopTagNetworks extends React.Component {
                 <div className="topTags" style={css.topTags}>
                     <TopTagWheel
                         topTags={this.state.comments}
-                        focusTopTag={this.focusTopTag.bind(this)}
+                        topTagsLastUpdated={this.state.topTagsLastUpdated}
+                        focusTopTag={throttleDebounce.throttle(200, this.focusTopTag).bind(this)}
                         toggleFreezeState={this.toggleFreezeState.bind(this)}
                         setPageIsReady={this.setPageIsReady.bind(this)}
                         gNav={this.gNavRef.current}

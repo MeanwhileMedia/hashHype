@@ -30,7 +30,7 @@ class MsgBox__reqInvite extends React.Component {
         const self = this;
         let inviteForm = (
             <div className="inviteForm" style={{position: 'relative', marginTop: '2rem'}}>
-                <button style={{position: 'absolute', top: '-0.4rem', right: 0}} className="button_sev1" onClick={(e) => self.clickedRequestInvite.call(self, e)}>Request</button>
+                <button style={{position: 'absolute', top: '-0.4rem', right: 0}} className="button__sev1" onClick={(e) => self.clickedRequestInvite.call(self, e)}>Request</button>
                 <TextInput placeholder="you@email.com" textAlign="left" minWidth="100%" />
             </div>
         );
@@ -43,7 +43,7 @@ class MsgBox__reqInvite extends React.Component {
         }
 
         return (
-            <MsgBox getAttn={this.props.getAttn} title='Request Invite' subtitle={this.props.subtitle} body={inviteForm} maxWidth="50rem"/>
+            <MsgBox getAttn={this.props.getAttn} title='Request Invite' subtitle={this.props.subtitle} body={inviteForm} />
         );
     }
 

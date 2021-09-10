@@ -1,6 +1,13 @@
 const styles = {
 
     generate(view) {
+
+        let modalPaddingTop = '8rem';
+        const gNavEl = document.querySelector('.GNav');
+        if (gNavEl) {
+            modalPaddingTop = gNavEl.getBoundingClientRect().height + 10 + 'px';
+        }
+
         const css = {
             modal: {
                 'display': view.props.content.visible ? 'flex' : 'none',
@@ -16,7 +23,8 @@ const styles = {
                 'white-space': 'pre-wrap',
                 'overflow-x': 'hidden',
                 'overflow-y': 'auto',
-                'padding': '6rem 0',
+                'padding': '40px 0',
+                'padding-top': modalPaddingTop,
                 'box-sizing': 'border-box'
             },
             // Alignment "classes" can be applied to any element class by appending a common a modifier. Only the "align__left" is passed in js during modal instantiation.
@@ -24,8 +32,12 @@ const styles = {
                 'flex-direction': 'row'
             },
             modal__align__center: {
-                'padding-left': '33vw',
-                'padding-right': '33vw'
+                'padding-left': '25vw',
+                'padding-right': '25vw',
+                '@media (max-width: 1024px)': {
+                    'padding-left': '2vw',
+                    'padding-right': '2vw'
+                },
             },
             modal__align_text__left: {
                 'text-align': 'left'

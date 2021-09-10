@@ -1,18 +1,19 @@
 const styles = {
 
     generate(view) {
+
         const css = {
             GNav: {
                 'display': 'flex',
                 'flex-direction': 'row',
                 'justify-content': 'space-between',
-                'padding': '1rem 2rem',
+                'padding': '10px 20px',
                 'position': 'fixed',
                 'top': '0',
                 'left': '0',
                 'width': '100vw',
                 'box-sizing': 'border-box',
-                'border-bottom': '1px solid rgb(0 0 0 / 5%)'
+                'border-bottom': '1px solid rgb(0 0 0 / 5%)',
             },
             GNav_left: {
                 'display': 'flex',
@@ -20,13 +21,22 @@ const styles = {
                 'cursor': 'pointer',
             },
             GNav_left_logo: {
-                'height': '2rem',
-                'margin-right': '.8rem',
-                'margin-top': '.55rem'
+                'height': 'min(3rem, 24px)',
+                'margin-right': 'min(1rem, 10px)',
+                'margin-top': '0.6rem',
+                '@media (max-width: 1024px)': {
+                    'height': 'max(4rem, 30px)',
+                    'margin-right': 'max(1rem, 10px)',
+                    'margin-top': '1.4rem'
+                },
             },
             GNav_left_name: {
-                'font-size': '2rem',
-                'padding-top': '.2rem'
+                'font-size': 'min(3rem, 24px)',
+                'padding-top': '0.2rem',
+                '@media (max-width: 1024px)': {
+                    'font-size': 'max(4rem, 30px)',
+                    'padding-top': '.4rem'
+                },
             },
             GNav_right: {
                 'display': 'flex',
@@ -38,7 +48,7 @@ const styles = {
                 'align-items': 'center'
             },
             GNav_right_ctrls_icon: {
-                'margin-left': '.6rem'
+                'margin-left': '0.6rem'
             },
 
             GNav_theme__light: {
@@ -47,10 +57,10 @@ const styles = {
             },
 
             GNav_section_about_body: {
-                'font-size': '2rem'
+                // 'font-size': '2rem'
             },
             GNav_section_about_tech: {
-                'font-size': '1.4rem',
+                // 'font-size': '1.4rem',
                 'border-top': '1px solid #777',
                 'padding-top': '1rem',
                 'margin-top': '2rem',
