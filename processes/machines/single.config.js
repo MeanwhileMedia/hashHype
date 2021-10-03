@@ -138,14 +138,8 @@ module.exports = {
 //     - install ubuntu to card, boot first time with keyboard and monitor. Perform first login (then can be added to POE/ethernet and accessed via SSH)
 //     - sudo apt update
 //     - sudo apt upgrade
-//     - for a maching that will run redis - sudo apt install build-essential
-//     - for a maching that will run redis - perform *1 above
+//     - for a machine that will run redis - sudo apt install build-essential
+//     - for a machine that will run redis - perform *1 above
 //     - install node (nvm) and redis (https://redis.io/topics/quickstart)
 //     - Create self signed ssl certs OR use certbot and copy certs to utils/certs using below CLI commands:
             // npm run genSslCerts --domain=dev.meanwhile.media (which is already part of our deploy npm scripts)
-            // - OR -
-            // sudo snap install --classic certbot
-            // sudo ln -s /snap/bin/certbot /usr/bin/certbot
-            // sudo certbot certonly --manual --preferred-challenges dns -d *.meanwhile.media (https://mxtoolbox.com/TXTLookup.aspx)
-            // sudo cp -R /etc/letsencrypt/archive/meanwhile.media utils/certs/meanwhile.media
-            // sudo chown -R ubuntu utils/certs/meanwhile.media (where "ubuntu" is the user owning our node processes)

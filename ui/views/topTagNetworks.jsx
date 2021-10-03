@@ -116,7 +116,8 @@ class TopTagNetworks extends React.Component {
             onShow: (thisOnShowCback) => {
                 modalControls.onShowCbacks = modalControls.onShowCbacks || [];
                 modalControls.onShowCbacks.push(thisOnShowCback);
-            }
+            },
+            isShown: false
         };
         return modalControls;
     }
@@ -128,10 +129,12 @@ class TopTagNetworks extends React.Component {
             visible: true,
             customStyleClasses: []
         }, modalContent);
+        this.modalControls.isShown = true;
         this.setState({ modalContent: modalContent });
     }
 
     hideModal() {
+        this.modalControls.isShown = false;
         this.setState({
             modalContent: {
                 title: '',

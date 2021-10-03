@@ -1,5 +1,5 @@
 import path from 'path';
-import {watch} from 'fs';
+import fs from 'fs';
 import SftpClient from 'ssh2-sftp-client';
 import deployCodeSftpConfig from './deployCodeSftp-config.js';
 
@@ -17,14 +17,16 @@ class DeployCodeSftp {
             self.deployToTarget(() => {
                 if (!this.cliArgs.watch) {
                     self.npmInstallOnTarget(() => {
-                        self.sftpClient.end();
+                        self.npmRunScriptsOnTarget(() => {
+                            self.sftpClient.end();
+                        });
                     });
                 }
             });
         });
 
         if (this.cliArgs.watch) {
-            this.watchForChangesToDeploy();
+            this.watchForChangesToDeploy(this.localProjectDir);
         }
     }
 
@@ -86,10 +88,63 @@ class DeployCodeSftp {
         });
     }
 
-    watchForChangesToDeploy() {
+    npmRunScriptsOnTarget(cback, thisNpmCmdIndex = 0) {
         const self = this;
-        watch(this.localProjectDir, {recursive: true}, (eventType, filename) => {
-            self.deployToTarget();
+        if (!self.deployConfig.andNpmRun || !self.deployConfig.andNpmRun.length) {
+            if (cback) cback();
+            return;
+        }
+        const thisNpmCmd = self.deployConfig.andNpmRun[thisNpmCmdIndex]
+        if (!thisNpmCmd) {
+            if (cback) cback();
+            return;
+        }
+        self.npmRunScriptOnTarget(thisNpmCmd, () => {
+            self.npmRunScriptsOnTarget(cback, ++thisNpmCmdIndex);
+        });
+    }
+
+    npmRunScriptOnTarget(npmScriptCmd, cback) {
+        const self = this;
+        const projectDir = `${self.deployConfig.targetDir}/${self.deployConfig.projectName}`;
+        self.sftpClient.client.shell(function(err, stream) { // "self.sftpClient.client" is the underlying ssh2 object (https://github.com/mscdex/ssh2)
+            if (err) {
+                console.error(err);
+                return;
+            }
+            stream.on('close', function() {
+                if (cback) cback();
+            }).on('data', function(data) {
+                console.log(data.toString());
+            }).stderr.on('data', function(data) {
+                console.log('npmRunScriptOnTarget STDERR: ' + data);
+            });
+            console.log(`Will now attempt 'npm run ${npmScriptCmd}' on target machine...`)
+            stream.end(`cd ${projectDir}\nnpm run ${npmScriptCmd}\nexit\n`);
+        });
+    }
+
+    watchForChangesToDeploy(watchDirectory) {
+        const self = this;
+        // watching all files individually (to support linux) - see https://nodejs.org/docs/latest/api/fs.html#fs_caveats
+        const ignore = [ // can be files or dirs
+            'node_modules',
+            '.git'
+        ];
+        console.log(`Watching for changes to files in dir: ${watchDirectory}`)
+        fs.readdir(watchDirectory, {withFileTypes: true}, (err, files) => {
+            if (err) console.error(err);
+            files.forEach((thisFileDesc) => {
+                if (ignore.indexOf(thisFileDesc.name) !== -1) return;
+                const thisFilePath = path.resolve(watchDirectory, thisFileDesc.name);
+                if (thisFileDesc.isDirectory()) {
+                    self.watchForChangesToDeploy(thisFilePath);
+                    return;
+                }
+                fs.watch(thisFilePath, (eventType, filename) => {
+                    self.deployToTarget();
+                });
+            });
         });
     }
 

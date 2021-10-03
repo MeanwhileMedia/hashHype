@@ -50,6 +50,9 @@ const styles = {
             GNav_right_ctrls_icon: {
                 'margin-left': '0.6rem'
             },
+            GNav_closeModalBtn: {
+                'margin-right': '2rem'
+            },
 
             GNav_theme__light: {
                 'color': '#fff',

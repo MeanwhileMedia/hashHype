@@ -45,6 +45,15 @@ class GNav extends React.Component {
         let logoSvg = logo({height: '100%', fill: '#cecece'});
         if (customStyleClasses.indexOf('GNav_theme__light') !== -1) logoSvg = logo({height: '100%', fill: '#888'});
 
+        let closeModalBtn;
+        if (this.props.modal.isShown) {
+            closeModalBtn = (
+                <div style={Object.assign({}, css.GNav_right_ctrls_icon, css.GNav_closeModalBtn)} onClick={this.hideModal.bind(this)}>
+                    <span class="material-icons material-icons-res-large">cancel_presentation</span>
+                </div>
+            );
+        }
+
         return (
             <div className="GNav" style={gNavStyles}>
                 <div className="GNav_left" style={css.GNav_left} onClick={this.showGNavMainMenu.bind(this)}>
@@ -53,6 +62,7 @@ class GNav extends React.Component {
                 </div>
                 <div className="GNav_right" style={css.GNav_right}>
                     <div className="GNav_right_ctrls" style={css.GNav_right_ctrls}>
+                        {closeModalBtn}
                         {/* <hbCC-fEAdmin> */}
                         <div style={css.GNav_right_ctrls_icon} onClick={this.showAdminCtrlsModal.bind(this)}>
                             <span class="material-icons material-icons-res-large">settings</span>
@@ -86,8 +96,6 @@ class GNav extends React.Component {
     }
 
     showSetTrendActionModal() {
-        // JWW stopping - show proper details for activeTopTag
-
         const setTrendActionUi = (
             <SetTrendAction activeTopTag={this.activeTopTag} hideModal={this.hideModal.bind(this)}/>
         );

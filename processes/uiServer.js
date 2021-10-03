@@ -30,7 +30,7 @@ const uiServer = {
 
     serverConfig: {
         rootDir: process.cwd(), //the project root
-        httpsPort: 8180
+        httpsPort: 8080 // this will be the exposed server port regardless of what machine the uiServer is run on 
     },
 
     // ES module imports in browser do not yet support "bare" module imports. Maintain a map here, and use a custom syntax to import node_modules.

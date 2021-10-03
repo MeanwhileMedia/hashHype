@@ -126,19 +126,19 @@ class SetTrendAction extends React.Component {
                     <div style={css.setTrendAction_thirdApps}>
                         <ul onClick={(e) => self.setActiveThirdApp.call(self, e)} style={css.setTrendAction_thirdApps_icons}>
                             <li style={Object.assign({}, css.setTrendAction_thirdApps_icon, css.setTrendAction_thirdApps_icon__Robinhood)}>
-                                <img key='app1' style={Object.assign({}, css.setTrendAction_thirdApps_icon_img, css.setTrendAction_thirdApps_icon_img__Robinhood)} src="/ui/images/Robinhood.png" alt="Robinhood"/>
+                                <img key='app1' style={Object.assign({}, css.setTrendAction_thirdApps_icon_img, css.setTrendAction_thirdApps_icon_img__Robinhood)} src="/ui/images/robinhood.png" alt="Robinhood"/>
                                 <h6 style={Object.assign({}, css.setTrendAction_thirdApps_icon_label, css.setTrendAction_thirdApps_icon_label__Robinhood)}>Robinhood</h6>
                             </li>
                             <li style={Object.assign({}, css.setTrendAction_thirdApps_icon, css.setTrendAction_thirdApps_icon__Coinbase)}>
-                                <img key='app2' style={Object.assign({}, css.setTrendAction_thirdApps_icon_img, css.setTrendAction_thirdApps_icon_img__Coinbase)} src="/ui/images/Coinbase.png" alt="Coinbase"/>
+                                <img key='app2' style={Object.assign({}, css.setTrendAction_thirdApps_icon_img, css.setTrendAction_thirdApps_icon_img__Coinbase)} src="/ui/images/coinbase.png" alt="Coinbase"/>
                                 <h6 style={Object.assign({}, css.setTrendAction_thirdApps_icon_label, css.setTrendAction_thirdApps_icon_label__Coinbase)}>Coinbase</h6>
                             </li>
                             <li style={Object.assign({}, css.setTrendAction_thirdApps_icon, css.setTrendAction_thirdApps_icon__Twitter)}>
-                                <img key='app3' style={Object.assign({}, css.setTrendAction_thirdApps_icon_img, css.setTrendAction_thirdApps_icon_img__Twitter)} src="/ui/images/Twitter.png" alt="Twitter"/>
+                                <img key='app3' style={Object.assign({}, css.setTrendAction_thirdApps_icon_img, css.setTrendAction_thirdApps_icon_img__Twitter)} src="/ui/images/twitter.png" alt="Twitter"/>
                                 <h6 style={Object.assign({}, css.setTrendAction_thirdApps_icon_label, css.setTrendAction_thirdApps_icon_label__Twitter)}>Twitter</h6>
                             </li>
                             <li style={Object.assign({}, css.setTrendAction_thirdApps_icon, css.setTrendAction_thirdApps_icon__Email)}>
-                                <img key='app4' style={Object.assign({}, css.setTrendAction_thirdApps_icon_img, css.setTrendAction_thirdApps_icon_img__Email)} src="/ui/images/Email.png" alt="Email"/>
+                                <img key='app4' style={Object.assign({}, css.setTrendAction_thirdApps_icon_img, css.setTrendAction_thirdApps_icon_img__Email)} src="/ui/images/email.png" alt="Email"/>
                                 <h6 style={Object.assign({}, css.setTrendAction_thirdApps_icon_label, css.setTrendAction_thirdApps_icon_label__Email)}>Email</h6>
                             </li>
                         </ul>
