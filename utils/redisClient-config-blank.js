@@ -29,7 +29,7 @@ module.exports = {
                     requirepass: '',
 
                     // Persistence settings
-                    dbfilename: '00000-short.rdb', // To utilize db archive/backup functionality (in maintainLogsAndBackups) the rdb file name MUST always start with the "active day tstamp" 00000
+                    dbfilename: '00000-short.rdb', // To utilize db archive/backup functionality (in maintainLogsAndBackups) the rdb file name MUST always start with the "active day tstamp" 00000. Our maintenance process automatically prepends the envname to the beginning of the filename.
                     dir: path.resolve(process.cwd(), './utils/db/'),
                     // appendonly: 'yes',
                     // appendfilename: 'persistDb.aof',

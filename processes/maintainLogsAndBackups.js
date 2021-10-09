@@ -6,6 +6,7 @@ import RedisClient from '../utils/redisClient.js';
 
 const logDir = path.resolve(process.cwd(), 'utils/logs');
 const rdbDir = path.resolve(process.cwd(), 'utils/db');
+const tstampPosInFilename = 1; // where filename is "dev01-18908-uiServer-out.log", we extract the tstamp portion via fileName.split('-')[tstampPosInFilename];
 
 const cliArgs = yargs(process.argv).argv;
 const gDriveConfigBuffer = new Buffer(cliArgs.gdrive, 'base64');
@@ -26,7 +27,7 @@ class MaintainLogsAndBackups {
         self.rotateLogsIntervalTime = 60000*10; // check every 10mins. Confirm all required local log files exist according to our day tstamp naming pattern. Create a new log file when the day turns. Check logs directory for expired logs to delete from local machine.
 
         self.archiveLogsInterval = null;
-        self.archiveLogsIntervalTime = 60000*30; // backup today's log file to cloud twice/hr
+        self.archiveLogsIntervalTime = 60000*5; // backup today's log file to cloud once per 5 minutes
 
         self.archiveRDBInterval = null;
         self.archiveRDBIntervalTime = 60000*30; // backup all redis rdb files to cloud twice/hr. Uses day tstamp naming pattern.
@@ -139,7 +140,7 @@ class MaintainLogsAndBackups {
             });
             // 3. Now determine if any of the existing local log files should be deleted (expired).
             localLogFileNames.forEach((thisFileName) => {
-                let dayTstampForThisFileName = thisFileName.split('-')[0];
+                let dayTstampForThisFileName = thisFileName.split('-')[tstampPosInFilename];
                 if (notExpiredDayTstamps.indexOf(dayTstampForThisFileName) !== -1 || dayTstampForThisFileName === '00000') return;
                 const fullLogFilePath = path.resolve(logDir, thisFileName);
                 fs.unlink(fullLogFilePath, (err) => {
@@ -160,63 +161,73 @@ class MaintainLogsAndBackups {
 
     initArchiveLogsInterval() {
         const self = this;
-        if (self.archiveLogsInterval) return;
-        self.archiveLogsInterval = setInterval(() => {
-            // This interval only uploads today's log to google drive
-            const todayTstamp = self.getDayTstamps(1)[0]; // Just need today's tstamp
-            self.getAllLogFileNames((fileNames) => {
-                fileNames.forEach((thisFileName) => {
-                    let dayTstampForThisFileName = thisFileName.split('-')[0];
-                    if (dayTstampForThisFileName !== todayTstamp) return;
-                    const fullLogFilePath = path.resolve(logDir, thisFileName);
-                    self.uploadFileToGdrive(thisFileName, fullLogFilePath, (res) => {
-                        console.log(`Archived log ${thisFileName} to google drive...`);
-                    });
+        // This interval only uploads today's log to google drive
+        const todayTstamp = self.getDayTstamps(1)[0]; // Just need today's tstamp
+        self.getAllLogFileNames((fileNames) => {
+            fileNames.forEach((thisFileName) => {
+                let dayTstampForThisFileName = thisFileName.split('-')[tstampPosInFilename];
+                if (dayTstampForThisFileName !== todayTstamp && dayTstampForThisFileName !== '00000') return; // also upload the active log file at this point
+                const fullLogFilePath = path.resolve(logDir, thisFileName);
+                self.uploadFileToGdrive(thisFileName, fullLogFilePath, (res) => {
+                    console.log(`Archived log ${thisFileName} to google drive...`);
                 });
             });
+        });
+
+        if (self.archiveLogsInterval) return;
+        self.archiveLogsInterval = setInterval(() => {
+            self.initArchiveLogsInterval();
         }, self.archiveLogsIntervalTime);
     }
 
     initArchiveRDBInterval() {
         const self = this;
-        if (self.archiveRDBInterval) return;
-        self.archiveRDBInterval = setInterval(() => {
-            // This interval only uploads today's log to google drive
-            const notExpiredDayTstamps = self.getDayTstamps(7); // Keep rdb backups on local machine for 3 weeks
-            const todayTstamp = notExpiredDayTstamps[0];
-            self.getAllRDBFileNames((localRDBFileNames) => {
-                // 1. Copy the active RDB file to one prepended with today's timestamp, then upload the archive copy to google drive.
-                localRDBFileNames.forEach((thisFileName) => {
-                    let dayTstampForThisFileName = thisFileName.split('-')[0];
-                    if (dayTstampForThisFileName !== '00000') return; // Make sure we have the filename for the active rdb
-                    const activeRDBFilePath = path.resolve(rdbDir, thisFileName);
-                    const todayRDBBackupFileName = thisFileName.replace('00000', todayTstamp);
-                    const todayRDBBackupPath = path.resolve(rdbDir, todayRDBBackupFileName);
-                    fs.copyFile(activeRDBFilePath, todayRDBBackupPath, (err) => {
-                        if (err) {
-                            console.warn(err);
-                            return;
-                        }
-                        // console.log(`Transferred active rdb file to today's rdb archive file: ${thisFileName} => ${todayRDBBackupFileName}`)
-                        self.uploadFileToGdrive(todayRDBBackupFileName, todayRDBBackupPath, (res) => {
-                            console.log(`Archived rdb ${todayRDBBackupFileName} to google drive...`);
+        const notExpiredDayTstamps = self.getDayTstamps(7); // Keep rdb backups on local machine for 3 weeks
+        const todayTstamp = notExpiredDayTstamps[0];
+        self.getAllRDBFileNames((localRDBFileNames) => {
+            // 1. Copy the active RDB file to one prepended with today's timestamp, then upload the archive copy to google drive.
+            localRDBFileNames.forEach((thisFileName) => {
+                let dayTstampForThisFileName = thisFileName.split('-')[tstampPosInFilename];
+                if (dayTstampForThisFileName !== '00000') return; // Make sure we have the filename for the active rdb
+                const activeRDBFileName = thisFileName;
+                const activeRDBFilePath = path.resolve(rdbDir, activeRDBFileName);
+                const todayRDBBackupFileName = activeRDBFileName.replace('00000', todayTstamp);
+                const todayRDBBackupPath = path.resolve(rdbDir, todayRDBBackupFileName);
+                fs.copyFile(activeRDBFilePath, todayRDBBackupPath, (err) => {
+                    if (err) {
+                        console.warn(err);
+                        return;
+                    }
+                    // console.log(`Transferred active rdb file to today's rdb archive file: ${thisFileName} => ${todayRDBBackupFileName}`)
+                    const startTime = Date.now();
+                    self.uploadFileToGdrive(todayRDBBackupFileName, todayRDBBackupPath, (res) => {
+                        const endTime = Date.now();
+                        console.log(`Archived rdb ${todayRDBBackupFileName} to google drive. Upload duration: ${Math.floor((endTime-startTime) / 1000)}s`);
+                        // At this point we ALSO COPY THIS SAME FILE but rename with the 00000 tstamp (this is so we can programatically locate the active DB file for this machine)
+                        self.copyFileOnGdrive(res.data.id, activeRDBFileName, (success) => {
+                            if (success) console.log(`Archived rdb ${activeRDBFileName} to google drive`);
                         });
                     });
                 });
-                // 2. Now determine if this local rdb file should be deleted (expired).
-                localRDBFileNames.forEach((thisFileName) => {
-                    let dayTstampForThisFileName = thisFileName.split('-')[0];
-                    if (notExpiredDayTstamps.indexOf(dayTstampForThisFileName) !== -1 || dayTstampForThisFileName === '00000') return;
-                    const fullRDBFilePath = path.resolve(rdbDir, thisFileName);
-                    fs.unlink(fullRDBFilePath, (err) => {
-                        if (err) {
-                            console.warn(`Could not delete expired rdb file: ${fullRDBFilePath}`, err);
-                            return;
-                        }
-                        console.log(`Deleted expired rdb file: ${fullRDBFilePath}`);
-                    });
+            });
+            // 2. Now determine if this local rdb file should be deleted (expired).
+            localRDBFileNames.forEach((thisFileName) => {
+                let dayTstampForThisFileName = thisFileName.split('-')[tstampPosInFilename];
+                if (notExpiredDayTstamps.indexOf(dayTstampForThisFileName) !== -1 || dayTstampForThisFileName === '00000') return;
+                const fullRDBFilePath = path.resolve(rdbDir, thisFileName);
+                fs.unlink(fullRDBFilePath, (err) => {
+                    if (err) {
+                        console.warn(`Could not delete expired rdb file: ${fullRDBFilePath}`, err);
+                        return;
+                    }
+                    console.log(`Deleted expired rdb file: ${fullRDBFilePath}`);
                 });
             });
+        });
+
+        if (self.archiveRDBInterval) return;
+        self.archiveRDBInterval = setInterval(() => {
+            self.initArchiveRDBInterval();
         }, self.archiveRDBIntervalTime);
     }
 
@@ -234,9 +245,9 @@ class MaintainLogsAndBackups {
                 const listedFiles = [...res.data.files];
                 const deleteTheseFiles = [];
                 listedFiles.forEach((thisFile) => {
-                    let dayTstampForThisFileName = thisFile.name.split('-')[0];
+                    let dayTstampForThisFileName = thisFile.name.split('-')[tstampPosInFilename];
                     if (!dayTstampForThisFileName || dayTstampForThisFileName.length !== 5) return; // day tstamps should always be 5 chars long. see getDayTstamps below.
-                    if (parseInt(dayTstampForThisFileName) < oldestNotExpiredTstamp) {
+                    if (parseInt(dayTstampForThisFileName) < oldestNotExpiredTstamp && dayTstampForThisFileName !== '00000') {
                         deleteTheseFiles.push(thisFile);
                     }
                 });
@@ -277,7 +288,7 @@ class MaintainLogsAndBackups {
             // Now determine if each file is a log file, and if so, if it should be deleted (expired).
             files.forEach((thisFileName) => {
                 if (thisFileName.indexOf('.log') === -1) return;
-                let dayTstampForThisFileName = thisFileName.split('-')[0];
+                let dayTstampForThisFileName = thisFileName.split('-')[tstampPosInFilename];
                 if (!dayTstampForThisFileName || dayTstampForThisFileName.length !== 5) return; // day tstamps should always be 5 chars long. see getDayTstamps below.
                 dayTstampForThisFileName = parseInt(dayTstampForThisFileName);
                 if (typeof dayTstampForThisFileName !== 'number') return;
@@ -292,13 +303,13 @@ class MaintainLogsAndBackups {
         const allRDBFileNames = [];
         fs.readdir(rdbDir, (err, files) => {
             if (err || !files || files.length === 0) {
-                console.log(`Could not find any .rdb files in db directory: ${logDir}`, err);
+                console.log(`Could not find any .rdb files in db directory: ${rdbDir}`, err);
                 return;
             }
-            // Now determine if each file is a log file, and if so, if it should be deleted (expired).
+            // Now determine if each file is a rdb file, and if so, if it should be deleted (expired).
             files.forEach((thisFileName) => {
                 if (thisFileName.indexOf('.rdb') === -1) return;
-                let dayTstampForThisFileName = thisFileName.split('-')[0];
+                let dayTstampForThisFileName = thisFileName.split('-')[tstampPosInFilename];
                 if (!dayTstampForThisFileName || dayTstampForThisFileName.length !== 5) return; // day tstamps should always be 5 chars long. see getDayTstamps below.
                 dayTstampForThisFileName = parseInt(dayTstampForThisFileName);
                 if (typeof dayTstampForThisFileName !== 'number') return;
@@ -344,6 +355,41 @@ class MaintainLogsAndBackups {
                 if (err) console.warn(err);
                 if (cback) cback(res);
             });
+        });
+    }
+
+    copyFileOnGdrive(copyFileId, destFileName, cback, overwrite = true) {
+        const self = this;
+        if (overwrite) {
+            self.googleDriveClient.files.list({
+                q: `name = '${destFileName}'`
+            }, (err, res) => {
+                if (err || !res.data || !res.data.files || !res.data.files.length) {
+                    console.error(`ERR! ${destFileName} does not yet exist or could not be found on gdrive.`, err);
+                    self.copyFileOnGdrive(copyFileId, destFileName, cback, false);
+                    return;
+                }
+                self.googleDriveClient.files.delete({fileId: res.data.files[0].id}, (err, res) => {
+                    if (err) console.error(err);
+                    console.log(`Deleted ${destFileName} before attempting to copy ${copyFileId} to the same name.`);
+                    self.copyFileOnGdrive(copyFileId, destFileName, cback, false);
+                });
+            });
+            return;
+        }
+        self.googleDriveClient.files.copy({
+            fileId: copyFileId,
+            requestBody: {
+                name: destFileName
+            }
+        }, (err, response) => {
+            if (err) {
+                console.error(`ERR! Could not copy RDB file on google drive... `, err);
+                if (cback) cback(false);
+                return;
+            }
+            console.log(`Copied gdrive file ${copyFileId} -> ${destFileName}`);
+            if (cback) cback(true);
         });
     }
 

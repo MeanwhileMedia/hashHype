@@ -30,7 +30,10 @@ node_modules/
 .env
 .env.test
 
+utils/logs/
+utils/db/
 utils/certs/
+googleApiServiceCreds.json
 deployCodeSftp-config.js
 redisClient-config.js
 googleClient-config.js

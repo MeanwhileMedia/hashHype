@@ -1,3 +1,4 @@
+// A pm2 process config - https://pm2.keymetrics.io/docs/usage/application-declaration/
 // Beware: This machine "single" is for running the all app processes on a single server computer (redis, uiServer, and ALL other processes)
 const fs = require('fs');
 const path = require('path');
@@ -7,9 +8,6 @@ const googleConfigs = require('../../utils/googleClient-config.js');
 const rdbDir = path.resolve(process.cwd(), 'utils/db');
 const logDir = path.resolve(process.cwd(), 'utils/logs');
 const activeLogDayTstamp = '00000'; // A tstamp of zero is always used for active pm2 logs. MaintainLogsAndBackups will rotate for us into archivable day tstamps (and upload to gdrive).
-const getLogPath = (procName, logType) => {
-    return `${logDir}/${activeLogDayTstamp}-${procName}-${logType}.log`;
-};
 
 // Ensure all required directorties exist on local machine
 fs.mkdirSync(rdbDir, {recursive: true}); // recursive will allow this command to not error if dir already exists
@@ -31,8 +29,10 @@ const genConfigs = {
             };
 
             let redisServerConfigString = '';
-            for (const [key, value] of Object.entries(thisRedisConfig.serverArgs)) {
-              redisServerConfigString = `${redisServerConfigString} --${key} ${value}`
+            for (let [key, value] of Object.entries(thisRedisConfig.serverArgs)) {
+                // If this is the redis config "dbfilename", we must also prepend the envname at this point.
+                if (key === 'dbfilename') value = `${genConfigs.cliArgs.envname}-${value}`;
+                redisServerConfigString = `${redisServerConfigString} --${key} ${value}`;
             }
             allRedisServerProcessConfigs.push({
                 name: `Redis Server (${thisRedisConfig.dbName})`, // SEE note *1 below
@@ -40,8 +40,8 @@ const genConfigs = {
                 args: `${redisServerConfigString}`,
                 kill_timeout : 5000, // give redis time to shutdown when pm2 kills it
                 listen_timeout : 5000, // give redis time to fully start before pm2 thinks something is wrong
-                error_file: getLogPath(`redis-${thisRedisConfig.dbName}`, 'err'),
-                out_file: getLogPath(`redis-${thisRedisConfig.dbName}`, 'out'),
+                error_file: genConfigs.getLogPath(`redis-${thisRedisConfig.dbName}`, 'err'),
+                out_file: genConfigs.getLogPath(`redis-${thisRedisConfig.dbName}`, 'out'),
             });
         });
 
@@ -57,9 +57,8 @@ const genConfigs = {
         const googleDriveConfigJsonBuffer = new Buffer(googleDriveConfigJson);
         const googleDriveConfigJsonBase64Encoded = googleDriveConfigJsonBuffer.toString('base64');
 
-        const cliArgs = genConfigs.extractCliArgs();
         let inspect = '';
-        if (cliArgs.inspect) inspect = '--inspect';
+        if (genConfigs.cliArgs.inspect) inspect = '--inspect';
 
         return [
             {
@@ -67,47 +66,48 @@ const genConfigs = {
                 script: './processes/uiServer.js',
                 args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
                 interpreter_args: `-r esm`,
-                error_file: getLogPath('uiServer', 'err'),
-                out_file: getLogPath('uiServer', 'out'),
+                error_file: genConfigs.getLogPath('uiServer', 'err'),
+                out_file: genConfigs.getLogPath('uiServer', 'out'),
             }, {
                 name: 'Fetch Reddit Comments',
                 script: './processes/fetchRedditComments.js',
                 args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
                 interpreter_args: `-r esm`,
-                error_file: getLogPath('fetchReddit', 'err'),
-                out_file: getLogPath('fetchReddit', 'out')
+                error_file: genConfigs.getLogPath('fetchReddit', 'err'),
+                out_file: genConfigs.getLogPath('fetchReddit', 'out')
             }, {
                 name: 'Fetch Stock Symbols',
                 script: './processes/fetchCoinAndStockSymbols.js',
                 args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
                 interpreter_args: `-r esm`,
-                error_file: getLogPath('stockSymbols', 'err'),
-                out_file: getLogPath('stockSymbols', 'out')
+                error_file: genConfigs.getLogPath('stockSymbols', 'err'),
+                out_file: genConfigs.getLogPath('stockSymbols', 'out')
             }, {
                 name: 'Comment Word Extractor',
                 script: './processes/extractWordsFromComments.js',
                 args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
                 interpreter_args: `-r esm`,
-                error_file: getLogPath('wordExtractor', 'err'),
-                out_file: getLogPath('wordExtractor', 'out')
+                error_file: genConfigs.getLogPath('wordExtractor', 'err'),
+                out_file: genConfigs.getLogPath('wordExtractor', 'out')
             }, {
                 name: 'Top Comment Stats',
                 script: './processes/topCommentStats.js',
                 args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
                 interpreter_args: `-r esm ${inspect}`,
-                error_file: getLogPath('topComments', 'err'),
-                out_file: getLogPath('topComments', 'out')
+                error_file: genConfigs.getLogPath('topComments', 'err'),
+                out_file: genConfigs.getLogPath('topComments', 'out')
             }, {
                 name: 'MaintainLogsAndBackups',
                 script: './processes/maintainLogsAndBackups.js',
                 args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
                 interpreter_args: `-r esm`,
-                error_file: getLogPath('maintenance', 'err'),
-                out_file: getLogPath('maintenance', 'out')
+                error_file: genConfigs.getLogPath('maintenance', 'err'),
+                out_file: genConfigs.getLogPath('maintenance', 'out')
             }
         ];
     }, // end 'apps'
 
+    cliArgs: {},
     extractCliArgs: () => {
         const cliArgsDefaults = {
             // pass the "-- --inspect" cli arg to the pm2 start command to launch the node process in debug mode. e.g: npm run single -- -- --inspect
@@ -115,14 +115,32 @@ const genConfigs = {
             // ssh -L 9221:localhost:9229 -p 8122 ubuntu@dev.meanwhile.media (where localhost:9221 is the local port that chrome dev tools will
             // connect to, and 9229 is the port which was assigned to the node process on the remote host machine).
             inspect: false,
+            envname: '', // dev01, prod02, etc. Is required.
         };
         process.argv.forEach((thisArgv) => {
             if (thisArgv === '--inspect') cliArgsDefaults.inspect = true;
+            if (thisArgv.indexOf('--envname') !== -1) {
+                cliArgsDefaults.envname = thisArgv.replace('--envname=', '');
+            }
         });
-        return cliArgsDefaults;
+
+        // Confirm required args are present
+        if (!cliArgsDefaults.envname) {
+            console.error(`ERR! The '--envname' cli arg is required when starting a new process machine. Script will now exit...`);
+            process.exit(1);
+        }
+
+        genConfigs.cliArgs = cliArgsDefaults;
+        return genConfigs.cliArgs;
+    },
+
+    getLogPath: (procName, logType) => {
+        return `${logDir}/${genConfigs.cliArgs.envname}-${activeLogDayTstamp}-${procName}-${logType}.log`;
     }
 
 }; // end genConfigs
+
+genConfigs.extractCliArgs(); // will raise errors and quit if required args are missing.
 
 // Export it in pm2 config format
 module.exports = {

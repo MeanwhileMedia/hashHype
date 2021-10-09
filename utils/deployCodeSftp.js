@@ -14,20 +14,20 @@ class DeployCodeSftp {
 
         this.deployConfig = deployCodeSftpConfig.targets[this.cliArgs.target]();
         this.initSftpClient(this.deployConfig, () => {
-            self.deployToTarget(() => {
-                if (!this.cliArgs.watch) {
+            self.npmRunScriptsOnTarget(self.deployConfig.firstNpmRun, () => {
+                self.deployToTarget(() => {
                     self.npmInstallOnTarget(() => {
-                        self.npmRunScriptsOnTarget(() => {
-                            self.sftpClient.end();
+                        self.npmRunScriptsOnTarget(self.deployConfig.lastNpmRun, () => {
+                            if (self.deployConfig.watch) {
+                                self.watchForChangesToDeploy(self.localProjectDir);
+                            } else {
+                                self.sftpClient.end();
+                            }
                         });
                     });
-                }
+                });
             });
         });
-
-        if (this.cliArgs.watch) {
-            this.watchForChangesToDeploy(this.localProjectDir);
-        }
     }
 
     initSftpClient(opts, cback) {
@@ -49,6 +49,7 @@ class DeployCodeSftp {
         this.sftpClient.exists(targetDir).then((exists) => {
             if (exists && self.deployConfig.wipeFirst) {
                 console.log(`Now deleting entire app folder (recursive): ${targetDir}`);
+                console.log('...');
                 return self.sftpClient.rmdir(targetDir, true);
             }
             return Promise.resolve();
@@ -71,6 +72,10 @@ class DeployCodeSftp {
 
     npmInstallOnTarget(cback) {
         const self = this;
+        if (!self.deployConfig.andNpmInstall) {
+            if (cback) cback();
+            return;
+        }
         const projectDir = `${self.deployConfig.targetDir}/${self.deployConfig.projectName}`;
         self.sftpClient.client.shell(function(err, stream) { // "self.sftpClient.client" is the underlying ssh2 object (https://github.com/mscdex/ssh2)
             if (err) {
@@ -80,7 +85,13 @@ class DeployCodeSftp {
             stream.on('close', function() {
                 if (cback) cback();
             }).on('data', function(data) {
-                console.log(data.toString());
+                if (process.stdout.isTTY) {
+                    process.stdout.clearLine();
+                    process.stdout.cursorTo(0);
+                    process.stdout.write(data.toString());
+                } else {
+                    console.log(data.toString());
+                }
             }).stderr.on('data', function(data) {
                 console.log('npmInstallOnTarget STDERR: ' + data);
             });
@@ -88,34 +99,42 @@ class DeployCodeSftp {
         });
     }
 
-    npmRunScriptsOnTarget(cback, thisNpmCmdIndex = 0) {
+    npmRunScriptsOnTarget(runTheseScripts, cback, thisNpmCmdIndex = 0) {
         const self = this;
-        if (!self.deployConfig.andNpmRun || !self.deployConfig.andNpmRun.length) {
+        if (!runTheseScripts || !runTheseScripts.length) {
             if (cback) cback();
             return;
         }
-        const thisNpmCmd = self.deployConfig.andNpmRun[thisNpmCmdIndex]
+        const thisNpmCmd = runTheseScripts[thisNpmCmdIndex]
         if (!thisNpmCmd) {
             if (cback) cback();
             return;
         }
-        self.npmRunScriptOnTarget(thisNpmCmd, () => {
-            self.npmRunScriptsOnTarget(cback, ++thisNpmCmdIndex);
+        self.npmRunScriptOnTarget(thisNpmCmd, (success) => {
+            if (!success) {
+                console.error(`ERR! deployCodeSftp failed while attempting to run '${thisNpmCmd}'. Deploy failure. Process will now exit.`);
+                process.exit(1);
+                return;
+            }
+            self.npmRunScriptsOnTarget(runTheseScripts, cback, ++thisNpmCmdIndex);
         });
     }
 
     npmRunScriptOnTarget(npmScriptCmd, cback) {
         const self = this;
         const projectDir = `${self.deployConfig.targetDir}/${self.deployConfig.projectName}`;
+        let scriptSuccess = true;
         self.sftpClient.client.shell(function(err, stream) { // "self.sftpClient.client" is the underlying ssh2 object (https://github.com/mscdex/ssh2)
             if (err) {
                 console.error(err);
                 return;
             }
             stream.on('close', function() {
-                if (cback) cback();
+                if (cback) cback(scriptSuccess);
             }).on('data', function(data) {
-                console.log(data.toString());
+                const thisOutput = data.toString();
+                console.log(thisOutput);
+                if (thisOutput.indexOf('ERR!') !== -1) scriptSuccess = false;
             }).stderr.on('data', function(data) {
                 console.log('npmRunScriptOnTarget STDERR: ' + data);
             });
@@ -141,7 +160,7 @@ class DeployCodeSftp {
                     self.watchForChangesToDeploy(thisFilePath);
                     return;
                 }
-                fs.watch(thisFilePath, (eventType, filename) => {
+                fs.watchFile(thisFilePath, (eventType, filename) => {
                     self.deployToTarget();
                 });
             });
@@ -151,15 +170,11 @@ class DeployCodeSftp {
     extractCliArgs() {
         this.cliArgs = {
             target: 'dev01',
-            watch: false
         }
         const cliArgs = process.argv.slice(2);
 
         const indexOfTargetNameCliArg = cliArgs.indexOf('-target');
         if (indexOfTargetNameCliArg !== -1) this.cliArgs.target = cliArgs[indexOfTargetNameCliArg+1] || this.cliArgs.target;
-
-        const indexOfWatchCliArg = cliArgs.indexOf('-watch');
-        if (indexOfWatchCliArg !== -1) this.cliArgs.watch = true;
     }
 
 }
