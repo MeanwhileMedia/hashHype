@@ -169,6 +169,7 @@ class MaintainLogsAndBackups {
                 if (dayTstampForThisFileName !== todayTstamp && dayTstampForThisFileName !== '00000') return; // also upload the active log file at this point
                 const fullLogFilePath = path.resolve(logDir, thisFileName);
                 self.uploadFileToGdrive(thisFileName, fullLogFilePath, (res) => {
+                    if (!res) return;
                     console.log(`Archived log ${thisFileName} to google drive...`);
                 });
             });
@@ -201,6 +202,7 @@ class MaintainLogsAndBackups {
                     // console.log(`Transferred active rdb file to today's rdb archive file: ${thisFileName} => ${todayRDBBackupFileName}`)
                     const startTime = Date.now();
                     self.uploadFileToGdrive(todayRDBBackupFileName, todayRDBBackupPath, (res) => {
+                        if (!res) return;
                         const endTime = Date.now();
                         console.log(`Archived rdb ${todayRDBBackupFileName} to google drive. Upload duration: ${Math.floor((endTime-startTime) / 1000)}s`);
                         // At this point we ALSO COPY THIS SAME FILE but rename with the 00000 tstamp (this is so we can programatically locate the active DB file for this machine)

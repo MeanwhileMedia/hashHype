@@ -17,13 +17,13 @@ class MsgBox__reqInvite extends React.Component {
         if (!requestUserEmailAddy) return;
         this.setState({didRequestInvite: true});
 
-        hbClient.socket.send(JSON.stringify({
+        hbClient.socket.send({
             channel: 'clientReqSendEmail',
             data: {
                 emailType: 'inviteRequest',
                 requestUserEmailAddy: requestUserEmailAddy
             },
-        }));
+        });
     }
 
     render() {

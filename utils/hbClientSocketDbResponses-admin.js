@@ -131,8 +131,8 @@ class HbClientSocketDbResponses_admin {
     // 9.11: DONE - need to take a look at removeCommentFromAll (and removeCommentFromWordToCommentIndexes) where the throttled del/set command may introduce a bug in our preserve/recover logic. We may need a solution for syncing throttled redis commands.
     //          - note that the set commands that were slaughering mem/gc were the wordToCommentIndex objects. It may be time to store these indexes in a different data format (currently JSON strings in redis)
     // 9.12: WONT (focusing on 1hr trend for now) - Need to add an interval to update point counts for all comments in 12/24hr buckets (topCommentStats). The real time updates only apply to the 1hr bucket.
-    // 10. Mobile styles
-    // 11. Add google analytics snippet to layout.html
+    // 10. DONE - Mobile styles
+    // 11. DONE - Add google analytics snippet to layout.html
 
 
     deleteComment(message, socket) {

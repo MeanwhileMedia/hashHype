@@ -22,38 +22,39 @@ var hbClient = {
         // This hbClient "socket" object mimics the websocket interface but is actually HTTP. This is so that all of our faux socket communication can be cached on CDN.
         // Technically, we should be able to swap between useCdnSocket and useRealWebSocket seamlessly.
         hbClient.socket = {
-            send: (messageJson) => {
-                hbClient.sendFauxSocketMessage(messageJson);
-                const message = JSON.parse(messageJson);
+            send: (messageObj) => {
+                hbClient.sendFauxSocketMessage(messageObj);
                 // For certain message channels, we will continue to poll the server for data changes (mimicking how a real server WebSocket would push data to us)
-                if (message.channel === 'populateView') { // only if message json channel === 'populateView'
+                if (messageObj.channel === 'populateView') { // only if message json channel === 'populateView'
                     // Keep hitting the fauxSocket endpoint with message channel "change:redis:key" and send through to receiveMessage with same channel
                     const dataChangeMessage = {
-                        channel: `change:${message.data.absKey}`,
+                        channel: `change:${messageObj.data.absKey}`,
                         tstamp: Date.now() // cache buster (set inside interval to a denominations of fauxSocketPollIntervalLength).
                     }
                     if (hbClient.fauxSocketPollIntervals[dataChangeMessage.channel]) return;
                     hbClient.fauxSocketPollIntervals[dataChangeMessage.channel] = setInterval( () => {
                         const now = Date.now();
                         dataChangeMessage.tstamp  = now - (now % hbClient.fauxSocketPollIntervalLength)
-                        const dataChangeMessageJson = JSON.stringify(dataChangeMessage);
-                        hbClient.sendFauxSocketMessage(dataChangeMessageJson);
+                        hbClient.sendFauxSocketMessage(dataChangeMessage);
                     }, hbClient.fauxSocketPollIntervalLength);
                 }
             }
         };
         hbClient.loadLandingView();
     },
-    sendFauxSocketMessage(messageJson) {
+    sendFauxSocketMessage(messageObj) {
         // Example GET request (where the message param is JSON): serverAddress.com/fauxSocket?message={"channel": "viewRequest", "data": {"absKey":"redis:key","targetEl":".containerEl"}}
         // Example response body (JSON): {channel: 'viewResponse', data: {viewPath: jsAssetPath, absKey:"redis:key", targetEl: ".containerEl" }}
+        const encodedMessageStr = hbClient.encodeSocketMessage(messageObj);
+        if (!encodedMessageStr) return;
         const httpRequest = new XMLHttpRequest();
         httpRequest.onreadystatechange = function(){
             if (httpRequest.readyState !== XMLHttpRequest.DONE || httpRequest.status !== 200) return;
-            const message = JSON.parse(httpRequest.response);
-            socketViewResponses.receiveMessage(message);
+            const decodedMessage = hbClient.decodeSocketMessage(httpRequest.response);
+            if (!decodedMessage) return;
+            socketViewResponses.receiveMessage(decodedMessage);
         };
-        httpRequest.open('GET', `/fauxSocket.js?message=${messageJson}`, true); // fauxSocket.js endpoint acts as JS to optimize CDN caching. However, it's response body is actually a JSON string.
+        httpRequest.open('GET', `/fauxSocket.js?message=${encodedMessageStr}`, true); // fauxSocket.js endpoint acts as JS to optimize CDN caching. However, it's response body is actually a JSON string.
         httpRequest.send();
     },
 
@@ -67,9 +68,10 @@ var hbClient = {
         });
     },
     initSocketListeners() {
-        hbClient.socket.addEventListener('message', (messageJson) => {
-            const message = JSON.parse(messageJson.data);
-            socketViewResponses.receiveMessage(message);
+        hbClient.socket.addEventListener('message', (message) => {
+            const decodedMessage = hbClient.decodeSocketMessage(message.data);
+            if (!decodedMessage) return;
+            socketViewResponses.receiveMessage(decodedMessage);
         });
     }, // initSocketListeners
 
@@ -87,6 +89,38 @@ var hbClient = {
         // then the server will traverse upward until it finds a parent with a "main" template.
     },
 
+    encodeSocketMessage(messageObj) {
+        if (typeof messageObj !== 'object') {
+            console.warn('Could not encodeSocketMessage. messageObj was not a valid object.');
+            return null;
+        }
+        let json;
+        let encodedMessage;
+        try {
+            json = JSON.stringify(messageObj);
+            encodedMessage = btoa(json);
+        } catch (e) {
+            console.warn(`Could not encodeSocketMessage`, e, messageObj);
+            return null;
+        }
+        return encodedMessage;
+    },
+    decodeSocketMessage(encodedMessageStr) {
+        if (typeof encodedMessageStr !== 'string') {
+            console.warn('Could not decodeSocketMessage. encodedMessageStr was not a valid string.');
+            return null;
+        }
+        let json;
+        let decodedMessage;
+        try {
+            json = atob(encodedMessageStr);
+            decodedMessage = JSON.parse(json);
+        } catch (e) {
+            console.warn(`Could not decodeSocketMessage`, e, json);
+            return null;
+        }
+        return decodedMessage;
+    },
 
 }; // end hbClient
 

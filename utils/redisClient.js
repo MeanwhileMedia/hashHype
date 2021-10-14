@@ -231,6 +231,9 @@ class RedisClient {
                         // the extended set command (see below) automatically increments a "saveCount" integer every time the same object is saved. Compare that number to the configured preserveNamespaces.count param and re-save.
                         preserveToNow(commandArgs.saveData.saveCount || 0);
                     }
+                    if (commandArgs.command === 'del') {
+                        preserveToNow(0);
+                    }
                 });
             });
         }

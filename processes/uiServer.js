@@ -30,7 +30,7 @@ const uiServer = {
 
     serverConfig: {
         rootDir: process.cwd(), //the project root
-        httpsPort: 8080 // this will be the exposed server port regardless of what machine the uiServer is run on 
+        httpsPort: 8080 // this will be the exposed server port regardless of what machine the uiServer is run on
     },
 
     // ES module imports in browser do not yet support "bare" module imports. Maintain a map here, and use a custom syntax to import node_modules.
@@ -112,16 +112,8 @@ const uiServer = {
             // Make a route to accept incoming WebSocket messages
             self.server.ws.use((ctx, next) => {
                 console.log('New socket connection.');
-                ctx.websocket.on('message', (messageJson) => { // messages are JSON with attrs "channel" and "data"
-                    console.log(`New socket message: ${messageJson}`);
-                    let message;
-                    try {
-                        message = JSON.parse(messageJson);
-                    } catch (error) {
-                        console.warn(`Invalid JSON passed to WebSocket. ${messageJson}`);
-                        return next(ctx);
-                    }
-                    self.receiveSocketMessage(message, ctx.websocket);
+                ctx.websocket.on('message', (encodedMessageStr) => { // messages are baase64 encoded JSON with attrs "channel" and "data"
+                    self.receiveSocketMessage(encodedMessageStr, ctx.websocket);
                 });
                 return next(ctx);
             });
@@ -129,15 +121,12 @@ const uiServer = {
             // Make a route for "faux socket" requests
             self.server.use(async (ctx, next) => {
                 if (!/^\/fauxSocket.js\?/.test(ctx.request.url)) return next(ctx);
-                let message;
-                try {
-                    message = JSON.parse(ctx.request.query.message);
-                } catch (error) {
-                    console.warn(`Invalid JSON passed to fauxSocket endpoint. Url: ${ctx.request.url}`);
-                    return next(ctx);
-                }
                 ctx.type = 'application/javascript';
                 //ctx.set('Cache-Control', 'no-cache');
+
+                const encodedMessageStr = ctx.request.query.message;
+                const message = self.decodeSocketMessage(encodedMessageStr);
+                if (!message || !message.channel) return;
 
                 // Scenario 1
                 if (self.cachedServerSocketSends[message.channel]) {
@@ -149,26 +138,26 @@ const uiServer = {
                 // Scenario 2
                 const sendPromise = new Promise( (resolve, reject) => {
                     let thisFauxSocketObj = { // JWW todo - creating a new thisFauxSocketObj for every request is a memory leak
-                        send: (responseJson) => {
+                        send: (encodedResponseStr) => {
                             if (thisFauxSocketObj.wasResolved) {
                                 // Because logic below treats this like a socket, it may call this send function more than once (in an attempt to push data to the client). When that occurs,
                                 // we will instead set the new data to our local cachedServerSocketSends object so it's prepped for when the client sends another get request for it (see Scenario 1 above).
-                                const message = JSON.parse(responseJson);
-                                self.cachedServerSocketSends[message.channel] = responseJson;
+                                const responseObj = self.decodeSocketMessage(encodedResponseStr);
+                                self.cachedServerSocketSends[responseObj.channel] = encodedResponseStr;
                             }
-                            resolve(responseJson);
+                            resolve(encodedResponseStr);
                             thisFauxSocketObj.wasResolved = true;
                         },
                         wasResolved: false
                     };
-                    const foundChannelRoute = self.receiveSocketMessage(message, thisFauxSocketObj);
+                    const foundChannelRoute = self.receiveSocketMessage(encodedMessageStr, thisFauxSocketObj);
                     if (!foundChannelRoute) {
                         thisFauxSocketObj = null;
                         resolve(null);
                     }
                 });
-                const responseJson = await sendPromise;
-                ctx.body = responseJson;
+                const encodedResponse = await sendPromise;
+                ctx.body = encodedResponse;
             });
         }
     },
@@ -267,8 +256,11 @@ const uiServer = {
 
     changeEventThrottle: 2000, // wait time between emission of model changes to client(s)
     changeEventTstamps: {}, //for keeping track of socket emissions per channel
-    receiveSocketMessage(message, socket) { // returns bool. true if a route was found for message channel.
+    receiveSocketMessage(encodedMessageStr, socket) { // returns bool. true if a route was found for message channel.
         const self = uiServer;
+        const message = self.decodeSocketMessage(encodedMessageStr);
+        if (!message || !message.channel) return false;
+        console.log(`Incoming socket message:`, message);
 
         if (message.channel === 'viewRequest') {
             console.log(`Incoming socket view path request: ${message.data.absKey}`);
@@ -280,14 +272,16 @@ const uiServer = {
                     console.log(`Could not match redis data with a view (${message.data.absKey}).`);
                     return;
                 }
-                socket.send(JSON.stringify({
+                const encodedMessage = self.encodeSocketMessage({
                     channel: 'viewResponse',
                     data: {
                         absKey: message.data.absKey,
                         targetEl: message.data.targetEl,
                         viewPath: gotObj.ui.viewPath,
                     },
-                }));
+                });
+                if (!encodedMessage) return;
+                socket.send(encodedMessage);
             });
             return true;
         } // end if (message.channel === 'viewRequest')
@@ -299,10 +293,12 @@ const uiServer = {
             // Send data right away, then re-send any time it changes.
             self.redisClient.get(message.data.absKey, (gotObj) => {
                 if (!gotObj) return;
-                socket.send(JSON.stringify({ // Manually send once right away to populate view
+                const encodedMessage = self.encodeSocketMessage({
                     channel: modelChangeEventName,
                     data: gotObj,
-                }));
+                });
+                if (!encodedMessage) return;
+                socket.send(encodedMessage); // Manually send once right away to populate view
             });
 
             self.redisClient.on('message', (channel, action) => {
@@ -316,10 +312,12 @@ const uiServer = {
 
                 self.redisClient.get(message.data.absKey, (gotObj) => {
                     if (!gotObj) return;
-                    socket.send(JSON.stringify({ // And send again everytime the model changes on server
+                    const encodedMessage = self.encodeSocketMessage({ // And send again everytime the model changes on server
                         channel: modelChangeEventName,
                         data: gotObj,
-                    }));
+                    });
+                    if (!encodedMessage) return;
+                    socket.send(encodedMessage);
                 });
             });
             self.redisClient.subscribe(keySpaceSubChannel);
@@ -339,6 +337,43 @@ const uiServer = {
 
         return false;
     }, // end receiveSocketMessage
+
+    encodeSocketMessage(messageObj) {
+        if (typeof messageObj !== 'object') {
+            console.warn('Could not encodeSocketMessage. messageObj was not a valid object.');
+            return null;
+        }
+        let buff;
+        let json;
+        let encodedMessage;
+        try {
+            json = JSON.stringify(messageObj);
+            buff = new Buffer(json);
+            encodedMessage = buff.toString('base64');
+        } catch (e) {
+            console.warn(`Could not encodeSocketMessage`, e, messageObj);
+            return null;
+        }
+        return encodedMessage;
+    },
+    decodeSocketMessage(encodedMessageStr) {
+        if (typeof encodedMessageStr !== 'string') {
+            console.warn('Could not decodeSocketMessage. encodedMessageStr was not a valid string.');
+            return null;
+        }
+        let buff;
+        let json;
+        let decodedMessage;
+        try {
+            buff = new Buffer(encodedMessageStr, 'base64');
+            json = buff.toString('utf8');
+            decodedMessage = JSON.parse(json);
+        } catch (e) {
+            console.warn(`Could not decodeSocketMessage`, e, json);
+            return null;
+        }
+        return decodedMessage;
+    },
 
     packNodeModuleToEsModule(bareModulePath, requestedPath){ //requestedPath is the exact string declared in the import statement: import react from "node_modules/react"
         const self = uiServer;

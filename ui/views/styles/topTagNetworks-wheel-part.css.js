@@ -52,13 +52,16 @@ const styles = {
             'wheel_part_title__rank': {
                 'opacity': 0
             },
+            'wheel_part_buttons_wrapper': {
+                'overflow': 'visible'
+            },
             'wheel_part_buttons': {
                 'margin-top': '2.4em',
                 'text-align': 'center',
                 'opacity': 0,
                 'transition': 'opacity .2s ease-in .4s'
             },
-            'wheel_part_anchor': { // for getting accurate wheel part position readings using getBoundingClientRect
+            'wheel_part_anchor': { // for getting accurate wheel part position readings using getBoundingClientRect t
                 'width': '1px',
                 'height': '1px',
                 'margin': '0 auto',

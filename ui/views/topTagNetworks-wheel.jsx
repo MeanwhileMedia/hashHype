@@ -26,8 +26,7 @@ class TopTagWheel extends React.Component {
         if (this.lastUpdated === this.props.topTagsLastUpdated) return; // we only need to run the below after we have received new stats:topComments from the server
         this.lastUpdated = this.props.topTagsLastUpdated;
         // In case the wheel part rankings just changed, re-check that we have the correct one marked as focused
-        const curRotation = this.getCurrentWheelRotation();
-        const activePartEl = this.determineActiveWheelPart(curRotation);
+        const activePartEl = this.determineActiveWheelPart();
         if (!activePartEl) return;
         if (!activePartEl.classList.contains('active')) {
             this.props.focusTopTag(activePartEl.getAttribute('data-trend-name'));
@@ -48,7 +47,7 @@ class TopTagWheel extends React.Component {
             const newRotation = Math.ceil(e.velocityX * 10 + curRotation); // We round to whole degrees to avoid jittering AND performance issues (returns if rounded angle shows no change)
             if (curRotation === newRotation) return;
             wheelEl.style.transform = `rotate(${newRotation}deg)`;
-            const activePartEl = self.determineActiveWheelPart(newRotation);
+            const activePartEl = self.determineActiveWheelPart();
             if (!activePartEl) return;
             self.props.focusTopTag(activePartEl.getAttribute('data-trend-name'));
         });
@@ -67,7 +66,7 @@ class TopTagWheel extends React.Component {
             const curRotation = self.getCurrentWheelRotation();
             const newRotation = curRotation - incrementByDeg;
             document.querySelector('.topTagNetworks_wheel').style.transform = `rotate(${newRotation}deg)`;
-            const activePartEl = self.determineActiveWheelPart(newRotation);
+            const activePartEl = self.determineActiveWheelPart();
             if (activePartEl) self.props.focusTopTag(activePartEl.getAttribute('data-trend-name'));
             self.initAutoRotate();
 
@@ -82,6 +81,7 @@ class TopTagWheel extends React.Component {
     }
 
     autoRotateToTopTag(destTopTag) {
+        if (!destTopTag) return false;
         this.getTopTagWheelPosDeg(destTopTag);
         if (!this.topTagWheelPosDegs[destTopTag.id]) return false;
         const wheelEl = document.querySelector('.topTagNetworks_wheel');
@@ -125,7 +125,7 @@ class TopTagWheel extends React.Component {
         return deg;
     }
 
-    determineActiveWheelPart(curRotation) {
+    determineActiveWheelPart() {
         const viewportBoundingRect = document.querySelector('#main').getBoundingClientRect();
         let smallestOffset = null; // the wheel with the smallest measurement from center
         let activeWheelPartEl = null;

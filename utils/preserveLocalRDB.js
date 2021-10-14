@@ -12,7 +12,14 @@ class PreserveLocalRDB {
         this.cliArgs = this.extractCliArgs(); // will raise errors and quit if required args are missing.
 
         this.ensureDirectories();
-        this.moveLocalRDBFiles();
+        this.moveLocalRDBFiles(() => {
+            if (self.cliArgs.action === 'restore') {
+                console.warn(`Local RDB files have been restored and peserveLocalRDB is about to delete temporary rdb backup files at directory: ${self.localRdbBackupDir}`);
+                fs.rm(self.localRdbBackupDir, {recursive: true}, (err) => {
+                    if (err) console.error(err);
+                });
+            }
+        });
     }
 
     ensureDirectories() {

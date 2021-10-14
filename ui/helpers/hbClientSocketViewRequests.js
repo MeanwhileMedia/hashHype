@@ -12,22 +12,22 @@ const hbClientSocketViewRequests = {
 
     const targetElClass = `hbViewContainer--${this.newViewUid()}`;
     args.targetEl.classList.add(targetElClass);
-    hbClient.socket.send(JSON.stringify({
+    hbClient.socket.send({
       channel: 'viewRequest',
       data: {
         absKey: args.absKey,
         targetEl: `.${targetElClass}`,
       },
-    }));
+    });
   }, // end viewRequest
 
   populateView(absKey) {
-    hbClient.socket.send(JSON.stringify({
+    hbClient.socket.send({
       channel: 'populateView',
       data: {
         absKey,
       },
-    }));
+    });
   }, // end populateView
 
   curViewUid: 0,

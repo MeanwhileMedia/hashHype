@@ -97,7 +97,7 @@ class TopTagWheelPart extends React.Component {
                 >
                     {topSymbol.symbol}
                 </text>
-                <foreignObject x={this.props.maxOuterRadius-100} y='16' width="200" height="60">
+                <foreignObject x={this.props.maxOuterRadius-100} y='16' width="200" height="60" style={Object.assign({}, css.wheel_part_buttons_wrapper)}>
                     <div className="wheel_part_buttons" style={Object.assign({}, css.wheel_part_buttons)}>
                         <button className="button__sev1 button__light" onClick={self.props.gNav.showSetTrendActionModal.bind(self.props.gNav)} style={Object.assign({}, css.wheel_text__button)}>
                             <span class="material-icons">data_saver_on</span>
@@ -165,7 +165,7 @@ class TopTagWheelPart extends React.Component {
                 style={Object.assign(growthAnim, css['wheel_part_path'])}
                 />
 
-                <g className="wheel_part_text" transform={`rotate(${this.computeTextRotation(this.props, x)}) translate(80 0)`}>
+                <g className="wheel_part_text" transform={`rotate(${this.computeTextRotation(this.props, x)}) translate(90 0)`}>
                     {topTagStatsEls}
                     {topTagSymbolStatsEl}
                 </g>

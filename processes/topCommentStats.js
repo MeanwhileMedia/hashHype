@@ -747,12 +747,17 @@ class TopCommentsStats {
         if (howManyWordCombosEarnedPoints === comment.words.length) {
             shouldDiscard = true;
             console.warn(`Comment will be discarded because all of it's word combos earned points. Suspected dup comment:${comment.id} by user ${comment.author.name}. Comment body: ${comment.body}`);
-            // Now add to trainingNotRelevant so that comments with this exact body text can be immediately discarded moving forward AND we can discard the first comments
-            // which already contained this exact body text (but weren't immediately discarded because they hadn't yet been re-commented enough times to trigger discard).
-            if (this.trainingNotRelevant && comment.originalBody) {
-                this.trainingNotRelevant.commentBodies.push(comment.originalBody); // we use originalBody so that we can immediately discard based on trainingNotRelevant.commentBodies in fetchRedditComments process.
-                this.redisClient.set(this.trainingNotRelevantKey, this.trainingNotRelevant);
-            }
+
+            // // // JWW - commented this out for now. If we add all comments that match this check to trainingNotRelevant then all future comments with the same body (regardless of user)
+            // //          will not count towards pointing. There are many comments which must be allowed to re-occur over time (i.e. "See you next week." or "Buy the dip." etc). The below
+            // //          also results in a bloated training:notRelevant object.
+            // // Now add to trainingNotRelevant so that comments with this exact body text can be immediately discarded moving forward AND we can discard the first comments
+            // // which already contained this exact body text (but weren't immediately discarded because they hadn't yet been re-commented enough times to trigger discard).
+            // if (this.trainingNotRelevant && comment.originalBody) {
+            //     this.trainingNotRelevant.commentBodies.push(comment.originalBody); // we use originalBody so that we can immediately discard based on trainingNotRelevant.commentBodies in fetchRedditComments process.
+            //     this.redisClient.set(this.trainingNotRelevantKey, this.trainingNotRelevant);
+            // }
+
             return shouldDiscard;
         }
 
