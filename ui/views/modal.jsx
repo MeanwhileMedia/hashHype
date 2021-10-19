@@ -33,7 +33,7 @@ class Modal extends React.Component {
             <div className="Modal" style={modalStyles} onClick={this.hideModal.bind(this)}>
                 <div style={css.modal_inner}>
                     {this.props.content.title &&
-                        <h3 style={css.modal_title}>{this.props.content.title}</h3>
+                        <h2 style={css.modal_title}>{this.props.content.title}</h2>
                     }
                     {this.props.content.subtitle &&
                         <p style={css.modal_subtitle}>{this.props.content.subtitle}</p>

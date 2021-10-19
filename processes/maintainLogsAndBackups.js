@@ -323,40 +323,60 @@ class MaintainLogsAndBackups {
 
     uploadFileToGdrive(fileName, filePath, cback, overwrite = true) {
         const self = this;
-        self.googleDriveClient.files.list({}, (err, res) => {
-            if (err) {
+        if (overwrite) {
+            self.deleteFileFromGdrive(fileName, () => {
+                self.uploadFileToGdrive(fileName, filePath, cback, false);
+            });
+            return;
+        }
+        console.log(`Will now attempt to upload file to google drive... ${fileName}`);
+        self.googleDriveClient.files.create({
+            requestBody: {
+                name: fileName,
+                mimeType: 'text/plain',
+                parents: ['15THZq0ddZmIpYgeP9-YNIYSKnKonwjuj'], // this is the folder "service-hashHype" which is shared from jwebbphoto gdrive
+            },
+            media: {
+                mimeType: 'text/plain',
+                body: fs.createReadStream(filePath)
+            }
+        }, (err, res) => {
+            if (err) console.warn(err);
+            if (cback) cback(res);
+        });
+
+    }
+
+    deleteFileFromGdrive(fileName, cback) {
+        const self = this;
+        console.log(`Now attempting to locate and delete file on google drive... ${fileName}`);
+        self.googleDriveClient.files.list({
+            q: `name = '${fileName}'`
+        }, (err, res) => {
+            if (err || !res.data || !res.data.files) {
                 console.warn(err);
+                if (cback) cback();
                 return;
             }
-            if (overwrite && res.data && res.data.files) {
-                const deleteTheseFiles = res.data.files.filter(thisFile => thisFile.name === fileName);
-                let deletedCount = 0;
-                deleteTheseFiles.forEach((thisFile, index) => {
-                    self.googleDriveClient.files.delete({fileId: thisFile.id}, (err, res) => {
-                        if (err) console.warn(err);
-                        // console.log(`Deleted file from google drive: ${thisFile.name}`);
-                        ++deletedCount;
-                        if (deletedCount === deleteTheseFiles.length) {
-                            self.uploadFileToGdrive(fileName, filePath, cback, false);
-                        }
-                    });
-                });
-                if (deleteTheseFiles.length > 0) return;
+            const deleteTheseFiles = res.data.files;
+            if (deleteTheseFiles.length === 0) {
+                console.log(`Could not locate any google drive file by the following name: ${fileName}`);
+                if (cback) cback();
+                return;
             }
-            self.googleDriveClient.files.create({
-                requestBody: {
-                    name: fileName,
-                    mimeType: 'text/plain',
-                    parents: ['15THZq0ddZmIpYgeP9-YNIYSKnKonwjuj'], // this is the folder "service-hashHype" which is shared from jwebbphoto gdrive
-                },
-                media: {
-                    mimeType: 'text/plain',
-                    body: fs.createReadStream(filePath)
-                }
-            }, (err, res) => {
-                if (err) console.warn(err);
-                if (cback) cback(res);
+            let deletedCount = 0;
+            deleteTheseFiles.forEach((thisFile, index) => {
+                console.log(`Now deleting google drive file ID:${thisFile.id} (${fileName})`);
+                self.googleDriveClient.files.delete({fileId: thisFile.id}, (err, res) => {
+                    if (err) console.warn(err);
+                    // console.log(`Deleted file from google drive: ${thisFile.name}`);
+                    ++deletedCount;
+                    if (deletedCount === deleteTheseFiles.length) {
+                        if (cback) cback();
+                    }
+                });
             });
+
         });
     }
 

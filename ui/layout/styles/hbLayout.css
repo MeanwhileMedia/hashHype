@@ -5,7 +5,7 @@
 @import 'hbWidgets.css';
 
 html {
-    font-size: 14px;
+    font-size: min(10px, 2vw);
     font-family: 'Open Sans', sans-serif;
     margin: 0px;
     padding: 0px
@@ -19,30 +19,59 @@ body {
 }
 
 h2, .heading2 {
-    font-size: max(4rem, 32px);
+    /* font-size: clamp(3.6rem, 4vw, 6rem); */
+    font-size: min(4rem, 8vw);
     margin: 0px;
     font-weight: 300;
     line-height: 106%;
+    /* the below is used to bust text inflation algorithm - https://developer.mozilla.org/en-US/docs/Web/CSS/text-size-adjust & https://drafts.csswg.org/css-size-adjust/#default-adjustment-conditions */
+    display: inline-block;
+    max-height: 100%;
+    width: 100%;
+    text-size-adjust: none;
+    -webkit-text-size-adjust: none;
+    -moz-text-size-adjust: none;
+    -ms-text-size-adjust: none;
+
 }
 svg h2, svg .heading2 {
     font-size: 4em;
 }
 h3, .heading3 {
-    font-size: max(3rem, 30px);
+    /* font-size: clamp(3rem, 3vw, 5rem); */
+    font-size: min(3rem, 6vw);
     margin: 0px;
     font-weight: 300;
     line-height: 120%;
+    /* bust text inflation algorithm */
+    display: inline-block;
+    max-height: 100%;
+    width: 100%;
+    text-size-adjust: none;
+    -webkit-text-size-adjust: none;
+    -moz-text-size-adjust: none;
+    -ms-text-size-adjust: none;
 }
 svg h3, svg .heading3 {
     font-size: 3em;
 }
 h4, .heading4 {
-    font-size: max(2rem, 18px);
+    /* font-size: clamp(2rem, 1.4vw, 4rem); */
+    font-size: min(2rem, 5vw);
     margin: 0px;
     font-weight: 300;
     line-height: 136%;
     word-break: break-word;
+    /* bust text inflation algorithm */
+    display: inline-block;
+    max-height: 100%;
+    width: 100%;
+    text-size-adjust: none;
+    -webkit-text-size-adjust: none;
+    -moz-text-size-adjust: none;
+    -ms-text-size-adjust: none;
 }
+
 svg h4, svg .heading4 {
     font-size: 2em;
 }
@@ -52,6 +81,14 @@ h5, .heading5 {
     margin: 0px;
     font-weight: 300;
     line-height: 136%;
+    /* bust text inflation algorithm */
+    display: inline-block;
+    max-height: 100%;
+    width: 100%;
+    text-size-adjust: none;
+    -webkit-text-size-adjust: none;
+    -moz-text-size-adjust: none;
+    -ms-text-size-adjust: none;
 }
 svg h5, svg .heading5 {
     font-size: 3em;
@@ -63,15 +100,32 @@ h6, .heading6 {
     margin: 0px;
     border-bottom: 1px solid rgba(255,255,255,.5);
     padding-bottom: .5rem;
+    /* bust text inflation algorithm */
+    display: inline-block;
+    max-height: 100%;
+    width: 100%;
+    text-size-adjust: none;
+    -webkit-text-size-adjust: none;
+    -moz-text-size-adjust: none;
+    -ms-text-size-adjust: none;
 }
 svg h6, svg .heading6 {
     font-size: 1.2rem;
     padding-bottom: .5em;
 }
+
 p {
     font-size: max(1rem, 12px);
     overflow-wrap: break-word;
+    /* bust text inflation algorithm */
+    display: inline-block;
+    max-height: 100%;
+    text-size-adjust: none;
+    -webkit-text-size-adjust: none;
+    -moz-text-size-adjust: none;
+    -ms-text-size-adjust: none;
 }
+
 a {
     color: inherit;
     font: inherit;
@@ -102,7 +156,7 @@ ul {
     opacity: .6;
     cursor: pointer;
     transition: opacity .2s ease, scale .2s ease;
-    font-size: max(2.4rem, 24px);
+    font-size: min(2.4rem, 7vw);
 }
 .material-icons:hover {
     opacity: 1;
@@ -118,11 +172,12 @@ ul {
 .material-icons.material-icons__notif.material-icons__notif__success {
     color: #6cc16c;
 }
-@media only screen and (max-width: 1024px) {
+
+/* @media only screen and (max-width: 1024px) {
     .material-icons.material-icons-res-large {
-        font-size: max(4rem, 34px);
+        font-size: max(3rem, 34px);
     }
-}
+} */
 
 
 /* @media only screen and (max-width: 1024px) {

@@ -12,14 +12,13 @@ const styles = {
                 'box-sizing': 'border-box',
             },
             newsColumns_left: {
-                'width': '30%',
+                'width': 'max(30%, 15rem)',
             },
             newsColumns_left_author: {
                 'margin-top': '1rem',
             },
             newsColumns_right: {
-                'width': '30%',
-                // 'padding-top': '1.4rem',
+                'width': 'max(30%, 15rem)',
                 'text-align': 'right',
             },
             newsColumns_right_body: {

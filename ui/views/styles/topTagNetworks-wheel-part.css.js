@@ -24,13 +24,11 @@ const styles = {
 
         // because our SVG viewport scales, our text elements don't show our true rem scaling. Our wheel has it's
         // own static font-size which is based on the scaled magicScreenMeasure.
-
+        const wheelViewboxScaleRatio = (view.props.maxOuterRadius*2) / document.querySelector('.topTagNetworks_wheel').clientWidth;
+        const scaledStaticPxMeasure = utils.curMagicScreenMeasure*wheelViewboxScaleRatio;
         return {
             'wheel_part': {
-                'font-size': `${Math.max(utils.curMagicScreenMeasure*.9, 10)}px`,
-                '@media only screen and (max-width: 1024px)': {
-                    'font-size': `${Math.max(utils.curMagicScreenMeasure*.4, 6)}px`,
-                },
+                'font-size': `min(${scaledStaticPxMeasure}px, 0.8vw)`,
             },
             'wheel_part_path': {
                 'stroke': '#fff',

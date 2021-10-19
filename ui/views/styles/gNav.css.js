@@ -21,22 +21,12 @@ const styles = {
                 'cursor': 'pointer',
             },
             GNav_left_logo: {
-                'height': 'min(3rem, 24px)',
-                'margin-right': 'min(1rem, 10px)',
-                'margin-top': '0.6rem',
-                '@media (max-width: 1024px)': {
-                    'height': 'max(4rem, 30px)',
-                    'margin-right': 'max(1rem, 10px)',
-                    'margin-top': '1.4rem'
-                },
+                'height': 'min(2rem, 6vw)',
+                'margin-right': '0.5rem',
+                'margin-top': '0.4rem',
             },
             GNav_left_name: {
-                'font-size': 'min(3rem, 24px)',
-                'padding-top': '0.2rem',
-                '@media (max-width: 1024px)': {
-                    'font-size': 'max(4rem, 30px)',
-                    'padding-top': '.4rem'
-                },
+                'font-size': 'min(2rem, 6vw)',
             },
             GNav_right: {
                 'display': 'flex',

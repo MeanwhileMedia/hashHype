@@ -9,26 +9,18 @@ var utils = {
     },
 
     // getMagicScreenMeasure function returns a px measurement which accounts for screeen size, orientation, and pixel density.
-    // Is used to set the font-size on our <html> element for rem child inheritance.
-    // Design is for desktop first, with our reference device being a 4k monitor, devicePixelRatio of 2, text scaling to mimic a resolution of 2560 x 1440.
+    // Is used to set the font-size on our <html> element for rem child inheritance.  By setting our global font size as a
+    // static px, we can code responsive "min(Xrem, Yvw)" measurments on child elements in a more predictable manner.
     baseFontSize: 10, // 10px is our starting point.
-    refVMax: 2560, // 2560 x 1440 resolution - our ref device
-    refScreenRatio: .56, // 2560 x 1440 ratio - our ref device
-    devicePixelResMultiplier: Math.max(window.devicePixelRatio, 2), // scales up text for high retina displays, but will never go below 2 (the pixel density of our ref device)
+    scaleDownAtWidth: 1024, // scale down for window widths less than 1024px (but no more than 80% dowwnscale)
     curMagicScreenMeasure: 10, // updated every time getMagicScreenMeasure runs
     curMagicScreenScale: 1, // baseFontSize/curMagicScreenMeasure - updated every time getMagicScreenMeasure runs
     getMagicScreenMeasure() { // returns integer (NO unit applied to return value)
-        // 1. When accounting for devicePixelRatio, magicScreenMeasure should increase proportionately to devicePixelRatio.
-        let magicScreenMeasure = utils.baseFontSize * utils.devicePixelResMultiplier; // Our reference device is now at
-        // 2. When screen size (vmax) dips below our refVMax, magicScreenMeasure should decrease proportionately.
-        const vMax = Math.max(window.innerWidth, window.innerHeight);
-        magicScreenMeasure = magicScreenMeasure * Math.min((vMax / utils.refVMax), 1);
-        // 3. When becomes portrait, magicScreenMeasure should decrease
-        const screenRatio = window.innerWidth / window.innerHeight;
-        magicScreenMeasure = magicScreenMeasure * Math.max(Math.min(screenRatio, 1), 0.8);
-        // 4. WWhen accounting for viewport aspect ratio, magicScreenMeasure should decrease for narrow ratios (portrait AND landscape - so our ratio is always vmin / vmax)
-        const absScreenRatio =  Math.min(window.innerWidth, window.innerHeight) / Math.max(window.innerWidth, window.innerHeight);
-        magicScreenMeasure = magicScreenMeasure - (magicScreenMeasure * Math.max(utils.refScreenRatio - absScreenRatio, 0));
+        // 1. When accounting for devicePixelRatio, magicScreenMeasure should increase proportionately to devicePixelRatio. This allows scaled up text for high retina displays
+        let devicePixelResMultiplier = Math.max(1, window.devicePixelRatio);
+        let magicScreenMeasure = utils.baseFontSize * devicePixelResMultiplier;
+        // 2. Scale down for window widths less than 1024px (but no more than 80% dowwnscale)
+        magicScreenMeasure = magicScreenMeasure * Math.min(1, Math.max(window.innerWidth/utils.scaleDownAtWidth, .8));
 
         utils.curMagicScreenMeasure = magicScreenMeasure;
         utils.curMagicScreenScale = utils.curMagicScreenMeasure / utils.baseFontSize;

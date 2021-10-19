@@ -63,7 +63,7 @@ class GNav extends React.Component {
                 <div className="GNav_right" style={css.GNav_right}>
                     <div className="GNav_right_ctrls" style={css.GNav_right_ctrls}>
                         {closeModalBtn}
-                        {/* <hbCC-fEAdmin> */} 
+                        {/* <hbCC-fEAdmin> */}
                         <div style={css.GNav_right_ctrls_icon} onClick={this.showAdminCtrlsModal.bind(this)}>
                             <span class="material-icons material-icons-res-large">settings</span>
                         </div>

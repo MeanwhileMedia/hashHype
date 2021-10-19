@@ -60,7 +60,6 @@ const styles = {
                 'margin-bottom': '3rem',
             },
             modal_body: {
-                'font-size': '1.6rem',
                 'line-height': '150%',
                 'width': '100%'
             },
