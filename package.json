@@ -9,6 +9,7 @@
   "dependencies": {
     "@babel/core": "^7.12.17",
     "@babel/preset-react": "^7.12.13",
+    "@material-icons/svg": "^1.0.19",
     "d3": "^6.5.0",
     "esm": "^3.2.25",
     "googleapis": "^72.0.0",
@@ -25,8 +26,8 @@
     "npm": "^7.6.0",
     "pm2": "^4.5.5",
     "radium": "^0.26.1",
-    "react": "^17.0.1",
-    "react-dom": "^17.0.1",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2",
     "redis": "^3.0.2",
     "snoowrap": "^1.22.0",
     "throttle-debounce": "^3.0.1",

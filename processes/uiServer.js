@@ -46,7 +46,16 @@ const uiServer = {
         '/node_modules/throttle-debounce': '/node_modules/throttle-debounce/esm/index.js',
         '/node_modules/highlight': '/node_modules/highlight.js/lib/core.js',
         '/node_modules/highlight/js': '/node_modules/highlight.js/lib/languages/javascript.js',
-        '/node_modules/highlight/jsStyles.css': '/node_modules/highlight.js/styles/atom-one-dark.css'
+        '/node_modules/highlight/jsStyles.css': '/node_modules/highlight.js/styles/atom-one-dark.css',
+
+        '/node_modules/@material-icons/data_saver_on.svg': '/node_modules/@material-icons/svg/svg/data_saver_on/baseline.svg',
+        '/node_modules/@material-icons/settings.svg': '/node_modules/@material-icons/svg/svg/settings/baseline.svg',
+        '/node_modules/@material-icons/account_circle.svg': '/node_modules/@material-icons/svg/svg/account_circle/baseline.svg',
+        '/node_modules/@material-icons/cancel_presentation.svg': '/node_modules/@material-icons/svg/svg/cancel_presentation/baseline.svg',
+        '/node_modules/@material-icons/error.svg': '/node_modules/@material-icons/svg/svg/error/baseline.svg',
+        '/node_modules/@material-icons/check_circle_outline.svg': '/node_modules/@material-icons/svg/svg/check_circle_outline/baseline.svg',
+        '/node_modules/@material-icons/dangerous.svg': '/node_modules/@material-icons/svg/svg/dangerous/baseline.svg',
+        '/node_modules/@material-icons/article.svg': '/node_modules/@material-icons/svg/svg/article/baseline.svg',
     },
 
     // In defining our koa middleware (below), we expose specific directories to public requests.
@@ -406,6 +415,15 @@ const uiServer = {
                     return;
                 }
 
+                if(requestedPath.search(/\.svg$/) !== -1) {
+                    self.packNodeModuleSvgToEsModule(bareModulePath, (esModuleText) => {
+                        cachedAssetPending.code = esModuleText;
+                        resolve(cachedAssetPending.code);
+                        self.redisClient.set(clientAssetCacheKey, cachedAssetPending);
+                    });
+                    return;
+                }
+
                 const wpCompiler = webpack({
                     mode: 'production',
                     entry: bareModulePath,
@@ -446,7 +464,7 @@ const uiServer = {
     }, // end packNodeModuleToEsModule
 
     packNodeModuleCssToEsModule(bareModulePath, cback) {
-        // Looks like this was an ES module request for a CSS file - wrap the css content in JS that will auto inject it to the page
+        // Looks like this was an ES module request for a CSS file inside a node module - wrap the css content in JS that will auto inject it to the page
         fs.readFile(bareModulePath, (err, cssText) => {
             const esModuleText = `const injectCss = () => {
                 let styleEl = document.createElement('style');
@@ -459,6 +477,17 @@ const uiServer = {
             if (cback) cback(esModuleText);
         });
     }, // end packNodeModuleCssToEsModule
+
+    packNodeModuleSvgToEsModule(bareModulePath, cback) {
+        // Looks like this was an ES module request for an svg file inside a node module - wrap the svg markup in a an export
+        fs.readFile(bareModulePath, (err, svgText) => {
+            console.log('JWWFOO', svgText);
+            if (err) console.error(err);
+            const esModuleText = `const svg = \`${svgText}\`; export default svg;`;
+            console.log(`Compiled SVG into ES module format: ${bareModulePath}`);
+            if (cback) cback(esModuleText);
+        });
+    }, // end packNodeModuleSvgToEsModule
 
 
     redisClient: null,

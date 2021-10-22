@@ -5,6 +5,8 @@ import highlightJsStyles from '/node_modules/highlight/jsStyles.css';
 highlight.registerLanguage('javascript', highlightJs);
 
 import AdminTrainRow from './topTagNetworks-adminTrain-row.jsx'
+import Icon from './hbWidgets/icon.jsx'
+
 import styles from './styles/topTagNetworks-adminTrain.css.js';
 
 import hbClientSocketDbRequests_admin from '../helpers/hbClientSocketDbRequests-admin.js';
@@ -25,7 +27,7 @@ class AdminTrain extends React.Component {
             <AdminTrainRow
                 topTag={thisView.props.topTag}
                 label={(<><p>{thisView.props.topTag.body}</p><div><p>({thisView.props.topTag.id})</p></div></>)}
-                editIcon={'dangerous'}
+                editIcon={<Icon iconName='dangerous' width="2rem"/>}
                 deletePrompt={(
                     <><p><i>Comment is not relevant?</i>
                         <button className="button__sev1" onClick={this.deleteComment.bind(this, this.props.topTag)}>Confirm</button>
@@ -39,7 +41,7 @@ class AdminTrain extends React.Component {
             <AdminTrainRow
                 topTag={thisView.props.topTag}
                 label={(<><p>{this.props.topTag.author.name}</p></>)}
-                editIcon={'dangerous'}
+                editIcon={<Icon iconName='dangerous' width="2rem"/>}
                 deletePrompt={(
                     <><p><i>User is not relevant?</i>
                         <button className="button__sev1" onClick={this.markUserNotRelevant.bind(this, this.props.topTag.author.name, this.props.topTag)}>Confirm</button>
@@ -68,7 +70,7 @@ class AdminTrain extends React.Component {
                 <AdminTrainRow
                     topTag={thisView.props.topTag}
                     label={rowLabel}
-                    editIcon={'dangerous'}
+                    editIcon={<Icon iconName='dangerous' width="2rem"/>}
                     deletePrompt={deletePrompt}
                     ref={rowRef}
                 />
@@ -110,7 +112,7 @@ class AdminTrain extends React.Component {
                 <AdminTrainRow
                     topTag={thisView.props.topTag}
                     label={rowLabel}
-                    editIcon={'article'}
+                    editIcon={<Icon iconName='article' width="2rem"/>}
                     deletePrompt={deletePrompt}
                     ref={rowRef}
                 />

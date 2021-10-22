@@ -2,6 +2,7 @@ import React from '/node_modules/react';
 import Radium from '/node_modules/radium';
 import MsgBox from './msgBox.jsx'
 import TextInput from './hbWidgets/textInput.jsx'
+import Icon from './hbWidgets/icon.jsx'
 
 class MsgBox__reqInvite extends React.Component {
     constructor(props) {
@@ -37,7 +38,7 @@ class MsgBox__reqInvite extends React.Component {
         if (this.state.didRequestInvite) {
             inviteForm = (
                 <div className="inviteForm" style={{position: 'relative', marginTop: '2rem'}}>
-                    <span class="material-icons material-icons__notif material-icons__notif__success">check_circle_outline</span><span>Thank you for your interest.</span>
+                    <Icon iconName="check_circle_outline" width="2rem" /><span style={{marginLeft: '0.5rem'}}>Thank you for your interest.</span>
                 </div>
             );
         }

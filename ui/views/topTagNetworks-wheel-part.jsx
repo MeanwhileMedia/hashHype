@@ -1,6 +1,7 @@
 import React from '/node_modules/react';
 import Radium from '/node_modules/radium';
 import d3 from '/node_modules/d3';
+import Icon from './hbWidgets/icon.jsx'
 import socketViewResponses from '../helpers/hbClientSocketViewResponses.js';
 import styles from './styles/topTagNetworks-wheel-part.css.js';
 
@@ -100,8 +101,8 @@ class TopTagWheelPart extends React.Component {
                 <foreignObject x={this.props.maxOuterRadius-100} y='16' width="200" height="60" style={Object.assign({}, css.wheel_part_buttons_wrapper)}>
                     <div className="wheel_part_buttons" style={Object.assign({}, css.wheel_part_buttons)}>
                         <button className="button__sev1 button__light" onClick={self.props.gNav.showSetTrendActionModal.bind(self.props.gNav)} style={Object.assign({}, css.wheel_text__button)}>
-                            <span class="material-icons">data_saver_on</span>
-                            Action
+                            <Icon iconName="data_saver_on" height="100%" />
+                            Action 
                         </button>
                         <div className="wheel_part_anchor" style={css.wheel_part_anchor}></div>
                     </div>

@@ -131,6 +131,7 @@ class TopTagNetworks extends React.Component {
         }, modalContent);
         this.modalControls.isShown = true;
         this.setState({ modalContent: modalContent });
+        document.querySelector('body').classList.add('modalOpen');
     }
 
     hideModal() {
@@ -143,6 +144,7 @@ class TopTagNetworks extends React.Component {
                 customStyleClasses: []
             },
         });
+        document.querySelector('body').classList.remove('modalOpen');
     }
 
 } // end view

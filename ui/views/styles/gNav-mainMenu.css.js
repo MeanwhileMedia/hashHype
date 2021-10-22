@@ -4,10 +4,8 @@ const styles = {
         // Gnav is a fixed size and all rules are defined in px
         const css = {
             GNavMainMenu: {
-                'margin-left': '60px',
-                'font-size': 'max(1.6rem, 16px)',
+                'margin-left': 'min(5rem, 13vw)',
                 'text-align': 'left',
-                'width': '110px'
             },
             GNavMainMenu_li: {
                 'position': 'relative',
@@ -29,17 +27,24 @@ const styles = {
                 'border-top': '1px solid rgb(255 255 255 / 30%)',
                 'margin-top': '20px',
                 'padding-top': '10px',
-                'font-size': 'max(1.2rem, 12px)',
+                'width': '5rem',
+                'overflow': 'visible',
+            },
+            GNavMainMenu_section_title: {
+                'font-size': 'min(2rem, 6vw)',
+            },
+            GNavMainMenu_subsection_title: {
+                'font-size': 'min(1.4rem, 4vw)',
             },
             GNavMainMenu_li_icon: {
                 'display': 'flex',
                 'flex-direction': 'row',
                 'align-items': 'center',
-                'height': '100%',
                 'position': 'absolute',
-                'top': '1px',
-                'left': '-50px',
-                'transform': 'scale(0.6)'
+                'top': '0.7rem',
+                'right': '100%',
+                'margin-right': '.2rem',
+                'transform-origin': 'right top',
             },
         };
 

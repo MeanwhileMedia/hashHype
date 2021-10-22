@@ -62,12 +62,12 @@ class TopTagnewsColumns extends React.Component {
         const formattedCommentBody = this.formatCommentBody(thisView.activeTopTag);
         const showComment = (
             <>
-                <h4>
+                <h5>
                     {formattedCommentBody}
                     {topSymbolName &&
                         <div><span style={css.newsColumns_right_author}>@{thisView.activeTopTag.author.name || ''}</span></div>
                     }
-                </h4>
+                </h5>
             </>
         );
 

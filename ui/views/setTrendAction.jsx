@@ -49,14 +49,18 @@ class SetTrendAction extends React.Component {
         ];
         const robinhoodForm = (
             <div key="robinhoodActionForm" style={css.setTrendAction_thirdAppsActionForm}>
-                <RadioSwitch options={radioOptions}/>
-                <TextInput placeholder="1" size="small" minWidth="1rem"/>
-                <span>shares of</span>
-                <TextInput placeholder={this.props.activeTopTag.renderedSymbol.symbol} size="small" minWidth="3rem"/>
-                <span>for</span>
-                <TextInput placeholder="Price (USD)" size="small" minWidth="6rem"/>
-                <span>each.</span>
-                <button style={css.setTrendAction_thirdAppsActionForm_save} className="button__sev1" onClick={this.clickedSaveAppAction.bind(this, 'Robinhood')}>Save</button>
+                <span className="noBreakTextGroup noBreakTextGroup__bottomMargin">
+                    <RadioSwitch options={radioOptions}/>
+                </span>
+                <span className="noBreakTextGroup noBreakTextGroup__bottomMargin">
+                    <TextInput placeholder="1" size="small" minWidth="1rem"/>
+                    <span>shares of</span>
+                    <TextInput placeholder={this.props.activeTopTag.renderedSymbol.symbol} size="small" minWidth="3rem"/>
+                    <span>for</span>
+                    <TextInput placeholder="Price (USD)" size="small" minWidth="6rem"/>
+                    <span>each.</span>
+                </span>
+                <button className="button__sev1 button__blockOnMobile" style={css.setTrendAction_thirdAppsActionForm_save} onClick={this.clickedSaveAppAction.bind(this, 'Robinhood')}>Save</button>
             </div>
         );
         return robinhoodForm;
@@ -69,14 +73,18 @@ class SetTrendAction extends React.Component {
         ];
         const coinbaseForm = (
             <div key="coinbaseActionForm" style={css.setTrendAction_thirdAppsActionForm}>
-                <RadioSwitch options={radioOptions}/>
-                <TextInput placeholder="1" size="small" minWidth="1rem"/>
-                <span>coins of</span>
-                <TextInput placeholder={this.props.activeTopTag.renderedSymbol.symbol} size="small" minWidth="3rem"/>
-                <span>for</span>
-                <TextInput placeholder="Price (USD)" size="small" minWidth="6rem"/>
-                <span>each.</span>
-                <button style={css.setTrendAction_thirdAppsActionForm_save} className="button__sev1" onClick={this.clickedSaveAppAction.bind(this, 'Coinbase')}>Save</button>
+                <span className="noBreakTextGroup noBreakTextGroup__bottomMargin">
+                    <RadioSwitch options={radioOptions}/>
+                </span>
+                <span className="noBreakTextGroup noBreakTextGroup__bottomMargin">
+                    <TextInput placeholder="1" size="small" minWidth="1rem"/>
+                    <span>coins of</span>
+                    <TextInput placeholder={this.props.activeTopTag.renderedSymbol.symbol} size="small" minWidth="3rem"/>
+                    <span>for</span>
+                    <TextInput placeholder="Price (USD)" size="small" minWidth="6rem"/>
+                    <span>each.</span>
+                </span>
+                <button className="button__sev1 button__blockOnMobile" style={css.setTrendAction_thirdAppsActionForm_save} onClick={this.clickedSaveAppAction.bind(this, 'Coinbase')}>Save</button>
             </div>
         );
         return coinbaseForm;
@@ -85,7 +93,7 @@ class SetTrendAction extends React.Component {
     renderTwitterActionForm(css) {
         const twitterForm = (
             <div key="twitterActionForm" style={css.setTrendAction_thirdAppsActionForm}>
-                <TextInput placeholder={`Look at ${this.props.activeTopTag.renderedSymbol.symbol}. #trending @hash_hype`} size="large" ctaGutter="3rem"/>
+                <TextInput placeholder={`Look at ${this.props.activeTopTag.renderedSymbol.symbol}. #trending @hash_hype`} size="large" ctaGutter="3rem" textAlign="left" />
                 <div style={css.setTrendAction_thirdAppsActionForm_ctaSection}>
                     <button style={css.setTrendAction_thirdAppsActionForm_save} className="button__sev1" onClick={this.clickedSaveAppAction.bind(this, 'Twitter')}>Save</button>
                 </div>
@@ -101,7 +109,7 @@ class SetTrendAction extends React.Component {
                     <span>Send email to:</span>
                     <TextInput placeholder="person@email.com" size="small" minWidth="3rem"/>
                 </div>
-                <TextInput placeholder={`Look at ${this.props.activeTopTag.renderedSymbol.symbol}. It's trending on HashHype.com`} size="large" ctaGutter="3rem"/>
+                <TextInput placeholder={`Look at ${this.props.activeTopTag.renderedSymbol.symbol}. It's trending on HashHype.com`} size="large" ctaGutter="3rem" textAlign="left" />
                 <div style={css.setTrendAction_thirdAppsActionForm_ctaSection}>
                     <button style={css.setTrendAction_thirdAppsActionForm_save} className="button__sev1" onClick={this.clickedSaveAppAction.bind(this, 'Email')}>Save</button>
                 </div>
@@ -120,7 +128,10 @@ class SetTrendAction extends React.Component {
         return (
             <div className="setTrendAction" style={css.setTrendAction}>
                 <div style={css.setTrendAction_section}>
-                    <h4>The next time<TextInput placeholder={this.props.activeTopTag.renderedSymbol.symbol} minWidth="6rem"/>trends to<TextInput placeholder={this.props.activeTopTag.rank} type="ordinal" minWidth="4rem"/>place:</h4>
+                    <h3>
+                        <span className="noBreakTextGroup">The next time<TextInput placeholder={this.props.activeTopTag.renderedSymbol.symbol} minWidth="6rem" /></span>
+                        <span className="noBreakTextGroup">trends to<TextInput placeholder={this.props.activeTopTag.rank} type="ordinal" minWidth="4rem" />place:</span>
+                    </h3>
                 </div>
                 <div style={css.setTrendAction_section}>
                     <div style={css.setTrendAction_thirdApps}>

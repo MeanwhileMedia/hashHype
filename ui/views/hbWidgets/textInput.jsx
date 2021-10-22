@@ -43,11 +43,14 @@ class TextInput extends React.Component {
     onInputFocus(e) {
         if (!e.target) return;
         if (e.target.innerText === this.determineRenderedVal(this.props.placeholder) && !this.props.preservePlaceholder) {
-            // remove placeholder text now that use has focused
+            const curSelection = document.getSelection();
+            const focusOffset = curSelection.focusOffset;
+            console.log('JWW1', focusOffset)
+            // remove placeholder text now that user has focused
             this.setState({
                 value: '',
                 renderVal: '',
-                curSelection: null
+                curSelection: {focusOffset: 0}
             });
         }
     }
@@ -67,8 +70,11 @@ class TextInput extends React.Component {
         // Restore the carat into it's active position within text
         if (!this.state.curSelection) return;
         const editableEl = this.contenteditableRef.current;
-        const inputtedTextNode = editableEl.childNodes[0];
-        if (!inputtedTextNode) return; // this will be undefined when the contenteditable is empty (backspaced)
+        let inputtedTextNode = editableEl.childNodes[0];
+        if (!inputtedTextNode) { // this will be undefined when the contenteditable is empty (backspaced OR placeholder text was just programatically cleared)
+            inputtedTextNode = document.createTextNode('');
+            editableEl.appendChild(inputtedTextNode);
+        }
         if (inputtedTextNode.textContent !== this.state.renderVal) {
             // because of how react does conditional rendering against a virtual dom, these may become out of sync. Correct manually...
             inputtedTextNode.textContent = this.state.renderVal;
@@ -89,12 +95,14 @@ class TextInput extends React.Component {
         const addStyles = {};
         if (this.props.textAlign) addStyles['text-align'] = this.props.textAlign;
         if (this.props.minWidth) addStyles['min-width'] = this.props.minWidth;
-        if (this.props.ctaGutter) addStyles['padding-bottom'] = this.props.ctaGutter;
+        if (this.props.ctaGutter) {
+            addStyles['padding-bottom'] = this.props.ctaGutter;
+            addStyles['padding-right'] = `${parseInt(this.props.ctaGutter)*2}rem`;
+        }
 
         let addClasses = '';
         if (this.state.value == this.props.placeholder) addClasses = addClasses + 'textInput__empty ';
         if (this.props.size) addClasses = addClasses + `textInput__${this.props.size} `;
-
 
         return (
             <span

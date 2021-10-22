@@ -3,6 +3,7 @@ import Radium from '/node_modules/radium';
 import GNavMainMenu from './gNav-mainMenu.jsx';
 import SetTrendAction from './setTrendAction.jsx';
 import MsgBox__reqInvite from './msgBox--reqInvite.jsx'
+import Icon from './hbWidgets/icon.jsx'
 import utils from '../helpers/utils.js'
 
 import menuText from './styles/gNav-mainMenu-text.jsx';
@@ -49,7 +50,7 @@ class GNav extends React.Component {
         if (this.props.modal.isShown) {
             closeModalBtn = (
                 <div style={Object.assign({}, css.GNav_right_ctrls_icon, css.GNav_closeModalBtn)} onClick={this.hideModal.bind(this)}>
-                    <span class="material-icons material-icons-res-large">cancel_presentation</span>
+                    <Icon iconName="cancel_presentation" width="2.2rem" />
                 </div>
             );
         }
@@ -65,14 +66,14 @@ class GNav extends React.Component {
                         {closeModalBtn}
                         {/* <hbCC-fEAdmin> */}
                         <div style={css.GNav_right_ctrls_icon} onClick={this.showAdminCtrlsModal.bind(this)}>
-                            <span class="material-icons material-icons-res-large">settings</span>
+                            <Icon iconName="settings" width="2.2rem" />
                         </div>
                         {/* </hbCC-fEAdmin> */}
                         <div style={css.GNav_right_ctrls_icon} onClick={this.showSetTrendActionModal.bind(this)}>
-                            <span class="material-icons material-icons-res-large">data_saver_on</span>
+                            <Icon iconName="data_saver_on" width="2.2rem" />
                         </div>
                         <div style={css.GNav_right_ctrls_icon} onClick={this.showAboutModal.bind(this)}>
-                            <span class="material-icons material-icons-res-large">account_circle</span>
+                            <Icon iconName="account_circle" width="2.2rem" />
                         </div>
                     </div>
                 </div>

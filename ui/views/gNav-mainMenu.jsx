@@ -1,7 +1,8 @@
 import React from '/node_modules/react';
 import Radium from '/node_modules/radium';
 import ToggleSwitch from './hbWidgets/toggleSwitch.jsx';
-import Tooltip from './hbWidgets/tooltip.jsx'
+import Icon from './hbWidgets/icon.jsx';
+import utils from '../helpers/utils.js';
 import styles from './styles/gNav-mainMenu.css.js';
 
 class GNavMainMenu extends React.Component {
@@ -23,6 +24,10 @@ class GNavMainMenu extends React.Component {
             activeTrendCats: [this.allTrendCats[0]],
             blockedTrendCats: [] // trend cat strings are added here when a not-logged-in user clicks on a gated category
         };
+    }
+
+    componentDidMount() {
+        utils.setMagicScaleElements();
     }
 
     toggleTrendCat(trendCatName, e) {
@@ -51,7 +56,7 @@ class GNavMainMenu extends React.Component {
                 newActiveTrendCats.splice(newActiveTrendCats.indexOf(trendCatName), 1);
                 self.freezTrendToggling = false;
                 self.setState({'activeTrendCats': newActiveTrendCats});
-            }, 500);
+            }, 200);
             return true
         }
         self.setState({'blockedTrendCats': []});
@@ -72,13 +77,16 @@ class GNavMainMenu extends React.Component {
             let loginTooltip = null;
             if (this.state.blockedTrendCats.indexOf(thisTrendCatName) !== -1) {
                 loginTooltip = (
-                    <Tooltip icon='error' label='Log in' onClick={self.props.gNav.showAboutModal.bind(self.props.gNav)} />
+                    <button onClick={self.props.gNav.showAboutModal.bind(self.props.gNav)}>
+                        <Icon iconName="error" />
+                        Log in
+                    </button>
                 );
             }
             trendCatLis.push(
                 <li key={`trendCat${index}`} style={css.GNavMainMenu_li} onClick={onClick}>
-                    <span style={css.GNavMainMenu_li_icon}><ToggleSwitch checked={isChecked}/></span>
-                    {thisTrendCatName}
+                    <span className="magicScale" style={css.GNavMainMenu_li_icon}><ToggleSwitch checked={isChecked}/></span>
+                    <span style={css.GNavMainMenu_section_title}>{thisTrendCatName}</span>
                     {loginTooltip}
                 </li>
             );
@@ -90,8 +98,12 @@ class GNavMainMenu extends React.Component {
                     {trendCatLis}
                 </ul>
                 <ul style={css.GNavMainMenu_ul__subsection}>
-                    <li key='li5' style={css.GNavMainMenu_li} onClick={this.props.gNav.showAboutModal.bind(this.props.gNav)}>About</li>
-                    <li key='li6' style={css.GNavMainMenu_li} onClick={this.props.gNav.showDisclaimerModal.bind(this.props.gNav)}>Disclaimer</li>
+                    <li key='li5' style={css.GNavMainMenu_li} onClick={this.props.gNav.showAboutModal.bind(this.props.gNav)}>
+                        <span style={css.GNavMainMenu_subsection_title}>About</span>
+                    </li>
+                    <li key='li6' style={css.GNavMainMenu_li} onClick={this.props.gNav.showDisclaimerModal.bind(this.props.gNav)}>
+                        <span style={css.GNavMainMenu_subsection_title}>Disclaimer</span>
+                    </li>
                 </ul>
             </nav>
         );

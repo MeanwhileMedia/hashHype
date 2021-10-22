@@ -23,7 +23,6 @@ const styles = {
             setTrendAction_section: {
                 'width': '100%',
                 'margin-bottom': 'max(2rem, 20px)',
-                'font-size': 'max(1rem, 12px)'
             },
             setTrendAction_section__inviteForm: {
                 'margin-top': '2rem'
@@ -37,7 +36,6 @@ const styles = {
             setTrendAction_thirdApps_icons: {
                 'display': 'flex',
                 'flex-direction': 'row',
-                // 'max-width': '54rem'
             },
             setTrendAction_thirdApps_icon: {
                 'display': 'inline-block',
@@ -61,9 +59,7 @@ const styles = {
                 'display': 'none'
             },
             setTrendAction_thirdAppsActionForm: {
-                // 'max-width': '52rem',
                 'margin': '0 auto',
-                'white-space': 'nowrap'
             },
             setTrendAction_thirdAppsActionForm_save: {
                 'margin-left': '2rem'

@@ -11,6 +11,11 @@
     font-weight: 400;
     padding-bottom: .2rem;
     min-height: 20px;
+    /* bust text inflation algorithm */
+    text-size-adjust: none;
+    -webkit-text-size-adjust: none;
+    -moz-text-size-adjust: none;
+    -ms-text-size-adjust: none;
 }
 .hbWidgets.textInput:focus-visible, .hbWidgets.textInput:focus-within, .hbWidgets.textInput:focus {
     outline: none;
@@ -54,6 +59,8 @@
     -webkit-user-select: none;
     -ms-user-select: none;
     user-select: none;
+    transform: scale(0.6);
+    transform-origin: right top;
 }
 .hbWidgets.toggleSwitch input {
     display: none;
@@ -120,7 +127,6 @@
 
 /* radio switch */
 .hbWidgets.radioSwitch {
-    font-size: max(1rem, 12px);
     -webkit-touch-callout: none;
     -webkit-user-select: none;
     -ms-user-select: none;
@@ -137,9 +143,9 @@
 }
 .hbWidgets.radioSwitch [type="radio"]:checked + label,
 .hbWidgets.radioSwitch [type="radio"]:not(:checked) + label {
+    height: 20px;
+    overflow: hidden;
     position: absolute;
-    top: 0;
-    left: 1rem;
     cursor: pointer;
     display: inline-block;
     color: rgba(0, 0, 0, 0);
@@ -178,58 +184,13 @@
     -webkit-transform: scale(1);
     transform: scale(1);
 }
-/* @media (max-width: 1024px) {
-    .hbWidgets.radioSwitch [type="radio"]:checked + label,
-    .hbWidgets.radioSwitch [type="radio"]:not(:checked) + label {
-        padding-left: 3.2rem;
-    }
-    .hbWidgets.radioSwitch [type="radio"]:checked + label:before,
-    .hbWidgets.radioSwitch [type="radio"]:not(:checked) + label:before {
-        transform: scale(0.9);
-    }
-    .hbWidgets.radioSwitch [type="radio"]:checked + label:after {
-        transform: scale(0.9);
-    }
-} */
-/* @media (max-width: 768px) {
-    .hbWidgets.radioSwitch [type="radio"]:checked + label,
-    .hbWidgets.radioSwitch [type="radio"]:not(:checked) + label {
-        padding-left: 3.2rem;
-        line-height: 3rem;
-    }
-    .hbWidgets.radioSwitch [type="radio"]:checked + label:before,
-    .hbWidgets.radioSwitch [type="radio"]:not(:checked) + label:before {
-        transform: scale(0.8);
-    }
-    .hbWidgets.radioSwitch [type="radio"]:checked + label:after {
-        transform: scale(0.8);
-    }
-} */
+.hbWidgets.radioSwitch .radioSwitch-button {
+    position: absolute;
+    top: 0;
+    left: 0;
+    margin-top: -0.2rem;
+}
 
-/* Tooltip */
-.hbWidgets.tooltip {
-    border: 2px solid rgba(255,255,255,0.4);
-    background-color: rgba(0,0,0,0.3);
-    white-space: nowrap;
-    display: inline-block;
-    padding: .4rem .8rem;
-    font-size: max(1.2rem, 12px);
-    font-weight: 300;
-    letter-spacing: normal;
-    border-radius: 2rem;
-    height: 1.8rem;
-    margin: -1rem 1rem;
-    -webkit-touch-callout: none;
-    -webkit-user-select: none;
-    -ms-user-select: none;
-    user-select: none;
-}
-.hbWidgets .tooltip_icon {
-    font-size: 1.6rem;
-    opacity: 0.8;
-    margin-right: 0.5rem;
-    vertical-align: bottom;
-}
 
 /* Button */
 button {
@@ -243,9 +204,7 @@ button {
     font-family: inherit;
     font-size: max(1rem, 12px);
     box-shadow: none;
-    padding: 0 1rem;
-    padding-top: max(.2rem, 10px);
-    padding-bottom: max(.3rem, 12px);
+    padding: 0.2rem 1rem;
     margin-bottom: -1rem;
     margin-top: -1rem;
     margin-left: .8rem;
@@ -262,17 +221,13 @@ svg button {
     height: 2.4em;
     border-radius: 2em;
     font-size: max(1em, 12px);
-    padding: 0 1em;
-    padding-top: max(.2em, 10px);
-    padding-bottom: max(.3em, 12px);
+    padding: 0.2em 1em;
     margin-bottom: -1em;
     margin-top: -1em;
     margin-left: 0;
 }
 button:hover {
     background-color: rgba(0,0,0,.4);
-    border-top-width: 3px;
-    border-bottom-width: 3px;
 }
 button:focus {
     background-color: rgba(0,0,0,.4);
@@ -294,27 +249,38 @@ button.button__sev2 {
 button.button__disabled {
     opacity: .4;
 }
-button .material-icons {
-    font-size: 1.6rem;
-    margin-left: -0.4rem;
-    margin-right: 0.4rem;
-}
-svg button .material-icons {
-    font-size: 1.6em;
-    margin-left: -0.3em;
-    margin-right: 0.2em;
+button .hbWidgets.icon {
     margin-top: .05em;
+    margin-left: max(-0.4rem, -0.5vw);
+    margin-right: min(0.4rem, 0.5vw);
 }
-button .material-icons:hover {
-    transform: scale(1);
-}
-button:hover .material-icons {
-    opacity: 1;
-}
-@media (max-width: 1024px) {
-}
-@media (max-width: 768px) {
+
+@media only screen and (max-width: 1024px) {
     button {
-        height: 4rem;
+        font-size: max(1.2rem, 16px);
     }
+    button.button__blockOnMobile {
+        width: 100%;
+        display: block;
+        height: 3rem;
+        margin: 1rem 0 !important;
+        padding: 0;
+    }
+}
+
+
+/* icon */
+.hbWidgets.icon {
+    fill: #7c7c7c;
+    cursor: pointer;
+    vertical-align: middle;
+}
+.hbWidgets.icon:hover {
+    fill: #000;
+}
+.modalOpen .hbWidgets.icon {
+    fill: #aeaeae;
+}
+.modalOpen .hbWidgets.icon:hover {
+    fill: #fff;
 }

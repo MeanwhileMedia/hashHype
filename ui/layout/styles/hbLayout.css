@@ -1,11 +1,10 @@
 /* Keep all global styles here which need to load FIRST (in head, before any other assets) */
 
-@import 'https://fonts.googleapis.com/icon?family=Material+Icons';
 @import 'https://fonts.googleapis.com/css?family=Open+Sans:300,400,800';
 @import 'hbWidgets.css';
 
 html {
-    font-size: min(10px, 2vw);
+    font-size: 10px;
     font-family: 'Open Sans', sans-serif;
     margin: 0px;
     padding: 0px
@@ -19,7 +18,6 @@ body {
 }
 
 h2, .heading2 {
-    /* font-size: clamp(3.6rem, 4vw, 6rem); */
     font-size: min(4rem, 8vw);
     margin: 0px;
     font-weight: 300;
@@ -38,7 +36,6 @@ svg h2, svg .heading2 {
     font-size: 4em;
 }
 h3, .heading3 {
-    /* font-size: clamp(3rem, 3vw, 5rem); */
     font-size: min(3rem, 6vw);
     margin: 0px;
     font-weight: 300;
@@ -56,7 +53,6 @@ svg h3, svg .heading3 {
     font-size: 3em;
 }
 h4, .heading4 {
-    /* font-size: clamp(2rem, 1.4vw, 4rem); */
     font-size: min(2rem, 5vw);
     margin: 0px;
     font-weight: 300;
@@ -76,8 +72,7 @@ svg h4, svg .heading4 {
     font-size: 2em;
 }
 h5, .heading5 {
-    text-transform: uppercase;
-    font-size: max(3rem, 22px);
+    font-size: min(2rem, 4vw);
     margin: 0px;
     font-weight: 300;
     line-height: 136%;
@@ -95,7 +90,7 @@ svg h5, svg .heading5 {
 }
 h6, .heading6 {
     text-transform: uppercase;
-    font-size: max(1.4rem, 14px);
+    font-size: min(1.4rem, 3.6vw);
     font-weight: 800;
     margin: 0px;
     border-bottom: 1px solid rgba(255,255,255,.5);
@@ -141,6 +136,21 @@ ul {
     margin: 0;
     padding: 0;
 }
+span.noBreakTextGroup {
+    /* when we have chunks of inline text that need to line break as one, wrap in this class. */
+    white-space: nowrap;
+}
+span.noBreakTextGroup.noBreakTextGroup__bottomMargin {
+    display: inline-block;
+    margin-bottom: 1rem;
+}
+span[contenteditable], div[contenteditable], code[contenteditable] {
+    /* bust text inflation algorithm */
+    text-size-adjust: none;
+    -webkit-text-size-adjust: none;
+    -moz-text-size-adjust: none;
+    -ms-text-size-adjust: none;
+}
 
 .font__light {
     font-weight: 300;
@@ -152,41 +162,12 @@ ul {
     font-weight: 800;
 }
 
-.material-icons {
-    opacity: .6;
-    cursor: pointer;
-    transition: opacity .2s ease, scale .2s ease;
-    font-size: min(2.4rem, 7vw);
-}
-.material-icons:hover {
-    opacity: 1;
-    transform: scale(1.1);
-}
-.material-icons.material-icons__notif {
-    cursor: default;
-    opacity: 1;
-    margin-bottom: -.2rem;
-    margin-right: 0.5rem;
-    vertical-align: bottom;
-}
-.material-icons.material-icons__notif.material-icons__notif__success {
-    color: #6cc16c;
-}
 
-/* @media only screen and (max-width: 1024px) {
-    .material-icons.material-icons-res-large {
-        font-size: max(3rem, 34px);
+@media only screen and (max-width: 1024px) {
+    body {
+        font-size: max(1.2rem, 16px);
     }
-} */
-
-
-/* @media only screen and (max-width: 1024px) {
-    html {
-        font-size: 8px;
+    p {
+        font-size: max(1.2rem, 16px);
     }
 }
-@media only screen and (max-width: 1024px) and (min-resolution: 3dppx) and (orientation: portrait) {
-    html {
-        font-size: 12px;
-    }
-} */
