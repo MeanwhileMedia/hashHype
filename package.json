@@ -41,10 +41,12 @@
     "deployDev01_dev": "node -r esm ./utils/deployCodeSftp.js -target dev01_dev",
     "deployProd01": "node -r esm ./utils/deployCodeSftp.js -target prod01",
     "deployProd01_recover": "node -r esm ./utils/deployCodeSftp.js -target prod01_recover",
+    "deployProd01_flush": "node -r esm ./utils/deployCodeSftp.js -target prod01_flush",
     "deployProd02": "node -r esm ./utils/deployCodeSftp.js -target prod02",
     "genSslCerts": "mkdir -p utils/certs && openssl req -newkey rsa:4096 -x509 -sha256 -days 3650 -nodes -out utils/certs/MeanwhileMedia.crt -keyout utils/certs/MeanwhileMedia.key -subj \"/C=US/ST=Maine/L=Portland/O=MeanwhileMedia/OU=Devs/CN=$npm_config_domain\"",
     "migrateRDB": "node -r esm ./utils/migrateRDB.js --from=$npm_config_from --to=$npm_config_to",
     "preserveLocalRDB": "node -r esm ./utils/preserveLocalRDB.js --action=$npm_config_action",
+    "flushUiServerCache": "node -r esm ./utils/flushUiServerCache.js",
     "single": "pm2 start ./processes/machines/single.config.js --time -- --envname=$npm_config_envname",
     "pm2": "pm2"
   },

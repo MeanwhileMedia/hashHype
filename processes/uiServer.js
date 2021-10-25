@@ -2,13 +2,13 @@ import fs from 'fs';
 import util from 'util';
 import path from 'path';
 import https from 'https';
-import webpack from 'webpack';
 import Koa from 'koa';
 import koaConvert from 'koa-convert';
 import koaFavicon from 'koa-favicon';
 import koaWebsocket from 'koa-websocket';
 import koaStatic from 'koa-static';
 import hbServeJs from '../utils/hbServeJs.js';
+import hbServeNodeModule from '../utils/hbServeNodeModule.js';
 import hbServeHtml from '../utils/hbServeHtml.js';
 import HbClientSocketDbResponses_admin from '../utils/hbClientSocketDbResponses-admin.js';
 import NodeMailer from '../utils/nodeMailer.js';
@@ -18,11 +18,6 @@ import hbCodeChecker from '../utils/hbCodeChecker.js';
 // For self-signed certificates
 const pathToSslKey = path.resolve(process.cwd(), 'utils/certs/MeanwhileMedia.key');
 const pathToSslCert = path.resolve(process.cwd(), 'utils/certs/MeanwhileMedia.crt');
-// For certbot signed ssl certs:
-// const pathToSslKey = path.resolve(process.cwd(), 'utils/certs/meanwhile.media/privkey1.pem');
-// const pathToSslCert = path.resolve(process.cwd(), 'utils/certs/meanwhile.media/cert1.pem');
-// const pathToSslCa = path.resolve(process.cwd(), 'utils/certs/meanwhile.media/chain1.pem');
-
 
 // Koa handles all request routing and middleware for serving static files. koa.io holds our
 // socket.io server which links our views to models. Both are defined and initialized here.
@@ -202,16 +197,13 @@ const uiServer = {
         // Then our utils
         self.server.use(hbServeJs(path.join(self.serverConfig.rootDir, 'ui', 'helpers'), { maxage: 1000 }));
 
-        // Check if the incoming request is for a node_modules library. If so, correct it's alias path to the actualy js file path,
-        // and we also need to run it through webpack so it can be served as an ES module to the browser.
-        self.server.use(async (ctx, next) => { // JWW todo - move this into a middleware file
-            if (!self.bareModuleMap || !self.bareModuleMap[ctx.request.url]) return next();
-            //console.log(util.inspect(ctx, {depth: 10}))
-            const bareModulePath = path.resolve(self.serverConfig.rootDir, self.bareModuleMap[ctx.request.url].slice(1)); //remove leading slash
-            const moduleFileText = await self.packNodeModuleToEsModule(bareModulePath, ctx.request.url);
-            ctx.body = moduleFileText;
-            ctx.type = 'application/javascript';
-        });
+        // Serve files from the node_modules folder, but only if they are mapped above in self.bareModuleMap
+        self.server.use(hbServeNodeModule({
+            nodeModulesPath: path.join(self.serverConfig.rootDir, 'node_modules'),
+            bareModuleMap: self.bareModuleMap,
+            redisClient: self.redisClient,
+            resOpts: { maxage: 1000 }
+        }));
 
         // Serve html from our ui/layout directory. All html is compiled in hbServeHtml which adds reqModifier to script tags.
         self.server.use(hbServeHtml(path.join(self.serverConfig.rootDir, 'ui', 'layout'), { maxage: 1000 }));
@@ -383,112 +375,6 @@ const uiServer = {
         }
         return decodedMessage;
     },
-
-    packNodeModuleToEsModule(bareModulePath, requestedPath){ //requestedPath is the exact string declared in the import statement: import react from "node_modules/react"
-        const self = uiServer;
-        const snakeToCamel = (str) => str.replace(/([-_][a-z])/g, (group) => {
-            return group.toUpperCase().replace('-', '').replace('_', '')
-        });
-        const requestedLibName = snakeToCamel(requestedPath.split('/').pop());
-
-        return new Promise( (resolve, reject) => {
-            // First check our FE js modules that have been cached to redis DB. This really only applies to dev environment because on prod everything is CDN cached.
-            const clientAssetCacheKey = `clientAssetCache:${bareModulePath}`;
-            self.redisClient.get(clientAssetCacheKey, (cachedAssetObj) => {
-                if(cachedAssetObj) {
-                    console.log(`Found a cached version of requested node_module: ${bareModulePath}`);
-                    resolve(cachedAssetObj.code);
-                    return;
-                }
-
-                const cachedAssetPending = {path: bareModulePath, code: ''};
-                const compiledPath = path.resolve(self.serverConfig.rootDir);
-                const compiledFilename = `bareModule_${Date.now()}.js`;
-                console.log(`Now attempting to serve request for a node_module: ${bareModulePath}`);
-
-                if(requestedPath.search(/\.css$/) !== -1) {
-                    self.packNodeModuleCssToEsModule(bareModulePath, (esModuleText) => {
-                        cachedAssetPending.code = esModuleText;
-                        resolve(cachedAssetPending.code);
-                        self.redisClient.set(clientAssetCacheKey, cachedAssetPending);
-                    });
-                    return;
-                }
-
-                if(requestedPath.search(/\.svg$/) !== -1) {
-                    self.packNodeModuleSvgToEsModule(bareModulePath, (esModuleText) => {
-                        cachedAssetPending.code = esModuleText;
-                        resolve(cachedAssetPending.code);
-                        self.redisClient.set(clientAssetCacheKey, cachedAssetPending);
-                    });
-                    return;
-                }
-
-                const wpCompiler = webpack({
-                    mode: 'production',
-                    entry: bareModulePath,
-                    target: 'web',
-                    externals: {
-                        react: 'react',
-                    },
-                    output: {
-                        path: compiledPath,
-                        filename: compiledFilename,
-                        libraryTarget: 'window',
-                        library: requestedLibName,
-                    },
-                }, (err, stats) => {
-                    if (err || stats.hasErrors() ) {
-                        console.log(`Error while webpacking requested node_modules library: ${err} ${stats}`); //${stats.toJson("minimal")}`);
-                    }
-                    //read local file to send back as text, then delete the local output file(s)
-                    const compiledFilePath = path.resolve(compiledPath, compiledFilename);
-                    fs.readFile(compiledFilePath, (err, compiledText) => {
-                        if(err) console.log(err);
-                        const esModuleText = `${compiledText} \n \n export default ${requestedLibName};`;
-                        // self.packedEsModuleCache[bareModulePath] = esModuleText;
-                        console.log(`Compiled node_modules asset into ES module format: ${bareModulePath}`); // -> ${esModuleText}`);
-                        cachedAssetPending.code = esModuleText;
-                        resolve(cachedAssetPending.code);
-                        self.redisClient.set(clientAssetCacheKey, cachedAssetPending);
-
-                        fs.unlink(compiledFilePath, (err) => {
-                            if(err) console.log(err);
-                            fs.unlink(compiledFilePath.replace('.js', '.js.LICENSE.txt'), () => {});
-                        });
-                    });
-                }); // end webpack
-            }); // end self.redisClient.get(clientAssetCacheKey
-        }); // end return new Promise
-
-    }, // end packNodeModuleToEsModule
-
-    packNodeModuleCssToEsModule(bareModulePath, cback) {
-        // Looks like this was an ES module request for a CSS file inside a node module - wrap the css content in JS that will auto inject it to the page
-        fs.readFile(bareModulePath, (err, cssText) => {
-            const esModuleText = `const injectCss = () => {
-                let styleEl = document.createElement('style');
-                styleEl.innerHTML = "${cssText}";
-                document.body.appendChild(styleEl);
-            };
-            injectCss();
-            export default injectCss;`.replace(/(\r\n|\n|\r)/gm, ""); //remove linebreaks
-            console.log(`Compiled CSS into ES module format: ${bareModulePath}`);
-            if (cback) cback(esModuleText);
-        });
-    }, // end packNodeModuleCssToEsModule
-
-    packNodeModuleSvgToEsModule(bareModulePath, cback) {
-        // Looks like this was an ES module request for an svg file inside a node module - wrap the svg markup in a an export
-        fs.readFile(bareModulePath, (err, svgText) => {
-            console.log('JWWFOO', svgText);
-            if (err) console.error(err);
-            const esModuleText = `const svg = \`${svgText}\`; export default svg;`;
-            console.log(`Compiled SVG into ES module format: ${bareModulePath}`);
-            if (cback) cback(esModuleText);
-        });
-    }, // end packNodeModuleSvgToEsModule
-
 
     redisClient: null,
     initRedisClient(cback) {

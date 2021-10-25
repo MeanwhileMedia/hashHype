@@ -32,7 +32,7 @@ You agree not to copy, modify, reformat, download, store, reproduce, reprocess, 
 
 Either HashHype or its third party data or content providers have exclusive proprietary rights in the data and information provided.
 
-HashHype displays content from third parties. Displayed content may originate from sources which are not affiliated with HashHype. Displayed content does not necessarily represent the views of HashHype or its affiliates. Displayed content is uncensored and may not be suitable for all audiences.
+HashHype displays content from third parties. Displayed content may originate from sources which are not affiliated with HashHype. Displayed content does not necessarily represent the views of HashHype or its affiliates. Displayed content is not censored for all audiences.
 `;
 
 export default {

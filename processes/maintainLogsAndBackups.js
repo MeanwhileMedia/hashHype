@@ -3,15 +3,11 @@ import path from 'path';
 import yargs from 'yargs';
 import {google} from 'googleapis';
 import RedisClient from '../utils/redisClient.js';
+import gDriveConfig from '../utils/googleClient-config.js';
 
 const logDir = path.resolve(process.cwd(), 'utils/logs');
 const rdbDir = path.resolve(process.cwd(), 'utils/db');
 const tstampPosInFilename = 1; // where filename is "dev01-18908-uiServer-out.log", we extract the tstamp portion via fileName.split('-')[tstampPosInFilename];
-
-const cliArgs = yargs(process.argv).argv;
-const gDriveConfigBuffer = new Buffer(cliArgs.gdrive, 'base64');
-const gDriveConfigJson = gDriveConfigBuffer.toString('ascii');
-const gDriveConfig = JSON.parse(gDriveConfigJson);
 
 // This class performs maintenance tasks related to log rotation, DB snapshot backup to cloud, DB health/status
 // monitoring and logging, and is a general catch-all for maintenance tasks.

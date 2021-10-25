@@ -3,7 +3,6 @@
 const fs = require('fs');
 const path = require('path');
 const redisConfigs = require('../../utils/redisClient-config.js');
-const googleConfigs = require('../../utils/googleClient-config.js');
 
 const rdbDir = path.resolve(process.cwd(), 'utils/db');
 const logDir = path.resolve(process.cwd(), 'utils/logs');
@@ -15,19 +14,10 @@ fs.mkdirSync(logDir, {recursive: true});
 
 const genConfigs = {
 
-    allDbClientConfigs: {}, // all configs added to this array in below dbs function are then passed to each individual app process as the "--dbs" arg (a base64 encoded JSON string)
+    // allDbClientConfigs: {}, // all configs added to this array in below dbs function are then passed to each individual app process as the "--dbs" arg (a base64 encoded JSON string)
     dbs: () => {
         const allRedisServerProcessConfigs = [];
         [redisConfigs.servers.short(), redisConfigs.servers.long()].forEach((thisRedisConfig) => {
-            genConfigs.allDbClientConfigs[thisRedisConfig.dbName] = {
-                dbName: thisRedisConfig.dbName,
-                redisHost: thisRedisConfig.hostInfo.address,
-                redisPort: thisRedisConfig.serverArgs.port,
-                redisPassword: thisRedisConfig.serverArgs.requirepass,
-                storeNamespaces: thisRedisConfig.storeNamespaces,
-                preserveNamespaces: thisRedisConfig.preserveNamespaces
-            };
-
             let redisServerConfigString = '';
             for (let [key, value] of Object.entries(thisRedisConfig.serverArgs)) {
                 // If this is the redis config "dbfilename", we must also prepend the envname at this point.
@@ -49,14 +39,6 @@ const genConfigs = {
     }, // end 'dbs'
 
     apps: () => {
-        const dbsJson = JSON.stringify(genConfigs.allDbClientConfigs);
-        const dbsJsonBuffer = new Buffer(dbsJson);
-        const dbsJsonBase64Encoded = dbsJsonBuffer.toString('base64');
-
-        const googleDriveConfigJson = JSON.stringify(googleConfigs.genConfigForCliArg());
-        const googleDriveConfigJsonBuffer = new Buffer(googleDriveConfigJson);
-        const googleDriveConfigJsonBase64Encoded = googleDriveConfigJsonBuffer.toString('base64');
-
         let inspect = '';
         if (genConfigs.cliArgs.inspect) inspect = '--inspect';
 
@@ -64,42 +46,37 @@ const genConfigs = {
             {
                 name: 'UI Server',
                 script: './processes/uiServer.js',
-                args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
+                // args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('uiServer', 'err'),
                 out_file: genConfigs.getLogPath('uiServer', 'out'),
             }, {
                 name: 'Fetch Reddit Comments',
                 script: './processes/fetchRedditComments.js',
-                args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('fetchReddit', 'err'),
                 out_file: genConfigs.getLogPath('fetchReddit', 'out')
             }, {
                 name: 'Fetch Stock Symbols',
                 script: './processes/fetchCoinAndStockSymbols.js',
-                args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('stockSymbols', 'err'),
                 out_file: genConfigs.getLogPath('stockSymbols', 'out')
             }, {
                 name: 'Comment Word Extractor',
                 script: './processes/extractWordsFromComments.js',
-                args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('wordExtractor', 'err'),
                 out_file: genConfigs.getLogPath('wordExtractor', 'out')
             }, {
                 name: 'Top Comment Stats',
                 script: './processes/topCommentStats.js',
-                args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
                 interpreter_args: `-r esm ${inspect}`,
                 error_file: genConfigs.getLogPath('topComments', 'err'),
                 out_file: genConfigs.getLogPath('topComments', 'out')
             }, {
                 name: 'MaintainLogsAndBackups',
                 script: './processes/maintainLogsAndBackups.js',
-                args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('maintenance', 'err'),
                 out_file: genConfigs.getLogPath('maintenance', 'out')

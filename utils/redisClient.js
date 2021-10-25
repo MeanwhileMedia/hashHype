@@ -1,16 +1,13 @@
 import redis from 'redis';
 import yargs from 'yargs';
-const cliArgs = yargs(process.argv).argv;
-
-const buffer = new Buffer(cliArgs.dbs, 'base64');
-const redisDbConfigsJson = buffer.toString('ascii');
-const redisDbConfigs = JSON.parse(redisDbConfigsJson);
+import redisClientConfig from './redisClient-config.js';
 
 // This extends wraps node_redis functionality. It hanldles multiple database configs, offers throttled functionality +more.
 class RedisClient {
     constructor(opts) {
         const self = this;
         this.clients = null;
+        this.redisDbConfigs = this.getRedisDbConfigs();
         this.initAllClients(() => {
             self.attachThrottleFuncs();
             self.throttle.initSetBatchInterval();
@@ -21,6 +18,22 @@ class RedisClient {
         });
     }
 
+    getRedisDbConfigs() {
+        // Extract and normalize just certain properties from our redisClient-config file (the properties needed to connect a new db client).
+        const redisDbConfigs = {};
+        [redisClientConfig.servers.short(), redisClientConfig.servers.long()].forEach((thisRedisConfig) => {
+            redisDbConfigs[thisRedisConfig.dbName] = {
+                dbName: thisRedisConfig.dbName,
+                redisHost: thisRedisConfig.hostInfo.address,
+                redisPort: thisRedisConfig.serverArgs.port,
+                redisPassword: thisRedisConfig.serverArgs.requirepass,
+                storeNamespaces: thisRedisConfig.storeNamespaces,
+                preserveNamespaces: thisRedisConfig.preserveNamespaces
+            };
+        });
+        return redisDbConfigs;
+    }
+
     initAllClients(cback) {
         // assigns to this.clients object 2 clients for every db configured in redisClient-config.js -
         // one client for db actions, and another for pubsub actions. I.e. for a machine configured with
@@ -28,7 +41,7 @@ class RedisClient {
         const self = this;
         self.clients = {};
         const clientConnectPromises = [];
-        for (const [thisDbName, thisDbConfig] of Object.entries(redisDbConfigs)) {
+        for (const [thisDbName, thisDbConfig] of Object.entries(self.redisDbConfigs)) {
             const clientOpts = {
                 host: thisDbConfig.redisHost,
                 port: thisDbConfig.redisPort,
@@ -92,7 +105,7 @@ class RedisClient {
         // First determine which db(s) this command is configured to execute against. A key may be found to match a "storeNamespaces" pattern for multiple databases.
         const storeToDbs = [];
         const preserveToDbs = [];
-        for (const [thisDbName, thisDbConfig] of Object.entries(redisDbConfigs)) {
+        for (const [thisDbName, thisDbConfig] of Object.entries(self.redisDbConfigs)) {
             // 1. find matching thisDbConfig.storeNamespaces for this key
             if (!Array.isArray(thisDbConfig.storeNamespaces) || thisDbConfig.storeNamespaces.length === 0) continue;
             thisDbConfig.storeNamespaces.some((storeConf) => {
@@ -388,6 +401,15 @@ class RedisClient {
             cmdArgsObj.cback = commandArgs[2] || null;
             cmdArgsObj.reformCommandArgs = () => {
                 return [cmdArgsObj.key, cmdArgsObj.ttlMs, cmdArgsObj.cback, cmdArgsObj.dbName];
+            };
+            return cmdArgsObj;
+        }
+        if (cmdArgsObj.command === 'keys') {
+            cmdArgsObj.isReadOp = true;
+            cmdArgsObj.key = commandArgs[0];
+            cmdArgsObj.cback = commandArgs[1] || null;
+            cmdArgsObj.reformCommandArgs = () => {
+                return [cmdArgsObj.key, cmdArgsObj.cback, cmdArgsObj.dbName];
             };
             return cmdArgsObj;
         }
@@ -694,6 +716,25 @@ class RedisClient {
         });
     }
 
+    keys(key, cback, dbName) {
+        const self = this;
+        const normalizedArgs = self.normalizeRedisCommandArgs('keys', arguments);
+        if (!dbName) dbName = self.determineTargetDb(normalizedArgs);
+        if (!dbName) return;
+        self.clients[dbName].db.keys(normalizedArgs.key, (err, res) => {
+            if (err) {
+                console.warn(err);
+                if (normalizedArgs.cback) normalizedArgs.cback(null);
+                return;
+            }
+            if (!res) {
+                if (normalizedArgs.cback) normalizedArgs.cback(null);
+                return;
+            }
+            if (normalizedArgs.cback) normalizedArgs.cback(res);
+        });
+    }
+
     info(category = 'all', cback, dbName = 'all') {
         const self = this;
         const gotInfoForDbs = []; // Where the responses will be held for all dbs until ready for cback
@@ -708,7 +749,7 @@ class RedisClient {
             });
         }
         if (getInfoForDbs[0] === 'all') {
-            getInfoForDbs = Object.keys(redisDbConfigs);
+            getInfoForDbs = Object.keys(self.redisDbConfigs);
         }
         let gotInfoResponseCount = 0;
         getInfoForDbs.forEach((thisDbName) => {
