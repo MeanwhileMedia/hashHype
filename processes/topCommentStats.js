@@ -1,5 +1,6 @@
-import { throttle } from 'throttle-debounce';
 import util from 'util';
+import { throttle } from 'throttle-debounce';
+import yargs from 'yargs';
 import RedisClient from '../utils/redisClient.js';
 import commentModel from '../utils/objectModels/comment.js';
 import symbolModel from '../utils/objectModels/symbol.js';
@@ -7,6 +8,8 @@ import trainingModels from '../utils/objectModels/training.js';
 
 import events from 'events';
 events.EventEmitter.defaultMaxListeners = Infinity;
+
+const argv = yargs(process.argv.slice(2)).argv;
 
 class TopCommentsStats {
     constructor() {

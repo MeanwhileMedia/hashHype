@@ -46,7 +46,7 @@ const genConfigs = {
             {
                 name: 'UI Server',
                 script: './processes/uiServer.js',
-                // args: `--dbs=${dbsJsonBase64Encoded} --gdrive=${googleDriveConfigJsonBase64Encoded}`,
+                args: `--envname=${genConfigs.cliArgs.envname}`,
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('uiServer', 'err'),
                 out_file: genConfigs.getLogPath('uiServer', 'out'),
@@ -77,6 +77,7 @@ const genConfigs = {
             }, {
                 name: 'MaintainLogsAndBackups',
                 script: './processes/maintainLogsAndBackups.js',
+                args: `--envname=${genConfigs.cliArgs.envname}`,
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('maintenance', 'err'),
                 out_file: genConfigs.getLogPath('maintenance', 'out')

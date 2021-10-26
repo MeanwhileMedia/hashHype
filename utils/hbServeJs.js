@@ -18,11 +18,9 @@ var hbServeJs = {
                     console.log(`File not found at incoming js request url. ${ctx.request.url}`);
                     return next();
                 }
-                const maxAge = opts.maxAge || 0;
                 ctx.set({
                     'Content-Type': 'application/javascript;charset=utf-8',
                     'Content-Length': Buffer.byteLength(compiledCode),
-                    'Cache-Control': `max-age=${maxAge / 1000}`, // maxage is passed to this middleware in ms. Header is in s
                 });
                 ctx.body = compiledCode;
             } else {

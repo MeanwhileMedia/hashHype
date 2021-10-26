@@ -18,11 +18,9 @@ var hbServeNodeModule = {
             const moduleFileText = await self.packNodeModuleToEsModule(bareModulePath, ctx.request.url);
             ctx.body = moduleFileText;
 
-            const maxAge = opts.resOpts.maxAge || 0;
             ctx.set({
                 'Content-Type': 'application/javascript;charset=utf-8',
                 'Content-Length': Buffer.byteLength(moduleFileText),
-                'Cache-Control': `max-age=${maxAge / 1000}`, // maxage is passed to this middleware in ms. Header is in s
             });
         };
     },

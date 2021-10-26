@@ -1,6 +1,9 @@
 import https from 'https';
+import yargs from 'yargs';
 import RedisClient from '../utils/redisClient.js';
 import symbolModel from '../utils/objectModels/symbol.js';
+
+const argv = yargs(process.argv.slice(2)).argv;
 
 class FetchCoinAndStockSymbols {
     constructor() {

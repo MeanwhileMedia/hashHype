@@ -1,12 +1,15 @@
 import natural from 'natural';
 import urlRegex from 'url-regex';
 import urlNormalize from 'normalize-url';
+import yargs from 'yargs';
 import RedisClient from '../utils/redisClient.js';
 import commentModel from '../utils/objectModels/comment.js';
 import symbolModel from '../utils/objectModels/symbol.js';
 
 import events from 'events';
 events.EventEmitter.defaultMaxListeners = Infinity;
+
+const argv = yargs(process.argv.slice(2)).argv;
 
 const naturalTokenizer = new natural.WordPunctTokenizer();
 const naturalNGrams = natural.NGrams;

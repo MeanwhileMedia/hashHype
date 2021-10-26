@@ -2,9 +2,8 @@ import fs from 'fs';
 import util from 'util';
 import path from 'path';
 import https from 'https';
+import yargs from 'yargs';
 import Koa from 'koa';
-import koaConvert from 'koa-convert';
-import koaFavicon from 'koa-favicon';
 import koaWebsocket from 'koa-websocket';
 import koaStatic from 'koa-static';
 import hbServeJs from '../utils/hbServeJs.js';
@@ -14,6 +13,8 @@ import HbClientSocketDbResponses_admin from '../utils/hbClientSocketDbResponses-
 import NodeMailer from '../utils/nodeMailer.js';
 import RedisClient from '../utils/redisClient.js';
 import hbCodeChecker from '../utils/hbCodeChecker.js';
+
+const argv = yargs(process.argv.slice(2)).argv;
 
 // For self-signed certificates
 const pathToSslKey = path.resolve(process.cwd(), 'utils/certs/MeanwhileMedia.key');
@@ -25,13 +26,16 @@ const uiServer = {
 
     serverConfig: {
         rootDir: process.cwd(), //the project root
-        httpsPort: 8080 // this will be the exposed server port regardless of what machine the uiServer is run on
+        httpsPort: 8080, // this will be the exposed server port regardless of what machine the uiServer is run on
+
+        // We let browsers cache files for 10 minutes and CDN cache indefinitely - CDN cache is cleared during a prod deploy.
+        cacheControlHeader: `public, max-age=600, s-maxage=31536000` // ms. used when setting cache header 'Cache-Control': `${cacheControlHeader}`
     },
 
     // ES module imports in browser do not yet support "bare" module imports. Maintain a map here, and use a custom syntax to import node_modules.
     // Not yet supported: 'import _ from "underscore"'
     // Current polyfill: 'import _ from "/node_modules/underscore"'
-    // See https://medium.com/webpack/the-state-of-javascript-modules-4636d1774358
+    // These all go through hbServeNodeModule upon path match.
     bareModuleMap: {
         '/node_modules/react': '/node_modules/react/cjs/react.production.min.js',
         '/node_modules/react-dom': '/node_modules/react-dom/cjs/react-dom.production.min.js',
@@ -58,7 +62,7 @@ const uiServer = {
     // This causes our require paths to be out of sync between server and client modules. To compensate,
     // we are setting "routeProxies" to support consistent paths, and koa's flat asset pipeline below.
     routeProxies: [
-        { target: '/ui/views/', redirect: '/' }, // applyExtension will always be appended to request.url - it allows ES import paths without extensions (for consistency with backend)
+        { target: '/ui/views/', redirect: '/' },
         { target: '/ui/views/styles/', redirect: '/' },
         { target: '/ui/helpers/', redirect: '/' },
         { target: '/ui/layout/', redirect: '/' },
@@ -95,13 +99,23 @@ const uiServer = {
         //self.server.listen(self.serverConfig.httpsPort);
         console.log(`Koa server is now listening on port ${self.serverConfig.httpsPort}`);
 
+        // response time logger
         self.server.use((ctx, next) => {
-            const start = new Date(); // response time logger
+            const start = new Date();
             return next().then(() => {
                 const ms = new Date() - start;
                 console.log(`${ctx.request.method} ${ctx.request.url} - ${ms} ms`);
             });
         });
+
+        // Set our 'Cache-Control' header. For simplicity, this is the same for all assets, and a full CDN cache clear is performed during a prod release.
+        self.server.use((ctx, next) => {
+            ctx.set({
+                'Cache-Control': self.serverConfig.cacheControlHeader,
+            });
+            return next();
+        });
+
         self.initDataPipeline();
         self.initAssetPipeline();
         self.server.on('error', (err) => {
@@ -172,7 +186,7 @@ const uiServer = {
         // /////////////
         // Serve static assets. Views, styles, utils, third party packages.
 
-        // Now check the incoming request url against our routeProxies defined above.
+        // First check the incoming request url against our routeProxies defined above.
         // Manually alter the url if we find a match then pass it along.
         if (self.routeProxies) {
             self.server.use((ctx, next) => {
@@ -189,33 +203,33 @@ const uiServer = {
         }
 
         // Now our react components (views)
-        self.server.use(hbServeJs(path.join(self.serverConfig.rootDir, 'ui', 'views'), { maxage: 1000 })); // maxage is in ms  TEMP DEV TODO revisit our maxage setting
+        self.server.use(hbServeJs(path.join(self.serverConfig.rootDir, 'ui', 'views')));
 
         // Next we check for radium styles defined as js files in views/styles.
-        self.server.use(hbServeJs(path.join(self.serverConfig.rootDir, 'ui', 'views', 'styles'), { maxage: 1000 }));
+        self.server.use(hbServeJs(path.join(self.serverConfig.rootDir, 'ui', 'views', 'styles')));
 
         // Then our utils
-        self.server.use(hbServeJs(path.join(self.serverConfig.rootDir, 'ui', 'helpers'), { maxage: 1000 }));
+        self.server.use(hbServeJs(path.join(self.serverConfig.rootDir, 'ui', 'helpers')));
 
         // Serve files from the node_modules folder, but only if they are mapped above in self.bareModuleMap
         self.server.use(hbServeNodeModule({
             nodeModulesPath: path.join(self.serverConfig.rootDir, 'node_modules'),
             bareModuleMap: self.bareModuleMap,
             redisClient: self.redisClient,
-            resOpts: { maxage: 1000 }
+            resOpts: { maxage: self.serverConfig.responseCacheMaxAge }
         }));
 
         // Serve html from our ui/layout directory. All html is compiled in hbServeHtml which adds reqModifier to script tags.
-        self.server.use(hbServeHtml(path.join(self.serverConfig.rootDir, 'ui', 'layout'), { maxage: 1000 }));
+        self.server.use(hbServeHtml(path.join(self.serverConfig.rootDir, 'ui', 'layout')));
 
         // Next, add support for static layout files that didn't match as HTML (like hbLayout.css). These files are not compiled.
-        self.server.use(koaStatic(path.join(self.serverConfig.rootDir, 'ui', 'layout'), { maxage: 1000 }));
+        self.server.use(koaStatic(path.join(self.serverConfig.rootDir, 'ui', 'layout')));
 
         // favicon
-        self.server.use(koaFavicon(path.join(self.serverConfig.rootDir, 'ui', 'images', 'favicon.ico'), { maxage: 1000 }));
+        self.server.use(koaStatic(path.join(self.serverConfig.rootDir, 'ui', 'images', 'favicon.ico')));
 
         // Add a route for static image files
-        self.server.use(koaStatic(path.join(self.serverConfig.rootDir, 'ui', 'images'), { maxage: 1000 }));
+        self.server.use(koaStatic(path.join(self.serverConfig.rootDir, 'ui', 'images')));
 
         // If the request didn't match static resources, then we will assume they just
         // landed at our root url, and they need hbLayout which loads entry point.
@@ -223,8 +237,9 @@ const uiServer = {
             console.log(`Serving hbLayout to new client session for entry point: ${ctx.request.url}`);
             self.createOrDeleteLandingCookies(ctx);
             ctx.request.url = 'hbLayout.html';
-            return hbServeHtml(path.join(self.serverConfig.rootDir, 'ui', 'layout'), { maxage: 1000 })(ctx, next);
+            return hbServeHtml(path.join(self.serverConfig.rootDir, 'ui', 'layout'))(ctx, next);
         });
+
     }, // initAssetPipeline
 
     createOrDeleteLandingCookies(ctx) {

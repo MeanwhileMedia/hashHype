@@ -1,7 +1,9 @@
 import snoowrap from 'snoowrap';
+import yargs from 'yargs';
 import RedisClient from '../utils/redisClient.js';
 import commentModel from '../utils/objectModels/comment.js';
 
+const argv = yargs(process.argv.slice(2)).argv;
 
 // This class should be run independenly in it's own node.js process. It is the most basic implementation
 // of simply pulling neww comments from a subreddit, then immediately saving them, unparsed, to redis.

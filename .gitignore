@@ -29,6 +29,7 @@ node_modules/
 # dotenv environment variables file
 .env
 .env.test
+.tmp.*
 
 utils/logs/
 utils/db/
@@ -39,3 +40,4 @@ redisClient-config.js
 googleClient-config.js
 hbCodeChecker-config.js
 nodeMailer-config.js
+flushCDNCache-config.js
