@@ -41,8 +41,7 @@ var hbClient = {
                         dataChangeMessage.tstamp  = now - (now % hbClient.fauxSocketPollIntervalLength)
                         hbClient.sendFauxSocketMessage(dataChangeMessage, (resMsg, reqStatus) => {
                             if ((!resMsg || reqStatus.toString()[0] !== '2') && !hbClient.fauxSocketBacktrackingLeastStaleTstamp[dataChangeMessage.channel]) {
-                                console.log(`Faux socket received a failure response code (${reqStatus})`);
-                                hbClient.initFauxSocketBacktrack(dataChangeMessage);
+                                console.log(`Faux socket received a failure response code (${reqStatus})`, resMsg);
                             }
                         });
                     }, hbClient.fauxSocketPollIntervalLength);
@@ -134,84 +133,6 @@ var hbClient = {
             return null;
         }
         return decodedMessage;
-    },
-
-    initFauxSocketBacktrack(failedSocketReqMsg, backtrackStrategy) {
-        // When we initFauxSocketBacktrack, our fauxSocketPollIntervals will continue to send requests for new data using the bracketed timstamp cache buster, BUT we
-        // will ALSO send requests for data backwards in time. It will keep doing this until it gets a 200 response - meaning it located
-        // the most recent successful response which was cached on CDN - serving this least-stale content is a temporary stop gap until the origin server comes back online.
-        if (!failedSocketReqMsg || !failedSocketReqMsg.tstamp) return;
-
-        if (!hbClient.fauxSocketBacktrackingLeastStaleTstamp[failedSocketReqMsg.channel]) {
-            hbClient.fauxSocketBacktrackingLeastStaleTstamp[failedSocketReqMsg.channel] = 'pending';
-            console.log(`Origin server sent a non 200 response to our faux socket. Will now init backtracking channel ${failedSocketReqMsg.channel} to find the least stale data set which is cached on CDN...`);
-        }
-
-        backtrackStrategy = backtrackStrategy || {
-            curStep: 1,
-            curStepTries: 0,
-            lastTestedReqMsg: null,
-            '1': (prevTestReqMsg, self) => {
-                // Step back in time by ${backStepInterval} ms until we reach the first 200 response.
-                const backStepInterval = 600000; // 10 minutes
-                const maxSteps = 24; // 4 hours
-                let nextTstamp = prevTestReqMsg.tstamp - backStepInterval;
-                nextTstamp = nextTstamp - (nextTstamp % hbClient.fauxSocketPollIntervalLength);
-                ++self.curStepTries;
-                if (self.curStepTries > maxSteps) return null;
-                self.lastTestedReqMsg = prevTestReqMsg;
-                return nextTstamp;
-            },
-            '1-test': (curTestReqMsg, reqStatusCode, self) => {
-                let succesTstamp = false;
-                if (reqStatusCode === 200) {
-                    succesTstamp = curTestReqMsg.tstamp;
-                    console.log(`Tracked backward ${self.curStepTries*10} minutes to recover cached CDN data for fauxSocket req:`, curTestReqMsg);
-                }
-                return succesTstamp;
-            },
-            '2': (prevTestReqMsg, self) => {
-                // Step forward in time by ${forwardStepInterval} ms until we reach the first non-200 response.
-                const forwardStepInterval = 60000; // 1 minute
-                const maxSteps = 10; // 10 minutes
-                let nextTstamp = prevTestReqMsg.tstamp + forwardStepInterval;
-                nextTstamp = nextTstamp - (nextTstamp % hbClient.fauxSocketPollIntervalLength);
-                ++self.curStepTries;
-                if (self.curStepTries > maxSteps) return null;
-                self.lastTestedReqMsg = prevTestReqMsg;
-                return nextTstamp;
-            },
-            '2-test': (curTestReqMsg, reqStatusCode, self) => {
-                let succesTstamp = false;
-                if (reqStatusCode !== 200) {
-                    succesTstamp = self.lastTestedReqMsg.tstamp;
-                    console.log(`A least-stale CDN cache was located at tstamp ${succesTstamp} for fauxSocket req:`, self.lastTestedReqMsg);
-                }
-                return succesTstamp;
-            },
-        };
-
-        const backTrackedSocketReqMsg = {...failedSocketReqMsg};
-        const nextBackTrackTstamp = backtrackStrategy[backtrackStrategy.curStep](backTrackedSocketReqMsg, backtrackStrategy);
-        if (!nextBackTrackTstamp) {
-            console.log('Failed to backtrack to cached data for message:', backTrackedSocketReqMsg);
-            return;
-        }
-
-        backTrackedSocketReqMsg.tstamp = nextBackTrackTstamp
-        console.log(`Sending backtracked faux socket message (step #${backtrackStrategy.curStep}, attempt #${backtrackStrategy.curStepTries}):`, backTrackedSocketReqMsg);
-        hbClient.sendFauxSocketMessage(backTrackedSocketReqMsg, (resMsg, reqStatus) => {
-            if (backtrackStrategy[`${backtrackStrategy.curStep}-test`](backTrackedSocketReqMsg, reqStatus, backtrackStrategy)) {
-                ++backtrackStrategy.curStep;
-                backtrackStrategy.curStepTries = 0;
-            }
-            if (backtrackStrategy[backtrackStrategy.curStep]) {
-                hbClient.initFauxSocketBacktrack(backTrackedSocketReqMsg, backtrackStrategy);
-            } else {
-                console.log(`Finished backtracking to least-stale CDN content found here:`, backTrackedSocketReqMsg);
-                hbClient.fauxSocketBacktrackingLeastStaleTstamp[backTrackedSocketReqMsg.channel] = backTrackedSocketReqMsg.tstamp;
-            }
-        });
     },
 
 }; // end hbClient
