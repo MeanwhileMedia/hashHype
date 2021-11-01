@@ -47,7 +47,7 @@
     "preserveLocalRDB": "node -r esm ./utils/preserveLocalRDB.js --action=$npm_config_action",
     "flushUiServerCache": "node -r esm ./utils/flushUiServerCache.js",
     "flushCDNCache": "node -r esm ./utils/flushCDNCache.js",
-    "single": "pm2 start ./processes/machines/single.config.js --time -- --envname=$npm_config_envname",
+    "single": "pm2 start ./processes/machines/single.config.js -- --envname=$npm_config_envname",
     "pm2": "pm2"
   },
   "license": "ISC",

@@ -50,37 +50,43 @@ const genConfigs = {
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('uiServer', 'err'),
                 out_file: genConfigs.getLogPath('uiServer', 'out'),
+                log_date_format: 'MM/DD HH:mm:ss'
             }, {
                 name: 'Fetch Reddit Comments',
                 script: './processes/fetchRedditComments.js',
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('fetchReddit', 'err'),
-                out_file: genConfigs.getLogPath('fetchReddit', 'out')
+                out_file: genConfigs.getLogPath('fetchReddit', 'out'),
+                log_date_format: 'MM/DD HH:mm:ss'
             }, {
                 name: 'Fetch Stock Symbols',
                 script: './processes/fetchCoinAndStockSymbols.js',
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('stockSymbols', 'err'),
-                out_file: genConfigs.getLogPath('stockSymbols', 'out')
+                out_file: genConfigs.getLogPath('stockSymbols', 'out'),
+                log_date_format: 'MM/DD HH:mm:ss'
             }, {
                 name: 'Comment Word Extractor',
                 script: './processes/extractWordsFromComments.js',
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('wordExtractor', 'err'),
-                out_file: genConfigs.getLogPath('wordExtractor', 'out')
+                out_file: genConfigs.getLogPath('wordExtractor', 'out'),
+                log_date_format: 'MM/DD HH:mm:ss'
             }, {
                 name: 'Top Comment Stats',
                 script: './processes/topCommentStats.js',
                 interpreter_args: `-r esm ${inspect}`,
                 error_file: genConfigs.getLogPath('topComments', 'err'),
-                out_file: genConfigs.getLogPath('topComments', 'out')
+                out_file: genConfigs.getLogPath('topComments', 'out'),
+                log_date_format: 'MM/DD HH:mm:ss'
             }, {
                 name: 'MaintainLogsAndBackups',
                 script: './processes/maintainLogsAndBackups.js',
                 args: `--envname=${genConfigs.cliArgs.envname}`,
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('maintenance', 'err'),
-                out_file: genConfigs.getLogPath('maintenance', 'out')
+                out_file: genConfigs.getLogPath('maintenance', 'out'),
+                log_date_format: 'MM/DD HH:mm:ss'
             }
         ];
     }, // end 'apps'

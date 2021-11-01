@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import yargs from 'yargs';
+import pm2 from 'pm2';
 import {google} from 'googleapis';
 import RedisClient from '../utils/redisClient.js';
 import gDriveConfig from '../utils/googleClient-config.js';
@@ -20,6 +21,9 @@ class MaintainLogsAndBackups {
 
         self.dbHealthLogInterval = null;
         self.dbHealthLogIntervalTime = 60000*5; // once per 5 minutes. This is a sizeable log
+
+        self.pm2HealthLogInterval = null;
+        self.pm2HealthLogIntervalTime = 60000*2; // once per 2 minutes. This is a sizeable log
 
         self.rotateLogsInterval = null;
         self.rotateLogsIntervalTime = 60000*10; // check every 10mins. Confirm all required local log files exist according to our day tstamp naming pattern. Create a new log file when the day turns. Check logs directory for expired logs to delete from local machine.
@@ -41,6 +45,7 @@ class MaintainLogsAndBackups {
         self.initRedisClient(() => {
             self.initGoogleDriveClient(() => {
                 self.initDbHealthLogInterval();
+                self.initPm2HealthLogInterval();
                 self.initRotateLogsInterval();
                 self.initRotateRDBInterval();
                 if (self.archiveLogsAndRdbForEnvnames.indexOf(argv.envname) !== -1) {
@@ -83,16 +88,52 @@ class MaintainLogsAndBackups {
 
     initDbHealthLogInterval() {
         const self = this;
+        self.redisClient.info('all', function (infoObjArray) {
+            // infoObjArray holds "client.server_info" objects for all requested DBs (defaults to run info command on all dbs.)
+            if (!infoObjArray || infoObjArray.length === 0) return;
+            infoObjArray.forEach((thisDbInfoObj) => {
+                console.log(`DB info stats for "${thisDbInfoObj.dbName}" DB at time ${Date.now()} :`, thisDbInfoObj);
+            });
+        });
+
         if (self.dbHealthLogInterval) return;
         self.dbHealthLogInterval = setInterval(() => {
-            self.redisClient.info('all', function (infoObjArray) {
-                // infoObjArray holds "client.server_info" objects for all requested DBs (defaults to run info command on all dbs.)
-                if (!infoObjArray || infoObjArray.length === 0) return;
-                infoObjArray.forEach((thisDbInfoObj) => {
-                    console.log(`DB info stats for "${thisDbInfoObj.dbName}" DB at time ${Date.now()} :`, thisDbInfoObj);
-                });
-            });
+            self.initDbHealthLogInterval();
         }, self.dbHealthLogIntervalTime);
+    }
+
+    initPm2HealthLogInterval() {
+        const self = this;
+        pm2.connect((err) => {
+            if (err) {
+                console.error(err)
+                return;
+            }
+            pm2.list((err, list) => {
+                if (err) {
+                    console.error(err)
+                    return;
+                }
+                const listSummary = list.map((thisProc) => {
+                    return {
+                        name: thisProc.name,
+                        status: thisProc.pm2_env.status,
+                        uptime: `${Math.ceil((Date.now() - thisProc.pm2_env.pm_uptime) / 1000 / 60 * 100) / 100} minutes`,
+                        restarts: thisProc.pm2_env.unstable_restarts,
+                        envname: thisProc.pm2_env.npm_config_envname,
+                        monit: thisProc.monit
+                    }
+                });
+                console.log(`Process summary (${listSummary.length}):`);
+                console.log(listSummary);
+                pm2.disconnect();
+            });
+        });
+
+        if (self.pm2HealthLogInterval) return;
+        self.pm2HealthLogInterval = setInterval(() => {
+            self.initPm2HealthLogInterval();
+        }, self.pm2HealthLogIntervalTime);
     }
 
     initRotateLogsInterval() {
@@ -193,7 +234,7 @@ class MaintainLogsAndBackups {
 
     initArchiveLogsInterval() {
         const self = this;
-        // This interval only uploads today's log to google drive
+        // This interval uploads the active log file (00000) AND today's log to google drive
         const todayTstamp = self.getDayTstamps(1)[0]; // Just need today's tstamp
         self.getAllLogFileNames((fileNames) => {
             fileNames.forEach((thisFileName) => {
@@ -215,8 +256,8 @@ class MaintainLogsAndBackups {
 
     initArchiveRDBInterval() {
         const self = this;
-        const notExpiredDayTstamps = self.getDayTstamps(7); // Keep rdb backups on local machine for 3 weeks
-        const todayTstamp = notExpiredDayTstamps[0];
+        // This interval only uploads the active RDB file (00000) to google drive, but then also copies/renames it in-place on gdrive using today's timstamp
+        const todayTstamp = self.getDayTstamps(1)[0]; // Just need today's tstamp
         self.getAllRDBFileNames((localRDBFileNames) => {
             // 1. Copy the active RDB file to one prepended with today's timestamp, then upload the archive copy to google drive.
             localRDBFileNames.forEach((thisFileName) => {
@@ -254,10 +295,10 @@ class MaintainLogsAndBackups {
 
     initCloudArchiveCleanupInterval() {
         const self = this;
-        const notExpiredDayTstamps = self.getDayTstamps(5); // Keep daily log files and daily RDB backupes in cloud for 5 days
+        const notExpiredDayTstamps = self.getDayTstamps(3); // Keep daily log files and daily RDB backupes in cloud for 3 days
         const oldestNotExpiredTstamp = notExpiredDayTstamps.pop();
         console.log(`Now checking google drive for expired archived log/db files which should be deleted...`)
-        self.googleDriveClient.files.list({}, (err, res) => {
+        self.googleDriveClient.files.list({pageSize: 1000}, (err, res) => {
             if (err) {
                 console.warn(err);
                 return;
@@ -279,10 +320,7 @@ class MaintainLogsAndBackups {
                         console.log(`Cleaned up expired file from google drive: ${thisFile.name}`);
                         ++deleteCount;
                         setTimeout(() => {
-                            if (!deleteTheseFiles[deleteCount]) {
-                                self.initCloudArchiveCleanupInterval();
-                                return;
-                            }
+                            if (!deleteTheseFiles[deleteCount]) return;
                             deleteThisFile(deleteTheseFiles[deleteCount])
                         }, 1000)
                     });
