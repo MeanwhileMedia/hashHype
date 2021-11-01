@@ -1,14 +1,14 @@
 import React from '/node_modules/react';
 import Radium from '/node_modules/radium';
-import GNavMainMenu from './gNav-mainMenu.jsx';
-import SetTrendAction from './setTrendAction.jsx';
-import MsgBox__reqInvite from './msgBox--reqInvite.jsx'
-import Icon from './hbWidgets/icon.jsx'
+import GNavMainMenu from './gNav-mainMenu.jsx.js';
+import SetTrendAction from './setTrendAction.jsx.js';
+import MsgBox__reqInvite from './msgBox--reqInvite.jsx.js'
+import Icon from './hbWidgets/icon.jsx.js'
 import utils from '../helpers/utils.js'
 
-import menuText from './styles/gNav-mainMenu-text.jsx';
+import menuText from './styles/gNav-mainMenu-text.jsx.js';
 
-{/* <hbCC-fEAdmin> */} import AdminTrain from './topTagNetworks-adminTrain.jsx'; {/* </hbCC-fEAdmin> */}
+{/* <hbCC-fEAdmin> */} import AdminTrain from './topTagNetworks-adminTrain.jsx.js'; {/* </hbCC-fEAdmin> */}
 
 import logo from '../images/logo.svg.js';
 import styles from './styles/gNav.css.js';

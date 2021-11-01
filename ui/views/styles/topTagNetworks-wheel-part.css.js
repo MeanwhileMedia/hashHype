@@ -43,12 +43,16 @@ const styles = {
                 'opacity': 0,
                 'fill': '#b3b3b3',
                 'transition': 'opacity .2s ease-in .2s',
+                'text-transform': 'uppercase'
+            },
+            'wheel_part_title_label__rank': {
+                'letter-spacing': '2px'
             },
             'wheel_part_title__symbol': {
                 'opacity': 0.2
             },
             'wheel_part_title__rank': {
-                'opacity': 0
+                'opacity': 0,
             },
             'wheel_part_buttons_wrapper': {
                 'overflow': 'visible'

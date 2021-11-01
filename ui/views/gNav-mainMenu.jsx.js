@@ -1,7 +1,7 @@
 import React from '/node_modules/react';
 import Radium from '/node_modules/radium';
-import ToggleSwitch from './hbWidgets/toggleSwitch.jsx';
-import Icon from './hbWidgets/icon.jsx';
+import ToggleSwitch from './hbWidgets/toggleSwitch.jsx.js';
+import Icon from './hbWidgets/icon.jsx.js';
 import utils from '../helpers/utils.js';
 import styles from './styles/gNav-mainMenu.css.js';
 

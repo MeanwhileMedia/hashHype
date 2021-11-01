@@ -1,8 +1,8 @@
 import React from '/node_modules/react';
 import Radium from '/node_modules/radium';
-import MsgBox from './msgBox.jsx'
-import TextInput from './hbWidgets/textInput.jsx'
-import Icon from './hbWidgets/icon.jsx'
+import MsgBox from './msgBox.jsx.js'
+import TextInput from './hbWidgets/textInput.jsx.js'
+import Icon from './hbWidgets/icon.jsx.js'
 
 class MsgBox__reqInvite extends React.Component {
     constructor(props) {

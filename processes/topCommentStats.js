@@ -926,7 +926,7 @@ class TopCommentsStats {
             absKey: this.topCommentsStatsKey,
             comments: [],
             ui: {
-                viewPath: '/ui/views/topTagNetworks.jsx'
+                viewPath: '/ui/views/topTagNetworks.jsx.js'
             }
          }
     }

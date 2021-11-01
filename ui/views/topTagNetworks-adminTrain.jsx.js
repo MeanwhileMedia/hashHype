@@ -4,8 +4,8 @@ import highlightJs from '/node_modules/highlight/js';
 import highlightJsStyles from '/node_modules/highlight/jsStyles.css';
 highlight.registerLanguage('javascript', highlightJs);
 
-import AdminTrainRow from './topTagNetworks-adminTrain-row.jsx'
-import Icon from './hbWidgets/icon.jsx'
+import AdminTrainRow from './topTagNetworks-adminTrain-row.jsx.js'
+import Icon from './hbWidgets/icon.jsx.js'
 
 import styles from './styles/topTagNetworks-adminTrain.css.js';
 

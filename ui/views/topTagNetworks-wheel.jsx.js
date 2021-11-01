@@ -2,7 +2,7 @@ import React from '/node_modules/react';
 import d3 from '/node_modules/d3';
 import Hammer from '/node_modules/hammerjs';
 import socketViewResponses from '../helpers/hbClientSocketViewResponses.js';
-import TopTagWheelPart from './topTagNetworks-wheel-part.jsx';
+import TopTagWheelPart from './topTagNetworks-wheel-part.jsx.js';
 import styles from './styles/topTagNetworks-wheel.css.js';
 
 class TopTagWheel extends React.Component {

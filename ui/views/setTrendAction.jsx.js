@@ -1,8 +1,8 @@
 import React from '/node_modules/react';
 import Radium from '/node_modules/radium';
-import TextInput from './hbWidgets/textInput.jsx'
-import RadioSwitch from './hbWidgets/radioSwitch.jsx'
-import MsgBox__reqInvite from './msgBox--reqInvite.jsx'
+import TextInput from './hbWidgets/textInput.jsx.js'
+import RadioSwitch from './hbWidgets/radioSwitch.jsx.js'
+import MsgBox__reqInvite from './msgBox--reqInvite.jsx.js'
 
 import styles from './styles/setTrendAction.css.js';
 

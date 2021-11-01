@@ -4,10 +4,10 @@ import d3 from '/node_modules/d3';
 import throttleDebounce from '/node_modules/throttle-debounce';
 import socketViewResponses from '../helpers/hbClientSocketViewResponses.js';
 import utils from '../helpers/utils.js'
-import GNav from './gNav.jsx';
-import TopTagWheel from './topTagNetworks-wheel.jsx';
-import TopTagnewsColumns from './topTagNetworks-newsColumns.jsx';
-import Modal from './modal.jsx';
+import GNav from './gNav.jsx.js';
+import TopTagWheel from './topTagNetworks-wheel.jsx.js';
+import TopTagnewsColumns from './topTagNetworks-newsColumns.jsx.js';
+import Modal from './modal.jsx.js';
 import styles from './styles/topTagNetworks.css.js';
 
 class TopTagNetworks extends React.Component {

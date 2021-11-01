@@ -162,6 +162,12 @@ span[contenteditable], div[contenteditable], code[contenteditable] {
     font-weight: 800;
 }
 
+#cf_alert_div {
+    /* Hide the notif bar from cloudflare when "always-online" mode kicks in. */
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+}
 
 @media only screen and (max-width: 1024px) {
     body {

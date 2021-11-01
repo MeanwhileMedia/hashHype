@@ -324,7 +324,7 @@ class MaintainLogsAndBackups {
         const allRDBFileNames = [];
         fs.readdir(rdbDir, (err, files) => {
             if (err || !files || files.length === 0) {
-                console.log(`Could not find any .rdb files in db directory: ${rdbDir}`, err);
+                console.warn(`Could not find any .rdb files in db directory: ${rdbDir}`, err);
                 return;
             }
             // Now determine if each file is a rdb file, and if so, if it should be deleted (expired).

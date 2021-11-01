@@ -11,6 +11,9 @@ var hbClient = {
     fauxSocketPollIntervalLength: 5000,
     fauxSocketPollIntervals: [],
 
+    //fauxSocketCurBacktrackPosition: {}, // object holds all message channels which are currently in backtrack mode (keys) and the position in history that they are currently attempting to recover from cdn (value) {'change:foo': 234345624, etc...}
+    fauxSocketBacktrackingLeastStaleTstamp: {}, // object holds all message channels which were previously in backtrack mode (keys) and the position in history which returned a 200 response to recover data from cdn (value) {'change:foo': 234345624, etc...}
+
     init() {
         window.hbClient = this;
         console.log('Opening connection with', hbClient.serverAddress);
@@ -27,32 +30,43 @@ var hbClient = {
                 // For certain message channels, we will continue to poll the server for data changes (mimicking how a real server WebSocket would push data to us)
                 if (messageObj.channel === 'populateView') { // only if message json channel === 'populateView'
                     // Keep hitting the fauxSocket endpoint with message channel "change:redis:key" and send through to receiveMessage with same channel
+                    const dataChangeMessageChannel = `change:${messageObj.data.absKey}`;
                     const dataChangeMessage = {
-                        channel: `change:${messageObj.data.absKey}`,
-                        tstamp: Date.now() // cache buster (set inside interval to a denominations of fauxSocketPollIntervalLength).
+                        channel: dataChangeMessageChannel,
+                        tstamp: Date.now() // cache buster (set inside interval to a denomination of fauxSocketPollIntervalLength).
                     }
                     if (hbClient.fauxSocketPollIntervals[dataChangeMessage.channel]) return;
                     hbClient.fauxSocketPollIntervals[dataChangeMessage.channel] = setInterval( () => {
                         const now = Date.now();
                         dataChangeMessage.tstamp  = now - (now % hbClient.fauxSocketPollIntervalLength)
-                        hbClient.sendFauxSocketMessage(dataChangeMessage);
+                        hbClient.sendFauxSocketMessage(dataChangeMessage, (resMsg, reqStatus) => {
+                            if ((!resMsg || reqStatus.toString()[0] !== '2') && !hbClient.fauxSocketBacktrackingLeastStaleTstamp[dataChangeMessage.channel]) {
+                                console.log(`Faux socket received a failure response code (${reqStatus})`);
+                                hbClient.initFauxSocketBacktrack(dataChangeMessage);
+                            }
+                        });
                     }, hbClient.fauxSocketPollIntervalLength);
                 }
             }
         };
         hbClient.loadLandingView();
     },
-    sendFauxSocketMessage(messageObj) {
+    sendFauxSocketMessage(messageObj, cback) {
         // Example GET request (where the message param is JSON): serverAddress.com/fauxSocket?message={"channel": "viewRequest", "data": {"absKey":"redis:key","targetEl":".containerEl"}}
         // Example response body (JSON): {channel: 'viewResponse', data: {viewPath: jsAssetPath, absKey:"redis:key", targetEl: ".containerEl" }}
         const encodedMessageStr = hbClient.encodeSocketMessage(messageObj);
         if (!encodedMessageStr) return;
         const httpRequest = new XMLHttpRequest();
         httpRequest.onreadystatechange = function(){
-            if (httpRequest.readyState !== XMLHttpRequest.DONE || httpRequest.status !== 200) return;
+            if (httpRequest.readyState !== XMLHttpRequest.DONE) return;
+            if (httpRequest.readyState === XMLHttpRequest.DONE && httpRequest.status !== 200) {
+                if (cback) cback(null, httpRequest.status);
+                return;
+            }
             const decodedMessage = hbClient.decodeSocketMessage(httpRequest.response);
             if (!decodedMessage) return;
             socketViewResponses.receiveMessage(decodedMessage);
+            if (cback) cback(decodedMessage, httpRequest.status);
         };
         httpRequest.open('GET', `/fauxSocket.js?message=${encodedMessageStr}`, true); // fauxSocket.js endpoint acts as JS to optimize CDN caching. However, it's response body is actually a JSON string.
         httpRequest.send();
@@ -78,7 +92,7 @@ var hbClient = {
     loadLandingView() {
         // now that the client has a socket connection with the server, manually
         // ping through that socket to load the landing url.
-        const landingUrl = window.location.pathname;
+        const landingUrl = window.location.pathname.replace('.html', '');
         const absKey = landingUrl.slice(1).replace('_', ':'); //reform with proper redis keyspace delimeters
         socketViewRequests.viewRequest({
             absKey: absKey,
@@ -120,6 +134,84 @@ var hbClient = {
             return null;
         }
         return decodedMessage;
+    },
+
+    initFauxSocketBacktrack(failedSocketReqMsg, backtrackStrategy) {
+        // When we initFauxSocketBacktrack, our fauxSocketPollIntervals will continue to send requests for new data using the bracketed timstamp cache buster, BUT we
+        // will ALSO send requests for data backwards in time. It will keep doing this until it gets a 200 response - meaning it located
+        // the most recent successful response which was cached on CDN - serving this least-stale content is a temporary stop gap until the origin server comes back online.
+        if (!failedSocketReqMsg || !failedSocketReqMsg.tstamp) return;
+
+        if (!hbClient.fauxSocketBacktrackingLeastStaleTstamp[failedSocketReqMsg.channel]) {
+            hbClient.fauxSocketBacktrackingLeastStaleTstamp[failedSocketReqMsg.channel] = 'pending';
+            console.log(`Origin server sent a non 200 response to our faux socket. Will now init backtracking channel ${failedSocketReqMsg.channel} to find the least stale data set which is cached on CDN...`);
+        }
+
+        backtrackStrategy = backtrackStrategy || {
+            curStep: 1,
+            curStepTries: 0,
+            lastTestedReqMsg: null,
+            '1': (prevTestReqMsg, self) => {
+                // Step back in time by ${backStepInterval} ms until we reach the first 200 response.
+                const backStepInterval = 600000; // 10 minutes
+                const maxSteps = 24; // 4 hours
+                let nextTstamp = prevTestReqMsg.tstamp - backStepInterval;
+                nextTstamp = nextTstamp - (nextTstamp % hbClient.fauxSocketPollIntervalLength);
+                ++self.curStepTries;
+                if (self.curStepTries > maxSteps) return null;
+                self.lastTestedReqMsg = prevTestReqMsg;
+                return nextTstamp;
+            },
+            '1-test': (curTestReqMsg, reqStatusCode, self) => {
+                let succesTstamp = false;
+                if (reqStatusCode === 200) {
+                    succesTstamp = curTestReqMsg.tstamp;
+                    console.log(`Tracked backward ${self.curStepTries*10} minutes to recover cached CDN data for fauxSocket req:`, curTestReqMsg);
+                }
+                return succesTstamp;
+            },
+            '2': (prevTestReqMsg, self) => {
+                // Step forward in time by ${forwardStepInterval} ms until we reach the first non-200 response.
+                const forwardStepInterval = 60000; // 1 minute
+                const maxSteps = 10; // 10 minutes
+                let nextTstamp = prevTestReqMsg.tstamp + forwardStepInterval;
+                nextTstamp = nextTstamp - (nextTstamp % hbClient.fauxSocketPollIntervalLength);
+                ++self.curStepTries;
+                if (self.curStepTries > maxSteps) return null;
+                self.lastTestedReqMsg = prevTestReqMsg;
+                return nextTstamp;
+            },
+            '2-test': (curTestReqMsg, reqStatusCode, self) => {
+                let succesTstamp = false;
+                if (reqStatusCode !== 200) {
+                    succesTstamp = self.lastTestedReqMsg.tstamp;
+                    console.log(`A least-stale CDN cache was located at tstamp ${succesTstamp} for fauxSocket req:`, self.lastTestedReqMsg);
+                }
+                return succesTstamp;
+            },
+        };
+
+        const backTrackedSocketReqMsg = {...failedSocketReqMsg};
+        const nextBackTrackTstamp = backtrackStrategy[backtrackStrategy.curStep](backTrackedSocketReqMsg, backtrackStrategy);
+        if (!nextBackTrackTstamp) {
+            console.log('Failed to backtrack to cached data for message:', backTrackedSocketReqMsg);
+            return;
+        }
+
+        backTrackedSocketReqMsg.tstamp = nextBackTrackTstamp
+        console.log(`Sending backtracked faux socket message (step #${backtrackStrategy.curStep}, attempt #${backtrackStrategy.curStepTries}):`, backTrackedSocketReqMsg);
+        hbClient.sendFauxSocketMessage(backTrackedSocketReqMsg, (resMsg, reqStatus) => {
+            if (backtrackStrategy[`${backtrackStrategy.curStep}-test`](backTrackedSocketReqMsg, reqStatus, backtrackStrategy)) {
+                ++backtrackStrategy.curStep;
+                backtrackStrategy.curStepTries = 0;
+            }
+            if (backtrackStrategy[backtrackStrategy.curStep]) {
+                hbClient.initFauxSocketBacktrack(backTrackedSocketReqMsg, backtrackStrategy);
+            } else {
+                console.log(`Finished backtracking to least-stale CDN content found here:`, backTrackedSocketReqMsg);
+                hbClient.fauxSocketBacktrackingLeastStaleTstamp[backTrackedSocketReqMsg.channel] = backTrackedSocketReqMsg.tstamp;
+            }
+        });
     },
 
 }; // end hbClient
