@@ -104,7 +104,7 @@ const uiServer = {
             const start = new Date();
             return next().then(() => {
                 const ms = new Date() - start;
-                console.log(`${ctx.request.method} ${ctx.request.url} - ${ms} ms`);
+                console.log(`${ctx.request.ip} - ${ctx.request.method} ${ctx.request.url} - ${ms} ms`);
             });
         });
 

@@ -16,6 +16,7 @@ const hbCodeCheckerConfig = {
     secretUserInfo: { // mapped to all uids defined in above secrets object. Can set readable names or other info which can be used for logging or other.
         // 'uuid-uuid-uuid-uuid-uuid': {
         //     name: 'Joe Webb'
+        //     ip: '' // regex supported
         // }
     }
 

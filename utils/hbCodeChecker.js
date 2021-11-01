@@ -52,9 +52,12 @@ const hbCodeChecker = {
                 if (!adminUid) return adminCodeStatus;
             }
         }
-        if (hbCodeCheckerConfig.secrets.fEAdmin.indexOf(adminUid) !== -1) {
-            adminCodeStatus.shouldServe = true;
-            adminCodeStatus.adminInfo = hbCodeCheckerConfig.secretUserInfo[adminUid];
+        if (hbCodeCheckerConfig.secrets.fEAdmin.indexOf(adminUid) !== -1 && hbCodeCheckerConfig.secretUserInfo[adminUid]) {
+            const adminUserInfo = hbCodeCheckerConfig.secretUserInfo[adminUid];
+            if (uiServerCtx.request.ip && adminUserInfo.ip && uiServerCtx.request.ip.match(adminUserInfo.ip)) {
+                adminCodeStatus.shouldServe = true;
+                adminCodeStatus.adminInfo = hbCodeCheckerConfig.secretUserInfo[adminUid];
+            }
         }
         return adminCodeStatus;
     },
@@ -93,8 +96,8 @@ const hbCodeChecker = {
         }
 
         ////////
-        // 3. Apply reqModifier to script tags in html: <script type="module" src="/ui/helpers/hbClient.js"></script>
-        const scriptTagRegex = new RegExp(`<script((?!<\\/script>)(\\s|\\S))+<\\/script>`, 'gm');
+        // 3. Apply reqModifier to script tags in html: <script type="module" src="/ui/helpers/hbClient.js"></script> (MUST have src attr with local absolute url)
+        const scriptTagRegex = new RegExp(`<script((?!<\\/script>)(\\s|\\S))+(src="\\/)((?!<\\/script>)(\\s|\\S))+<\\/script>`, 'gm'); // https://regexr.com/68l5a
         const scriptTagCodeMatches = codeFile.contents.match(scriptTagRegex);
         if (scriptTagCodeMatches) {
             cleanedCode = codeFile.contents;
