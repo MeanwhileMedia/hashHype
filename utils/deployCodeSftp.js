@@ -99,7 +99,32 @@ class DeployCodeSftp {
         });
     }
 
-    npmRunScriptsOnTarget(runTheseScripts, cback, thisNpmCmdIndex = 0) {
+    checkTargetAppDirExists(cback) {
+        const self = this;
+        let doesExist = true;
+        const projectDir = `${self.deployConfig.targetDir}/${self.deployConfig.projectName}`;
+        self.sftpClient.client.shell(function(err, stream) {
+            if (err) {
+                console.error(err);
+                doesExist = false;
+                if (cback) cback(doesExist);
+                return;
+            }
+            stream.on('close', function() {
+                if (cback) cback(doesExist);
+            }).on('data', function(data) {
+                const thisOutput = data.toString();
+                console.log(thisOutput);
+                if (thisOutput.indexOf('No such file or directory') !== -1) doesExist = false;
+            }).stderr.on('data', function(data) {
+                console.log('checkTargetAppDirExists STDERR: ' + data);
+            });
+            console.log(`Checking that app dir ${projectDir} exists on target machine...`)
+            stream.end(`cd ${projectDir}\nexit\n`);
+        });
+    }
+
+    npmRunScriptsOnTarget(runTheseScripts, cback, thisNpmCmdIndex = 0, confirmedAppDirExists = false) {
         const self = this;
         if (!runTheseScripts || !runTheseScripts.length) {
             if (cback) cback();
@@ -110,13 +135,26 @@ class DeployCodeSftp {
             if (cback) cback();
             return;
         }
+
+        if (!confirmedAppDirExists) {
+            self.checkTargetAppDirExists((doesExist) => {
+                if (!doesExist) {
+                    console.warn(`WARN! Can't run undefined NPM scripts because the app directory does not yet exist, and there is no package.json. Could not run:`, runTheseScripts);
+                    if (cback) cback();
+                    return;
+                }
+                self.npmRunScriptsOnTarget(runTheseScripts, cback, thisNpmCmdIndex, doesExist);
+            });
+            return;
+        }
+
         self.npmRunScriptOnTarget(thisNpmCmd, (success) => {
             if (!success) {
                 console.error(`ERR! deployCodeSftp failed while attempting to run '${thisNpmCmd}'. Deploy failure. Process will now exit.`);
                 process.exit(1);
                 return;
             }
-            self.npmRunScriptsOnTarget(runTheseScripts, cback, ++thisNpmCmdIndex);
+            self.npmRunScriptsOnTarget(runTheseScripts, cback, ++thisNpmCmdIndex, confirmedAppDirExists);
         });
     }
 

@@ -19,6 +19,7 @@ class MaintainLogsAndBackups {
         const self = this;
         self.googleDriveClient = null;
 
+        // All interval routines run immediately upon maintence process init, then at the interval times specified.
         self.dbHealthLogInterval = null;
         self.dbHealthLogIntervalTime = 60000*5; // once per 5 minutes. This is a sizeable log
 
@@ -32,7 +33,9 @@ class MaintainLogsAndBackups {
 
         self.archiveLogsAndRdbForEnvnames = [ // only certain environments should be backing up logs and rdb files to google drive (otherwise we could run out of space)
             'dev01',
-            'prod01'
+            'prod01',
+            //'dev02',
+            'prod02'
         ];
         self.archiveLogsInterval = null;
         self.archiveLogsIntervalTime = 60000*5; // backup today's log file to cloud once per 5 minutes
@@ -121,7 +124,8 @@ class MaintainLogsAndBackups {
                         uptime: `${Math.ceil((Date.now() - thisProc.pm2_env.pm_uptime) / 1000 / 60 * 100) / 100} minutes`,
                         restarts: thisProc.pm2_env.unstable_restarts,
                         envname: thisProc.pm2_env.npm_config_envname,
-                        monit: thisProc.monit
+                        cpu: `${thisProc.monit.cpu}%`,
+                        memory: `${Math.ceil(thisProc.monit.memory/1048576*100)/100}mb`
                     }
                 });
                 console.log(`Process summary (${listSummary.length}):`);
@@ -234,6 +238,7 @@ class MaintainLogsAndBackups {
 
     initArchiveLogsInterval() {
         const self = this;
+        if (self.isArchivingLogs) return; // in case this interval elapses before the previous one finished uploading, don't allow overlap.
         // This interval uploads the active log file (00000) AND today's log to google drive
         const todayTstamp = self.getDayTstamps(1)[0]; // Just need today's tstamp
         self.getAllLogFileNames((fileNames) => {
@@ -241,9 +246,12 @@ class MaintainLogsAndBackups {
                 let dayTstampForThisFileName = thisFileName.split('-')[tstampPosInFilename];
                 if (dayTstampForThisFileName !== todayTstamp && dayTstampForThisFileName !== '00000') return; // also upload the active log file at this point
                 const fullLogFilePath = path.resolve(logDir, thisFileName);
+                self.isArchivingLogs = self.isArchivingLogs || 0;
+                ++self.isArchivingLogs;
                 self.uploadFileToGdrive(thisFileName, fullLogFilePath, (res) => {
-                    if (!res) return;
                     console.log(`Archived log ${thisFileName} to google drive...`);
+                    --self.isArchivingLogs;
+                    if (self.isArchivingLogs === 0) self.isArchivingLogs = false;
                 });
             });
         });
@@ -256,6 +264,7 @@ class MaintainLogsAndBackups {
 
     initArchiveRDBInterval() {
         const self = this;
+        if (self.isArchivingRDBs) return; // in case this interval elapses before the previous one finished uploading, don't allow overlap.
         // This interval only uploads the active RDB file (00000) to google drive, but then also copies/renames it in-place on gdrive using today's timstamp
         const todayTstamp = self.getDayTstamps(1)[0]; // Just need today's tstamp
         self.getAllRDBFileNames((localRDBFileNames) => {
@@ -274,6 +283,7 @@ class MaintainLogsAndBackups {
                     }
                     // console.log(`Transferred active rdb file to today's rdb archive file: ${thisFileName} => ${todayRDBBackupFileName}`)
                     const startTime = Date.now();
+                    self.isArchivingRDBs = true;
                     self.uploadFileToGdrive(todayRDBBackupFileName, todayRDBBackupPath, (res) => {
                         if (!res) return;
                         const endTime = Date.now();
@@ -281,6 +291,7 @@ class MaintainLogsAndBackups {
                         // At this point we ALSO COPY THIS SAME FILE but rename with the 00000 tstamp (this is so we can programatically locate the active DB file for this machine)
                         self.copyFileOnGdrive(res.data.id, activeRDBFileName, (success) => {
                             if (success) console.log(`Archived rdb ${activeRDBFileName} to google drive`);
+                            self.isArchivingRDBs = false;
                         });
                     });
                 });
@@ -295,6 +306,7 @@ class MaintainLogsAndBackups {
 
     initCloudArchiveCleanupInterval() {
         const self = this;
+        if (self.isCleaningArchive) return; // in case this interval elapses before the previous one finished uploading, don't allow overlap.
         const notExpiredDayTstamps = self.getDayTstamps(3); // Keep daily log files and daily RDB backupes in cloud for 3 days
         const oldestNotExpiredTstamp = notExpiredDayTstamps.pop();
         console.log(`Now checking google drive for expired archived log/db files which should be deleted...`)
@@ -320,12 +332,17 @@ class MaintainLogsAndBackups {
                         console.log(`Cleaned up expired file from google drive: ${thisFile.name}`);
                         ++deleteCount;
                         setTimeout(() => {
-                            if (!deleteTheseFiles[deleteCount]) return;
+                            if (!deleteTheseFiles[deleteCount]) {
+                                self.isCleaningArchive = false;
+                                return;
+                            }
                             deleteThisFile(deleteTheseFiles[deleteCount])
                         }, 1000)
                     });
                 };
+                self.isCleaningArchive = true;
                 let deleteCount = 0;
+                console.log(`Found ${deleteTheseFiles.length} expired archive files (log/rdb) on google drive. Will begin cleanup now...`)
                 deleteThisFile(deleteTheseFiles[deleteCount])
             }
         });
