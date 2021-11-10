@@ -36,27 +36,20 @@ class TopTagWheelPart extends React.Component {
         const css = styles.generate(this);
 
         const statsEl = (
-            <g transform={`rotate(90 ${this.props.maxOuterRadius} 0)`}>
-                <text
+            <div>
+                <h5
                     className="heading5"
                     style={Object.assign({}, css.wheel_part_title_label, css.wheel_part_title_label__rank)}
-                    textAnchor="middle"
-                    x={this.props.maxOuterRadius}
-                    y={`-${statRowSpacing}em`}
-                    dy="-1.2em"
                 >
                     Rank
-                </text>
-                <text
+                </h5>
+                <h3
                     className="heading3"
                     style={Object.assign({}, css.wheel_part_title, css.wheel_part_title__rank, css.wheel_text__h3)}
-                    textAnchor="middle"
-                    x={this.props.maxOuterRadius}
-                    y={`-${statRowSpacing}em`}
                 >
                     {this.getNumberOrdinal(this.props.data.rank)}
-                </text>
-            </g>
+                </h3>
+            </div>
         );
         return statsEl;
     }
@@ -76,44 +69,44 @@ class TopTagWheelPart extends React.Component {
         if (!topSymbol) return symbolStatsEl;
         self.props.data.renderedSymbol = topSymbol; // save for easy access by other classes
 
+        let symbolText = topSymbol.symbol;
+        const emojiSymbolHtml = self.getEmojiAssocHtml(topSymbol);
+        if (emojiSymbolHtml) symbolText = emojiSymbolHtml;
+
         symbolStatsEl = (
-            <g transform={`rotate(90 ${this.props.maxOuterRadius} 0)`}>
-                <text
+            <div>
+                <h5
                     className="heading5"
                     style={Object.assign({}, css.wheel_part_title_label, css.wheel_text__h4)}
-                    textAnchor="middle"
-                    x={this.props.maxOuterRadius}
-                    y={`-${statRowSpacing}em`}
-                    dy="-1.5em"
                 >
                     {topSymbol.type}
-                </text>
-                <text
+                </h5>
+                <h2
                     ref={this.wheelPartSymbolTitleText}
                     className="heading2"
                     style={Object.assign({}, css.wheel_part_title, css.wheel_part_title__symbol, css.wheel_text__h2)}
-                    textAnchor="middle"
-                    x={this.props.maxOuterRadius}
-                    y={`-${statRowSpacing}em`}
-                >
-                    {topSymbol.symbol}
-                </text>
-                <foreignObject x={this.props.maxOuterRadius-100} y='16' width="200" height="60" style={Object.assign({}, css.wheel_part_buttons_wrapper)}>
-                    <div className="wheel_part_buttons" style={Object.assign({}, css.wheel_part_buttons)}>
-                        <button className="button__sev1 button__light" onClick={self.props.gNav.showSetTrendActionModal.bind(self.props.gNav)} style={Object.assign({}, css.wheel_text__button)}>
-                            <Icon iconName="data_saver_on" height="100%" />
-                            Action
-                        </button>
-                        <div className="wheel_part_anchor" style={css.wheel_part_anchor}></div>
-                    </div>
-                </foreignObject>
-            </g>
+                    dangerouslySetInnerHTML={{__html: symbolText}}
+                />
+            </div>
         );
         return symbolStatsEl;
     }
 
+    getEmojiAssocHtml(emojiSymbol) {
+        if (emojiSymbol.type !== 'emoji' || !emojiSymbol.assocs[0]) return; // For now, we always render the first assoc in the array. We don't currently have a use case for an emoji having more than one assoc
+        const thisSymbolAssoc = emojiSymbol.assocs[0];
+        let thisSymbolAssocHtml = '';
+        if (thisSymbolAssoc.type === 'unicode') {
+            thisSymbolAssocHtml = thisSymbolAssoc.assoc;
+        }
+        if (thisSymbolAssoc.type === 'image') {
+            thisSymbolAssocHtml = `<span class="emoji emoji__48"><span style="background-image: url('${thisSymbolAssoc.assoc}')"></span></span>`;
+        }
+        return thisSymbolAssocHtml;
+    }
+
     applyPostRenderStyleTransitions() {
-        const textEls = this.wheelPartGRef.current.querySelectorAll('text, .wheel_part_buttons');
+        const textEls = this.wheelPartGRef.current.querySelectorAll('h2, h3, h5, .wheel_part_buttons');
         if (this.props.data.isFocused) {
             textEls.forEach((textEl) => {
                 textEl.style.opacity = 1;
@@ -133,7 +126,7 @@ class TopTagWheelPart extends React.Component {
     }
 
     render() {
-        const thisView = this;
+        const self = this;
         this.props.data.rank = this.props.allMsgCounts.indexOf(this.props.data.totalPoints['1Hr']) + 1;
 
         const rankSpace = this.props.maxOuterRadius - this.props.minOuterRadius;
@@ -146,7 +139,7 @@ class TopTagWheelPart extends React.Component {
         const arc = d3.arc()
         .startAngle(d => Math.max(0, Math.min(2 * Math.PI, x(d.x0))))
         .endAngle(d => Math.max(0, Math.min(2 * Math.PI, x(d.x1))))
-        .innerRadius(d => thisView.props.minOuterRadius * 0.9)
+        .innerRadius(d => self.props.minOuterRadius * 0.9)
         .outerRadius(d => outerRadius);
 
         const css = styles.generate(this);
@@ -166,9 +159,22 @@ class TopTagWheelPart extends React.Component {
                 style={Object.assign(growthAnim, css['wheel_part_path'])}
                 />
 
-                <g className="wheel_part_text" transform={`rotate(${this.computeTextRotation(this.props, x)}) translate(90 0)`}>
-                    {topTagStatsEls}
-                    {topTagSymbolStatsEl}
+                <g className="wheel_part_text" transform={`rotate(${this.computeTextRotation(this.props, x)})`}>
+                    <foreignObject transform={`rotate(90 ${this.props.maxOuterRadius} 0)`} x={this.props.maxOuterRadius} y="-22em" width="1" height="1000" style={Object.assign({}, css.wheel_part_text_wrapper)}>
+                        <div style={Object.assign({}, css.wheel_part_text_inner)}>
+                            <div style={Object.assign({}, css.wheel_part_text_section)}>{topTagStatsEls}</div>
+                            <div style={Object.assign({}, css.wheel_part_text_section)}>{topTagSymbolStatsEl}</div>
+                            <div style={Object.assign({}, css.wheel_part_text_section)}>
+                                <div className="wheel_part_buttons" style={Object.assign({}, css.wheel_part_buttons)}>
+                                    <button className="button__sev1 button__light" onClick={self.props.gNav.showSetTrendActionModal.bind(self.props.gNav)} style={Object.assign({}, css.wheel_text__button)}>
+                                        <Icon iconName="data_saver_on" height="100%" />
+                                        Action
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="wheel_part_anchor" style={css.wheel_part_anchor}></div>
+                    </foreignObject>
                 </g>
             </g>
         );

@@ -191,6 +191,25 @@
     margin-top: -0.2rem;
 }
 
+/* Emoji */
+.emoji {
+    vertical-align: middle;
+    display: inline-block;
+}
+.emoji > span {
+    display: inline-block;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+.emoji__32 > span {
+    width: 32px;
+    height: 32px;
+}
+.emoji__48 > span {
+    width: 48px;
+    height: 48px;
+}
 
 /* Button */
 button {
@@ -274,6 +293,7 @@ button .hbWidgets.icon {
     fill: #7c7c7c;
     cursor: pointer;
     vertical-align: middle;
+    height: 100%;
 }
 .hbWidgets.icon:hover {
     fill: #000;

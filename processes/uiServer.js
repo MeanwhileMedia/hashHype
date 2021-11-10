@@ -168,7 +168,7 @@ const uiServer = {
                         },
                         wasResolved: false
                     };
-                    const foundChannelRoute = self.receiveSocketMessage(encodedMessageStr, thisFauxSocketObj);
+                    const foundChannelRoute = self.receiveSocketMessage(encodedMessageStr, thisFauxSocketObj, ctx);
                     if (!foundChannelRoute) {
                         thisFauxSocketObj = null;
                         resolve(null);
@@ -272,7 +272,7 @@ const uiServer = {
 
     changeEventThrottle: 2000, // wait time between emission of model changes to client(s)
     changeEventTstamps: {}, //for keeping track of socket emissions per channel
-    receiveSocketMessage(encodedMessageStr, socket) { // returns bool. true if a route was found for message channel.
+    receiveSocketMessage(encodedMessageStr, socket, koaCtx = null) { // returns bool. true if a route was found for message channel. koaCtx is only defined when using fauxSocket
         const self = uiServer;
         const message = self.decodeSocketMessage(encodedMessageStr);
         if (!message || !message.channel) return false;
@@ -343,8 +343,14 @@ const uiServer = {
         // If this message didn't match any of the above main UI rendering channels, pass it along to the socket
         // response utils which hold logic for more specific channels.
         if (typeof self.hbClientSocketDbResponses_admin[message.channel] === 'function') {
-            self.hbClientSocketDbResponses_admin[message.channel](message, socket);
-            return true;
+            if (koaCtx) { // koaCtx is only defined when using fauxSocket. For now, it's required to ID an admin user.
+                const adminCodeStatus = hbCodeChecker.shouldServeFEAdminAsset(koaCtx);
+                if (adminCodeStatus.shouldServe) {
+                    console.log(`Forwarding socket message to hbClientSocketDbResponses_admin for admin user ${adminCodeStatus.adminInfo.name}...`);
+                    self.hbClientSocketDbResponses_admin[message.channel](message, socket);
+                    return true;
+                }
+            }
         }
         if (typeof self.nodeMailer[message.channel] === 'function') {
             self.nodeMailer[message.channel](message, socket);
@@ -359,13 +365,9 @@ const uiServer = {
             console.warn('Could not encodeSocketMessage. messageObj was not a valid object.');
             return null;
         }
-        let buff;
-        let json;
         let encodedMessage;
         try {
-            json = JSON.stringify(messageObj);
-            buff = new Buffer(json);
-            encodedMessage = buff.toString('base64');
+            encodedMessage = encodeURIComponent(JSON.stringify(messageObj));
         } catch (e) {
             console.warn(`Could not encodeSocketMessage`, e, messageObj);
             return null;
@@ -377,15 +379,11 @@ const uiServer = {
             console.warn('Could not decodeSocketMessage. encodedMessageStr was not a valid string.');
             return null;
         }
-        let buff;
-        let json;
         let decodedMessage;
         try {
-            buff = new Buffer(encodedMessageStr, 'base64');
-            json = buff.toString('utf8');
-            decodedMessage = JSON.parse(json);
+            decodedMessage = JSON.parse(decodeURIComponent(encodedMessageStr));
         } catch (e) {
-            console.warn(`Could not decodeSocketMessage`, e, json);
+            console.warn(`Could not decodeSocketMessage`, e);
             return null;
         }
         return decodedMessage;

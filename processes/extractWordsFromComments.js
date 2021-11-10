@@ -1,6 +1,9 @@
 import natural from 'natural';
+import {parse} from 'node-html-parser';
 import urlRegex from 'url-regex';
 import urlNormalize from 'normalize-url';
+import emojiUnicodeRegex from 'emojibase-regex';
+import emojiShortcodeRegex from 'emojibase-regex/shortcode-native';
 import yargs from 'yargs';
 import RedisClient from '../utils/redisClient.js';
 import commentModel from '../utils/objectModels/comment.js';
@@ -13,6 +16,8 @@ const argv = yargs(process.argv.slice(2)).argv;
 
 const naturalTokenizer = new natural.WordPunctTokenizer();
 const naturalNGrams = natural.NGrams;
+
+const nodeHtmlParser = parse; // because their naming sucks
 
 class ExtractWordsFromComments {
 
@@ -60,24 +65,44 @@ class ExtractWordsFromComments {
             rawCommentKey = rawCommentKey.replace('__keyspace@0__:', '');
             self.redisClient.get(rawCommentKey, (comment) => {
                 self.redisClient.del(rawCommentKey); // We are going to reform the rawComment: into a comment:. Delete rawComment from redis.
-                if (!comment || !comment.body) return;
+                if (!comment || !comment.originalBody) return;
                 comment.pendingSymbols = {};
-                self.preserveSymbolsInCommentBody(comment, () => {
-                    self.extractWordSequences(comment, () => {
-                        self.redisClient.set(`comment:${comment.id}`, commentModel.minimizeForDb(comment));
+                self.sanitizeCommentBody(comment, () => {
+                    self.preserveSymbolsInCommentBody(comment, () => {
+                        self.extractWordSequences(comment, () => {
+                            self.redisClient.set(`comment:${comment.id}`, commentModel.minimizeForDb(comment));
+                        });
                     });
                 });
+
             });
         });
         this.redisClient.psubscribe('__keyspace@0__:rawComment*');
     }
 
+    sanitizeCommentBody(comment, cback) { // alters comment in-place
+        // This function takes whatever is received in originalBody, treats it like html, parses, sanitizes, preserves. Then sets the result to comment.body (overwriting whatever may have already been there)
+        let sanitizedBody = '';
+        let tempDomEl = null;
+        try {
+            tempDomEl = nodeHtmlParser(comment.originalBody);
+            sanitizedBody = tempDomEl.text; //.rawText;
+        } catch (e) {
+            console.warn(`Could not html parse comment.originalBody in comment:${comment.id}`, comment.originalBody, e);
+            return; // we can't keep this comment if it fails our parsing routing. No cback called.
+        }
+        comment.body = sanitizedBody;
+        if (cback) cback();
+    }
+
     preserveSymbolsInCommentBody(comment, cback) {
         const self = this;
         self.preserveUrlsInCommentBody(comment, () => {
-            self.preserveFinanceSymbolsInCommentBody(comment, 'stock', () => {
-                self.preserveFinanceSymbolsInCommentBody(comment, 'coin', () => {
-                    if (cback) cback();
+            self.preserveEmojiSymbolsInCommentBody(comment, () => {
+                self.preserveFinanceSymbolsInCommentBody(comment, 'stock', () => {
+                    self.preserveFinanceSymbolsInCommentBody(comment, 'coin', () => {
+                        if (cback) cback();
+                    });
                 });
             });
         });
@@ -87,7 +112,7 @@ class ExtractWordsFromComments {
         const self = this;
         // This function uses regex to locate urls within the comment body, then temporarily stores those URLs in comment.pendingSymbols (not saved to redis).
         // It then replaces the URL strings within comment.body with a "urlUid" string (which natural.js will respect as a single token - already "stemmed").
-        // The comment.body can then be tokenized and stemmed in extractWordSequences without malforming the URL or interpreting it as multiple tokens.
+        // The comment.body can then be tokenized and stemmed in extractWordSequences without malforming the URL or misinterpreting it as multiple tokens.
         // After extractWordSequences has completed the word isolation logic (see "reducedTokensToStems") - the URLs can be re-injected at their original location within
         // comment.body (by doing a string replace against the urlUid that was originally assigned for each URL). urlUid in format `comment${number}` will not be altered by natural js (porter stemmer).
         let commentBody = `${comment.body}`; // We will preserve untouched body text for rendering, and format a temporary local copy for this function's URL extraction logic
@@ -129,7 +154,7 @@ class ExtractWordsFromComments {
         const urlSymbolSearchPromises = [];
         foundUrls.forEach((thisUrl) => {
             urlSymbolSearchPromises.push(new Promise( (resolve, reject) => {
-                const tokenSymbolResult = {token: thisUrl, normalizedToken: null, symbolKey: null, matchedSymbol: null}
+                const tokenSymbolResult = self.newPendingSymbolEntity({token: thisUrl, type: 'url'});
                 let normalizedUrl;
                 try {
                     normalizedUrl = urlNormalize(thisUrl);
@@ -164,7 +189,8 @@ class ExtractWordsFromComments {
                         const newSymbolObj = symbolModel.createSymbolObject({
                             name: symbolName || 'link', // name is required, so provide a fallback
                             symbol: normalizedUrl,
-                            type: 'url'
+                            type: 'url',
+                            assocs: tokenSymbolResult.assocs,
                         });
                         self.redisClient.set(symbolKey, newSymbolObj, () => {
                             console.log(`Created new URL symbol object for ${symbolKey}`);
@@ -200,7 +226,7 @@ class ExtractWordsFromComments {
         commentTokens.forEach((thisToken, thisTokenIndex) => {
             tokenSymbolSearchPromises.push(new Promise( (resolve, reject) => {
                 const symbolKey = `symbol:${symbolType}:${thisToken.toUpperCase()}`; // `symbol:stock:GME` - stock symbol object keys always make the ticker caps
-                const tokenSymbolResult = {token: thisToken, normalizedToken: thisToken.toUpperCase(), symbolKey: symbolKey, matchedSymbol: null};
+                const tokenSymbolResult = self.newPendingSymbolEntity({token: thisToken, normalizedToken: thisToken.toUpperCase(), symbolKey: symbolKey});
                 let precedingToken = null;
                 if (thisTokenIndex !== 0) precedingToken = commentTokens[thisTokenIndex-1];
 
@@ -250,6 +276,106 @@ class ExtractWordsFromComments {
         });
 
     } // end preserveFinanceSymbolsInCommentBody
+
+    preserveEmojiSymbolsInCommentBody(comment, cback) { // alters comment in-place
+        const self = this;
+        // This function uses regex to locate emoji/emotes within the comment body, then temporarily stores their markdown in comment.pendingSymbols (not saved to redis).
+        // It then replaces the emoji code strings within comment.body with a "emojiUID" string (which natural.js will respect as a single token - already "stemmed").
+        // The comment.body can then be tokenized and stemmed in extractWordSequences without malforming the emoji code or misinterpreting it as multiple tokens.
+        // After extractWordSequences has completed the word isolation logic (see "reducedTokensToStems") - the emojis can be re-injected at their original location within
+        // comment.body (by doing a string replace against the emojiUID that was originally assigned for each emoji code).
+        let commentBody = `${comment.body}`; // We will preserve untouched body text for rendering, and format a temporary local copy for this function's emoji extraction logic
+        const foundEmojis = {}; // {':happy_face:': PendingSymbolEntity, etc...}
+
+        // 1. Look for the shortcode format :emoji-happy: :emoji_happy: :emojihappy: format. See https://www.webfx.com/tools/emoji-cheat-sheet/
+        // const foundColonEmojis = Array.from(commentBody.matchAll(/(^|\s)(:[a-zA-Z0-9_-]+:)/gm)); // https://regexr.com/69405
+        const foundColonEmojis = Array.from(commentBody.matchAll(emojiShortcodeRegex.source, 'g'));
+        foundColonEmojis.forEach((thisEmojiMatch) => {
+            const thisEmojiCode = thisEmojiMatch[0];
+            if (!foundEmojis[thisEmojiCode]) {
+                const emojiAssocs = [];
+                if (comment.wordAssocs && comment.wordAssocs[thisEmojiCode]) {
+                    emojiAssocs.push(comment.wordAssocs[thisEmojiCode]);
+                }
+                foundEmojis[thisEmojiCode] = self.newPendingSymbolEntity({
+                    token: thisEmojiCode,
+                    type: 'emoji',
+                    normalizedToken: thisEmojiCode,
+                    symbolKey: `symbol:emoji:${thisEmojiCode}`, // Note that our redis namespace delimeter is also a ":". We are creating the redis key symbol:emoji::happy_face: - this will not be a problem, but something to be aware of.
+                    assocs: emojiAssocs
+                });
+            }
+        });
+
+        // 2. Look for unicode emojis and convert them to :shortcode:. HashHype keeps all emojis within text in the shortcode format and can convert them at render time on client.
+        // const foundUnicodeEmojis = Array.from(commentBody.matchAll(emojiRegex()));
+        const foundUnicodeEmojis = Array.from(commentBody.matchAll(emojiUnicodeRegex.source, 'g'));
+        foundUnicodeEmojis.forEach((thisEmojiMatch) => {
+            const emojiChar = thisEmojiMatch[0];
+            const emojiUniCode = emojiChar.codePointAt(0).toString(16); // If this is "grinning face" (U+1F600) emojiCode is "1f600" https://gotomorrow.dev/convert-emoji-character-to-unicode-number-in-javascript
+            const thisEmojiCode = `:u_${emojiUniCode}:` // When hashHype converts unicode to shortcode, U+1F600 becomes ":u_1f600:"
+            foundEmojis[thisEmojiCode] = self.newPendingSymbolEntity({
+                token: thisEmojiCode,
+                type: 'emoji',
+                normalizedToken: thisEmojiCode,
+                symbolKey: `symbol:emoji:${thisEmojiCode}`, // Note that our redis namespace delimeter is also a ":". We are creating the redis key symbol:emoji::happy_face: - this will not be a problem, but something to be aware of.
+                assocs: [{assoc: emojiChar, type: 'unicode'}]
+            });
+            // In the case of unicode emojis, we also alter the comment body to show our custom shortcode format instead
+            comment.body = comment.body.replaceAll(emojiChar, thisEmojiCode);
+        });
+
+        // const emojiKeys = Object.keys(foundEmojis);
+        // if (emojiKeys.length) console.log(`Found ${emojiKeys.length} emojis in comment:${comment.id}`, emojiKeys);
+
+        const symbolSearchPromises = [];
+        Object.values(foundEmojis).forEach((thisPendingSymbolEntity) => {
+            symbolSearchPromises.push(new Promise( (resolve, reject) => {
+                // See if this emoji symbol already exists in redis. If not, create now.
+                self.redisClient.get(thisPendingSymbolEntity.symbolKey, (symbol) => {
+                    if(symbol) {
+                        // now that we have done a very basic symbol match against our redis key pattern, we will confirm the match by passing this token
+                        // into the symbols customizable match function.
+                        const isMatch = symbolModel.execMatch(symbol, thisPendingSymbolEntity.token, true);
+                        if(!isMatch) {
+                            resolve(thisPendingSymbolEntity);
+                            return;
+                        }
+                        // console.log(`comment:${comment.id} contained word ${thisToken} which matched an existing symbol ${symbolKey}`);
+                        thisPendingSymbolEntity.matchedSymbol = symbol;
+                        resolve(thisPendingSymbolEntity);
+                    } else {
+                        // redis Symbol object for this emoji does not yet exist, create and save it now.
+                        const newSymbolObj = symbolModel.createSymbolObject({
+                            name: thisPendingSymbolEntity.normalizedToken,
+                            symbol: thisPendingSymbolEntity.token,
+                            type: 'emoji',
+                            assocs: thisPendingSymbolEntity.assocs,
+                        });
+                        self.redisClient.set(thisPendingSymbolEntity.symbolKey, newSymbolObj, () => {
+                            console.log(`Created new emoji symbol object for ${thisPendingSymbolEntity.symbolKey}`);
+                            thisPendingSymbolEntity.matchedSymbol = newSymbolObj;
+                            resolve(thisPendingSymbolEntity);
+                        });
+                    }
+                });
+            }));
+        });
+
+        Promise.all(symbolSearchPromises).then((pendingSymbolEntities) => {
+            let idIncrement = 0;
+            pendingSymbolEntities.forEach((thisPendingSymbolEntity) => {
+                if (thisPendingSymbolEntity.matchedSymbol) {
+                    const thisEmojiUid = `emoji${++idIncrement}symbol`;
+                    const thisEmojiCodeEscapedForRegex = thisPendingSymbolEntity.token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // the string we are matching against needs to be escaped for regex. https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
+                    const emojiReplaceRegex = new RegExp(thisEmojiCodeEscapedForRegex, 'gm');
+                    comment.body = comment.body.replace(emojiReplaceRegex, `${thisEmojiUid} `); // We add a trailing space to make sure natural.js treats this as an isolated token. i.e. non-spaced emojis like "Hey i like emojis! emoji1symbolemoji2symbolemoji1symbol" would come out as 1 token
+                    comment.pendingSymbols[thisEmojiUid] = thisPendingSymbolEntity;
+                }
+            });
+            if (cback) cback();
+        });
+    } // end preserveEmojiSymbolsInCommentBody
 
     extractWordSequences(commentData, cback) {
         const self = this;
@@ -329,7 +455,7 @@ class ExtractWordsFromComments {
             if (stemSequence.length === 3) wordType = 'trigram';
 
             // Check if this word should be discard from relevancy training or by other rules.
-            if ( self.isDiscardWord(sequenceKey, wordType, symbolsInWord) ) continue;
+            if ( self.isDiscardWord(sequenceKey, wordType, symbolsInWord, stemSequence) ) continue;
 
             const newWordObject = self.newWordEntity({
                 type: wordType,
@@ -462,7 +588,7 @@ class ExtractWordsFromComments {
         self.redisClient.subscribe('__keyspace@0__:training:notRelevant');
     }
 
-    isDiscardWord(wordString, wordType, symbolsInWord = []) {
+    isDiscardWord(wordString, wordType, symbolsInWord = [], stemSequence = []) {
         // this process includes rules around which comments should be included in trend analysis. Ie: comments that are too long... comments that look like bots or spam, etc.
         let shouldDiscard = false;
 
@@ -470,6 +596,22 @@ class ExtractWordsFromComments {
         if (wordType === 'word' && symbolsInWord.length === 0) {
             shouldDiscard = true;
             return shouldDiscard;
+        }
+
+        if (wordType === 'bigram') {
+            // If is a bigram and both tokens are the same
+            if (stemSequence[0] === stemSequence[1]) {
+                shouldDiscard = true;
+                return shouldDiscard;
+            }
+        }
+
+        if (wordType === 'trigram') {
+            // If is a trigram and two tokens in a row are the same
+            if (stemSequence[0] === stemSequence[1] || stemSequence[1] === stemSequence[2]) {
+                shouldDiscard = true;
+                return shouldDiscard;
+            }
         }
 
         // If word is an empty string
@@ -486,6 +628,20 @@ class ExtractWordsFromComments {
         }
 
         return shouldDiscard;
+    }
+
+    newPendingSymbolEntity(initial = {}) { // must provide initial.token
+        // returns an initial state for a new "pending symbol". This is not a redis object. It's used during word extraction to temporarily save
+        // url/stock/emoji symbol data while they are temporarily represented as simple "symbolUID" strings within comment.body. After natural tokenizing/stemming is complete,
+        // these pending symbol entities are re-accessed to restore the comment body to it's original form.
+        return {
+            token: initial.token, // this is required. It's the untouched token text as originally recieved in comment.body before extraction
+            type: initial.type || null, // 'url', 'stock', 'emoji', etc
+            normalizedToken: initial.normalizedToken || null, // some symbol tokens will go through normalization logic, like capitalizing stock symbols, or normalizing urls, to maintain their context, while resetting as uniform.
+            symbolKey: initial.symbolKey || null, // the redis key that points to the symbol object (may already exist in redis, or this key will be used to save anew)
+            matchedSymbol: initial.matchedSymbol || null, // the full redis symbol object for this pending symbol
+            assocs: initial.assocs || [] // see the assocs prop documentation on our symbol objectModel
+        };
     }
 
     newWordEntity(initial = {}) { // Must provide value, and type

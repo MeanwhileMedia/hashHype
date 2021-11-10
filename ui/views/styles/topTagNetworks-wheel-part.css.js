@@ -37,11 +37,12 @@ const styles = {
             },
             'wheel_part_title': {
                 'opacity': 0,
-                'transition': 'opacity .4s ease-in'
+                'transition': 'opacity .4s ease-in',
+                'max-height': '1.2em'
             },
             'wheel_part_title_label': {
                 'opacity': 0,
-                'fill': '#b3b3b3',
+                'color': '#b3b3b3',
                 'transition': 'opacity .2s ease-in .2s',
                 'text-transform': 'uppercase'
             },
@@ -54,8 +55,16 @@ const styles = {
             'wheel_part_title__rank': {
                 'opacity': 0,
             },
-            'wheel_part_buttons_wrapper': {
-                'overflow': 'visible'
+            'wheel_part_text_wrapper': {
+                'overflow': 'visible',
+            },
+            'wheel_part_text_inner': {
+                'text-align': 'center',
+                'width': '50em',
+                'margin-left': '-25em',
+            },
+            'wheel_part_text_section': {
+                'margin-bottom': '0.5em'
             },
             'wheel_part_buttons': {
                 'margin-top': '2.4em',

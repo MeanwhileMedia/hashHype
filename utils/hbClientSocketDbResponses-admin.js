@@ -99,42 +99,6 @@ class HbClientSocketDbResponses_admin {
         });
     }
 
-
-    //JWW STOPPING POINT -
-    // 1. DONE - Build an input in adminTrain for symbols allowing code snippets for custom matching logic (many single charachters within comments
-    //    are matching as symbols (cuz stupid wall street assigned single char stock symbols)). This single char or other ambiguous stock symbols could be customized to caps only, or must be prepended by $, etc.
-    //    This logic could also allow for looser matching rules (like matching on a company name instead of specifically it's stock symbol)
-    // 2. DONE - Build an option into adminTrain to edit symbol data (like the "name" prop which is rendered large in wheel UI - sometimes contains excess info like "Gamestop - Class A" etc).
-    //    This feature will also help admins manually add descriptive data to URL symbols (see #3 below)
-    // 3. DONE - Extract URLS from comments as a new type of symbol. Make sure none of the URL chars get extracted as words during tokenization
-    // 4. DONE - disabled AOF - Adjust redis aof settings because it appears to be saving too often - also look into the minifaction feature
-    // 5. DONE - update redisClient.js to overwrite the native node_redis set and get commands. Add logic to automatically set or get to the 'long' db based on a namespace configuration. This way, individual processes don't need to set up the extra "long" client and/or individually maintain the logic for which db to use.
-    //             DONE - this is ready to test... what happens when a words "foundAt" object get's evicted from "short" because of redis's retarded LRU algo. That would drastically change all logic associated with timeBucketWordPointsForComment. Need to add logic to keep these tstamp arrays in long db once they reach a certain length.
-    //             DONE - need to design some logic for resetting "New topWordsMinCount: 6". Once it gets high during peak times, it becomes too high during slow times and words are ignored.
-    //             DONE - topCommentStats is bypassing comment preserve logic because it currently uses throttled.get. Add dynamic db to batch commands? Decision: Only added to batched.get in a non blocking manner (to preserve performance)
-    // 6. Maintenance
-    //     DONE - Set up routine to backup redis DB (rdb) to cloud every 24hrs
-    //     DONE - rotate and backup logs to cloud
-    //     DONE - log db stats in intervals so can track growth
-    //     WONT - will use our rdb archives to access historical data. original task: create snapshots of stats: objects (for long term trend extraction using per-day data)
-    // 7. DONE - Change top comment stats to only show 2 wedges for any given symbol
-    // 7.5 DONE - Duplicate identical comments by same user keep trending. Need a solution. A comment may only receive word/symbol repost points ONCE PER USER (zero times for self)??
-    // 8. DONE - Need to extact stock symbols BEFORE stemming (e.g. MVIS is getting stemmed to MVI and never trends as a symbol)
-    // 8.5 DONE - only serve admin train FE assets to requests from admin URLs. add functionality to strip JS includes of admin assets during code compilation.
-    // 9. DONE - Add improvements to topCommentHigh and topCommentLow logic so that we don't overflow our topComments with symbol duplication
-    // 9.5 DONE - Add GNAV including an "about" icon which includes disclaimer
-    // 9.6: DONE - See "Clearing LRU items.." - it tramples self. update: increased cache size AND clear percentage. Must test.
-    // 9.7: DONE - Add cleanup routine to log and db backup in maintenance process. gdrive ran out of space after just a few days
-    // 9.8: DONE - add better logic for "New topWordsMinCount:" - should be set to the lowest 24Hr word count (right now is getting too high)
-    // 9.9: DONE - logs need timstamps prepended
-    // 9.10: "Could not find redis key in primary DB. Recovered..." appears to be occuring multiple times for same items (like a single comment), either it's fighting against redis LRU or we have an error in recovering from long->short
-    // 9.11: DONE - need to take a look at removeCommentFromAll (and removeCommentFromWordToCommentIndexes) where the throttled del/set command may introduce a bug in our preserve/recover logic. We may need a solution for syncing throttled redis commands.
-    //          - note that the set commands that were slaughering mem/gc were the wordToCommentIndex objects. It may be time to store these indexes in a different data format (currently JSON strings in redis)
-    // 9.12: WONT (focusing on 1hr trend for now) - Need to add an interval to update point counts for all comments in 12/24hr buckets (topCommentStats). The real time updates only apply to the 1hr bucket.
-    // 10. DONE - Mobile styles
-    // 11. DONE - Add google analytics snippet to layout.html
-
-
     deleteComment(message, socket) {
         const self = this;
         const commentId = message.data.commentId;

@@ -12,6 +12,7 @@ const symbolObjModel = {
             name: props.name || null, // full coin or company name // read-only
             type: props.type || null, // 'stock', 'coin', 'url', etc // read-only
             exchange: props.exchange || null, //nyse, etc // read-only
+            assocs: props.assocs || [], // [{assoc: 'http://imgUrl.jpg', type: 'img'}, etc..] - link this symbol to one or more associations with greater context - i.e. an image url for an emoji symbol, etc
             // The following accessor functions are stored to redis as strings. the get and match functions are customizable via adminTrain UI.
             // They are executed via "new Function(getFuncString)". The args seen below are required every time the functions are called.
             // 'get' is the funtion that returns the props for the symbol (allowing programatic edits to symbol.name, for example)

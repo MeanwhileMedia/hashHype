@@ -65,13 +65,6 @@ class Reddit {
             clientSecret: 'dwC0N8a9H0dsM2j8qrU8O7WYc4mt1g',
             refreshToken: '517486034553-idlmDwRFIA_1o1iWE2SJuFy3UUwq-Q'
         });
-        // this.redditApiClient = new snoowrap({
-        //     userAgent: 'hashHype',
-        //     clientId: 'bgeRA6pswGCpfQ',
-        //     clientSecret: 'SEjIOW66mxc3A607hQpyBNURv_7E2g',
-        //     refreshToken: '517486034553-k4AU73eA-xYst948y8hAuT2UqoHoBw'
-        // });
-        // access token: 517486034553-hDE_ehFNsfyiNaMaqe4erGs3ofnA1g
     }
 
     fetchCommentsForSubreddit(subName, cback) {
@@ -88,11 +81,34 @@ class Reddit {
     createCommentObjects(comment, commentObjects) {
         const self = this;
         const createdUtc = comment.created_utc || Date.now()/1000; // Reddit reports tstamps in SECONDS
+
+        // First try to extract wordAssocs from reddit's "comment.media_metadata" object
+        const wordAssocs = {};
+        if (comment.media_metadata) {
+            const wordsWithAssocs = Object.values(comment.media_metadata);
+            wordsWithAssocs.forEach((thisWordAssoc) => {
+                if (!thisWordAssoc.id || !thisWordAssoc.e || !thisWordAssoc.s || !thisWordAssoc.s.u) {
+                    console.warn(`A media_metadata entry in a Reddit comment was not valid:`, thisWordAssoc);
+                    return;
+                }
+
+                let wordVal = thisWordAssoc.id;
+                // 1. Convert reddit emote format back to standard emoji - i.e: 'emote|t5_2th52|4258' should be ':4258:'
+                const wordValParts = wordVal.split('|')
+                if (wordValParts.length === 3 && wordValParts[0] === 'emote') {
+                    wordVal = `:${wordValParts[2]}:`;
+                }
+
+                wordAssocs[wordVal] = {assoc: thisWordAssoc.s.u, type: thisWordAssoc.e.toLowerCase()};
+            });
+        }
+
         const thisCommentObject = commentModel.createCommentObject({
-            body: comment.body,
-            originalBody: comment.body,
+            body: comment.body, // we only use reddit's comment.body temporarily in our "isDiscardComment" function below. This gets reset in the extractWordsFromComments process from a parsed/sanitized originalBody.
+            originalBody: comment.body_html,
             author: {name: comment.author.name},
-            createdUtc: createdUtc * 1000
+            createdUtc: createdUtc * 1000,
+            wordAssocs: wordAssocs
         });
         commentObjects.push(thisCommentObject);
         // if (comment.replies && comment.replies.length > 0) {

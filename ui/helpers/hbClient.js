@@ -11,9 +11,6 @@ var hbClient = {
     fauxSocketPollIntervalLength: 5000,
     fauxSocketPollIntervals: [],
 
-    //fauxSocketCurBacktrackPosition: {}, // object holds all message channels which are currently in backtrack mode (keys) and the position in history that they are currently attempting to recover from cdn (value) {'change:foo': 234345624, etc...}
-    fauxSocketBacktrackingLeastStaleTstamp: {}, // object holds all message channels which were previously in backtrack mode (keys) and the position in history which returned a 200 response to recover data from cdn (value) {'change:foo': 234345624, etc...}
-
     init() {
         window.hbClient = this;
         console.log('Opening connection with', hbClient.serverAddress);
@@ -40,7 +37,7 @@ var hbClient = {
                         const now = Date.now();
                         dataChangeMessage.tstamp  = now - (now % hbClient.fauxSocketPollIntervalLength)
                         hbClient.sendFauxSocketMessage(dataChangeMessage, (resMsg, reqStatus) => {
-                            if ((!resMsg || reqStatus.toString()[0] !== '2') && !hbClient.fauxSocketBacktrackingLeastStaleTstamp[dataChangeMessage.channel]) {
+                            if (!resMsg || reqStatus.toString()[0] !== '2') {
                                 console.log(`Faux socket received a failure response code (${reqStatus})`, resMsg);
                             }
                         });
@@ -107,11 +104,9 @@ var hbClient = {
             console.warn('Could not encodeSocketMessage. messageObj was not a valid object.');
             return null;
         }
-        let json;
         let encodedMessage;
         try {
-            json = JSON.stringify(messageObj);
-            encodedMessage = btoa(json);
+            encodedMessage = encodeURIComponent(JSON.stringify(messageObj));
         } catch (e) {
             console.warn(`Could not encodeSocketMessage`, e, messageObj);
             return null;
@@ -123,13 +118,11 @@ var hbClient = {
             console.warn('Could not decodeSocketMessage. encodedMessageStr was not a valid string.');
             return null;
         }
-        let json;
         let decodedMessage;
         try {
-            json = atob(encodedMessageStr);
-            decodedMessage = JSON.parse(json);
+            decodedMessage = JSON.parse(decodeURIComponent(encodedMessageStr));
         } catch (e) {
-            console.warn(`Could not decodeSocketMessage`, e, json);
+            console.warn(`Could not decodeSocketMessage`, e);
             return null;
         }
         return decodedMessage;

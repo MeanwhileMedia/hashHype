@@ -42,7 +42,7 @@ const styles = {
                 'align-items': 'center',
                 'position': 'absolute',
                 'top': '0.7rem',
-                'right': '100%',
+                'right': '102%',
                 'margin-right': '.2rem',
                 'transform-origin': 'right top',
             },
