@@ -292,8 +292,9 @@ button .hbWidgets.icon {
 .hbWidgets.icon {
     fill: #7c7c7c;
     cursor: pointer;
-    vertical-align: middle;
     height: 100%;
+    display: inline-flex;
+    align-items: center;
 }
 .hbWidgets.icon:hover {
     fill: #000;

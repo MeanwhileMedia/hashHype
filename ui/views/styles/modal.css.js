@@ -8,6 +8,11 @@ const styles = {
             modalPaddingTop = gNavEl.getBoundingClientRect().height + 10 + 'px';
         }
 
+        let modalTitleMarginBottom = '3rem';
+        if (view.props.content.subtitle) {
+            modalTitleMarginBottom = '0.6rem';
+        }
+
         const css = {
             modal: {
                 'display': view.props.content.visible ? 'flex' : 'none',
@@ -56,11 +61,10 @@ const styles = {
             },
 
             modal_title: {
-                'margin-bottom': '3rem',
+                'margin-bottom': modalTitleMarginBottom,
             },
             modal_subtitle: {
                 'margin': '0',
-                'margin-top': '-3rem',
                 'margin-bottom': '3rem',
             },
             modal_body: {

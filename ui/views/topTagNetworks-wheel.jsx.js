@@ -13,7 +13,8 @@ class TopTagWheel extends React.Component {
         this.state = {
             topTagCount: 10, // how many topTags to show in our wheel
             showOnlyTopTagsWithSymbols: true, // don't display an comments on our wheel unless they are associated with at least one symbol
-            showTopTagSymbolsOnlyOnce: true // our server will send a max of 2 comments to represent any single symbol. Set this true and we will only render the higher scoring one. Will only apply when showOnlyTopTagsWithSymbols == true.
+            showTopTagSymbolsOnlyOnce: true, // our server will send a max of 2 comments to represent any single symbol. Set this true and we will only render the higher scoring one. Will only apply when showOnlyTopTagsWithSymbols == true.
+            showTopTagSymbolTypes: ['stock'] // can be set to one or more of strings equaling a symbol.type
         };
     }
 
@@ -152,10 +153,13 @@ class TopTagWheel extends React.Component {
             let reducedTopTags = [];
             const reducedTopTagsBySymbol = {}; // {GME: [comment3, comment1], APPL: [comment32], etc..} - used for picking the higher scoring symbol comment when showTopTagSymbolsOnlyOnce == true
             hierarchyData.children.forEach((thisTopTag) => {
-                const hasSymbol = thisTopTag.topSymbolHigh['1Hr'].key || thisTopTag.topSymbolLow['1Hr'].key || null;
-                if (hasSymbol) {
-                    reducedTopTagsBySymbol[hasSymbol] = reducedTopTagsBySymbol[hasSymbol] || [];
-                    reducedTopTagsBySymbol[hasSymbol].push(thisTopTag);
+                const hasTopSymbolKey = thisTopTag.topSymbolHigh['1Hr'].key || thisTopTag.topSymbolLow['1Hr'].key || null;
+                if (hasTopSymbolKey) {
+                    const hasTopSymbol = thisTopTag.symbols.find(thisSymbol => thisSymbol.redisKey === hasTopSymbolKey);
+                    if (hasTopSymbol && thisView.state.showTopTagSymbolTypes.indexOf(hasTopSymbol.type) !== -1) {
+                        reducedTopTagsBySymbol[hasTopSymbolKey] = reducedTopTagsBySymbol[hasTopSymbolKey] || [];
+                        reducedTopTagsBySymbol[hasTopSymbolKey].push(thisTopTag);
+                    }
                 }
             });
             if (this.state.showTopTagSymbolsOnlyOnce) {
