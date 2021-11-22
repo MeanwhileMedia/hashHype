@@ -12,13 +12,17 @@ class TopTagnewsColumns extends React.Component {
         // SHORTEST raw word sequence which belongs to each of our comment.points words.
         const boldTheseWordSeqs = [];
         for (let [wordStr, pointsForWord] of Object.entries(comment.points['1Hr'])) {
-            let shortestRawSequence = [];
-            const thisWordRef = comment.words.find(thisWordRef => thisWordRef.word === wordStr);
-            thisWordRef.rawWords.forEach((thisRawWordSeq) => {
-                if (!shortestRawSequence.length || (thisRawWordSeq.length < shortestRawSequence.length)) shortestRawSequence = thisRawWordSeq;
+            let shortestRawSequenceStr = '';
+            let shortestRawSequenceTokenCount = null;
+            const thisPointedWordRef = comment.words.find(thisWordRef => thisWordRef.word === wordStr);
+            thisPointedWordRef.rawWords.forEach((thisRawWordSeqStr) => {
+                const thisRawWordSeqTokenCount = thisRawWordSeqStr.split(' ').length;
+                if (shortestRawSequenceTokenCount === null || thisRawWordSeqTokenCount < shortestRawSequenceTokenCount) {
+                    shortestRawSequenceStr = thisRawWordSeqStr;
+                    shortestRawSequenceTokenCount = thisRawWordSeqTokenCount;
+                }
             });
-            const rawSeqString = shortestRawSequence.join(' ');
-            if (boldTheseWordSeqs.indexOf(rawSeqString) === -1) boldTheseWordSeqs.push(rawSeqString);
+            if (boldTheseWordSeqs.indexOf(shortestRawSequenceStr) === -1) boldTheseWordSeqs.push(shortestRawSequenceStr);
         };
         boldTheseWordSeqs.forEach((thisRawWordSeqStr) => {
             formattedBody = formattedBody.replace(thisRawWordSeqStr, `<strong>${thisRawWordSeqStr}</strong>`);

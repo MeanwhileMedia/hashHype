@@ -5,9 +5,12 @@ const commentObjModel = {
 
     createCommentObject: function(props = {}) {
         const commentObj = {
+            class: 'comment',
             id: uuidv4(),
-            body: props.body || null,
+            body: props.body || null, // comment.body is the renderable string. The closest (sanitized) representation of what was orignially posted by commenter.
             originalBody: props.originalBody || null, // comment.body gets maniplulated to format symbols/urls/etc. We keep a copy of the untouched originalBody too.
+            normalizedBody: props.normalizedBody || null, // this is comment.body with contractions expanded + more. See extractWordsFromComments.sanitizeAndNormalizeCommentBody
+            stemmedBody: props.stemmedBody || null, // the comment.body passed through natural.PorterStemmer. Lets us know how our code understood the comment.body
             author: props.author || {name: null},
             createdUtc: props.createdUtc || Date.now(), // when the comment was posted (ms)
             foundAt: props.foundAt || Date.now(), // when the comment registered to hashHype

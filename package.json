@@ -20,7 +20,7 @@
     "koa": "^2.13.1",
     "koa-static": "^5.0.0",
     "koa-websocket": "^6.0.0",
-    "natural": "^4.0.0",
+    "natural": "^5.1.0",
     "node-html-parser": "^5.1.0",
     "nodemailer": "^6.6.3",
     "normalize-url": "^5.3.0",
@@ -40,6 +40,7 @@
   "scripts": {
     "deployDev01": "node -r esm ./utils/deployCodeSftp.js -target dev01",
     "deployDev01_dev": "node -r esm ./utils/deployCodeSftp.js -target dev01_dev",
+    "deployDev01_flush": "node -r esm ./utils/deployCodeSftp.js -target dev01_flush",
     "deployProd01": "node -r esm ./utils/deployCodeSftp.js -target prod01",
     "deployProd01_recover": "node -r esm ./utils/deployCodeSftp.js -target prod01_recover",
     "deployProd01_flush": "node -r esm ./utils/deployCodeSftp.js -target prod01_flush",

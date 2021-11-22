@@ -1,6 +1,15 @@
 import redis from 'redis';
 import yargs from 'yargs';
 import redisClientConfig from './redisClient-config.js';
+import commentModel from './objectModels/comment.js';
+import wordModel from './objectModels/word.js';
+import symbolModel from './objectModels/symbol.js';
+
+const objectModels = {
+    'comment': commentModel,
+    'word': wordModel,
+    'symbol': symbolModel
+}
 
 // This extends wraps node_redis functionality. It hanldles multiple database configs, offers throttled functionality +more.
 class RedisClient {
@@ -799,9 +808,19 @@ class RedisClient {
             // SET (batched)
             pendingSetBatch: {}, // {key: object (not yet stringified)}
             pendingSetBatchCount: 0,
-            set: (key, object, cback) => { //ONLY pass objects the throttled set, not stringified JSON
-                if(!self.throttle.pendingSetBatch[key]) self.throttle.pendingSetBatchCount++;
-                self.throttle.pendingSetBatch[key] = object;
+            set: (key, object, cback) => { // ONLY pass objects the throttled set, not stringified JSON
+                if(!self.throttle.pendingSetBatch[key]) {
+                    self.throttle.pendingSetBatchCount++;
+                    self.throttle.pendingSetBatch[key] = object;
+                } else {
+                    // we already have a pending set for this key. try to merge the objects if possible.
+                    const objectClass = self.throttle.pendingSetBatch[key].class || null;
+                    if (objectModels[objectClass] && objectModels[objectClass].merge) {
+                        self.throttle.pendingSetBatch[key] = objectModels[objectClass].merge(self.throttle.pendingSetBatch[key], object);
+                    } else { // no merge option, overwrite the pending set
+                        self.throttle.pendingSetBatch[key] = object;
+                    }
+                }
                 if (self.throttle.pendingSetBatchCount === self.throttle.maxSetBatchSize) self.throttle.setBatch();
                 if (cback) cback(); // currently not waiting for mset cback - let code proceed as if set happened immediately
             },

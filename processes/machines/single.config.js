@@ -135,13 +135,12 @@ module.exports = {
 // *1. Must add the following changes to bottom of /etc/sysctl.conf
 //     vm.overcommit_memory=1
 //     net.core.somaxconn=65535
+//      JWW - did not need to do this for temple04. Might not be necc anymore.
 //
 // *2. Steps to init new raspberry pi 4 machine:
-//     - install ubuntu to card, boot first time with keyboard and monitor. Perform first login (then can be added to POE/ethernet and accessed via SSH)
+//     - install ubuntu to card, plug into POE and configure router (set static ip, SSH service, port forward to SSH).
 //     - sudo apt update
 //     - sudo apt upgrade
 //     - for a machine that will run redis - sudo apt install build-essential
 //     - for a machine that will run redis - perform *1 above
 //     - install node (nvm) and redis (https://redis.io/topics/quickstart)
-//     - Create self signed ssl certs OR use certbot and copy certs to utils/certs using below CLI commands:
-            // npm run genSslCerts --domain=dev.meanwhile.media (which is already part of our deploy npm scripts)

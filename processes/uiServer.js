@@ -283,7 +283,10 @@ const uiServer = {
             // This is how the front end gets populated with html (via react components).
             // The client requests the file paths by sending the absKey then dynamically adds them to the page.
             self.redisClient.get(message.data.absKey, (gotObj) => {
-                if (!gotObj) return;
+                if (!gotObj) {
+                    console.error(`Could not find redis key ${message.data.absKey} when responding to a viewRequest socket message.`);
+                    return;
+                }
                 if (!gotObj.ui || !gotObj.ui.viewPath) {
                     console.log(`Could not match redis data with a view (${message.data.absKey}).`);
                     return;

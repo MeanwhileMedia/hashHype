@@ -8,6 +8,7 @@ const symbolObjModel = {
             return null;
         }
         const symbolObj = {
+            class: 'symbol',
             symbol: props.symbol, // read-only
             name: props.name || null, // full coin or company name // read-only
             type: props.type || null, // 'stock', 'coin', 'url', etc // read-only

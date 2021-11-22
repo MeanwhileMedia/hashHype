@@ -4,6 +4,7 @@ const trainingObjModels = {
 
     createTrainingNotRelevantObject: function(props = {}) {
         const notRelevantObj = {
+            class: 'training',
             users: [], // array of objects {username: 'foo', tstamp: tstamp int (when user was marked not relevant via the trend training ui)}
             words: [], // array of objects {word: 'buy_gme', tstamp: tstamp int}
             comments: [], // array of objects {id: comment id, tstamp: tstamp int}

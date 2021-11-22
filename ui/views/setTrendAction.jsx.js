@@ -47,6 +47,11 @@ class SetTrendAction extends React.Component {
             {label: 'Buy'},
             {label: 'Sell'}
         ];
+
+        let renderSymbolText = '';
+        if (this.props.activeTopTag && this.props.activeTopTag.renderedSymbol && this.props.activeTopTag.renderedSymbol.symbol) {
+            renderSymbolText = this.props.activeTopTag.renderedSymbol.symbol;
+        }
         const robinhoodForm = (
             <div key="robinhoodActionForm" style={css.setTrendAction_thirdAppsActionForm}>
                 <span className="noBreakTextGroup noBreakTextGroup__bottomMargin">
@@ -55,7 +60,7 @@ class SetTrendAction extends React.Component {
                 <span className="noBreakTextGroup noBreakTextGroup__bottomMargin">
                     <TextInput placeholder="1" size="small" minWidth="1rem"/>
                     <span>shares of</span>
-                    <TextInput placeholder={this.props.activeTopTag.renderedSymbol.symbol} size="small" minWidth="3rem"/>
+                    <TextInput placeholder={renderSymbolText} size="small" minWidth="3rem"/>
                     <span>for</span>
                     <TextInput placeholder="Price (USD)" size="small" minWidth="6rem"/>
                     <span>each.</span>
@@ -71,6 +76,10 @@ class SetTrendAction extends React.Component {
             {label: 'Buy'},
             {label: 'Sell'}
         ];
+        let renderSymbolText = '';
+        if (this.props.activeTopTag && this.props.activeTopTag.renderedSymbol && this.props.activeTopTag.renderedSymbol.symbol) {
+            renderSymbolText = this.props.activeTopTag.renderedSymbol.symbol;
+        }
         const coinbaseForm = (
             <div key="coinbaseActionForm" style={css.setTrendAction_thirdAppsActionForm}>
                 <span className="noBreakTextGroup noBreakTextGroup__bottomMargin">
@@ -79,7 +88,7 @@ class SetTrendAction extends React.Component {
                 <span className="noBreakTextGroup noBreakTextGroup__bottomMargin">
                     <TextInput placeholder="1" size="small" minWidth="1rem"/>
                     <span>coins of</span>
-                    <TextInput placeholder={this.props.activeTopTag.renderedSymbol.symbol} size="small" minWidth="3rem"/>
+                    <TextInput placeholder={renderSymbolText} size="small" minWidth="3rem"/>
                     <span>for</span>
                     <TextInput placeholder="Price (USD)" size="small" minWidth="6rem"/>
                     <span>each.</span>
@@ -91,9 +100,13 @@ class SetTrendAction extends React.Component {
     }
 
     renderTwitterActionForm(css) {
+        let renderSymbolText = 'this';
+        if (this.props.activeTopTag && this.props.activeTopTag.renderedSymbol && this.props.activeTopTag.renderedSymbol.symbol) {
+            renderSymbolText = this.props.activeTopTag.renderedSymbol.symbol;
+        }
         const twitterForm = (
             <div key="twitterActionForm" style={css.setTrendAction_thirdAppsActionForm}>
-                <TextInput placeholder={`Look at ${this.props.activeTopTag.renderedSymbol.symbol}. #trending @hash_hype`} size="large" ctaGutter="3rem" textAlign="left" />
+                <TextInput placeholder={`Look at ${renderSymbolText}. #trending @hash_hype`} size="large" ctaGutter="3rem" textAlign="left" />
                 <div style={css.setTrendAction_thirdAppsActionForm_ctaSection}>
                     <button style={css.setTrendAction_thirdAppsActionForm_save} className="button__sev1" onClick={this.clickedSaveAppAction.bind(this, 'Twitter')}>Save</button>
                 </div>
@@ -103,13 +116,17 @@ class SetTrendAction extends React.Component {
     }
 
     renderEmailActionForm(css) {
+        let renderSymbolText = 'this';
+        if (this.props.activeTopTag && this.props.activeTopTag.renderedSymbol && this.props.activeTopTag.renderedSymbol.symbol) {
+            renderSymbolText = this.props.activeTopTag.renderedSymbol.symbol;
+        }
         const emailForm = (
             <div key="emailActionForm" style={css.setTrendAction_thirdAppsActionForm}>
                 <div style={{'padding-bottom': '1rem'}}>
                     <span>Send email to:</span>
                     <TextInput placeholder="person@email.com" size="small" minWidth="3rem"/>
                 </div>
-                <TextInput placeholder={`Look at ${this.props.activeTopTag.renderedSymbol.symbol}. It's trending on HashHype.com`} size="large" ctaGutter="3rem" textAlign="left" />
+                <TextInput placeholder={`Look at ${renderSymbolText}. Trending on HashHype.com`} size="large" ctaGutter="3rem" textAlign="left" />
                 <div style={css.setTrendAction_thirdAppsActionForm_ctaSection}>
                     <button style={css.setTrendAction_thirdAppsActionForm_save} className="button__sev1" onClick={this.clickedSaveAppAction.bind(this, 'Email')}>Save</button>
                 </div>
@@ -125,11 +142,16 @@ class SetTrendAction extends React.Component {
         let activeThirdAppForm = null;
         if (this.state.activeThirdApp) activeThirdAppForm = this.renderAppActionForms()[this.state.activeThirdApp];
 
+        let renderSymbolText = '';
+        if (this.props.activeTopTag && this.props.activeTopTag.renderedSymbol && this.props.activeTopTag.renderedSymbol.symbol) {
+            renderSymbolText = this.props.activeTopTag.renderedSymbol.symbol;
+        }
+
         return (
             <div className="setTrendAction" style={css.setTrendAction}>
                 <div style={css.setTrendAction_section}>
                     <h3>
-                        <span className="noBreakTextGroup">The next time<TextInput placeholder={this.props.activeTopTag.renderedSymbol.symbol} minWidth="6rem" /></span>
+                        <span className="noBreakTextGroup">The next time<TextInput placeholder={renderSymbolText} minWidth="6rem" /></span>
                         <span className="noBreakTextGroup">trends to<TextInput placeholder={this.props.activeTopTag.rank} type="ordinal" minWidth="4rem" />place:</span>
                     </h3>
                 </div>

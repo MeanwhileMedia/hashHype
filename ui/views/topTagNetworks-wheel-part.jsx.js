@@ -115,7 +115,9 @@ class TopTagWheelPart extends React.Component {
             textEls.forEach((textEl) => {
                 textEl.style.opacity = 0;
             });
-            this.wheelPartSymbolTitleText.current.style.opacity = 0.2;
+            if (this.wheelPartSymbolTitleText.current && this.wheelPartSymbolTitleText.current.style) {
+                this.wheelPartSymbolTitleText.current.style.opacity = 0.2;
+            }
         }
     }
 

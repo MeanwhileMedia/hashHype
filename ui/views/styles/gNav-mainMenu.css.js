@@ -4,7 +4,7 @@ const styles = {
         // Gnav is a fixed size and all rules are defined in px
         const css = {
             GNavMainMenu: {
-                'margin-left': 'min(5rem, 13vw)',
+                'margin-left': 'min(5.4rem, 14vw)',
                 'text-align': 'left',
             },
             GNavMainMenu_li: {
@@ -13,14 +13,11 @@ const styles = {
                 'margin-bottom': '10px',
                 'color': 'rgb(255 255 255 / 60%)',
                 'cursor': 'pointer',
-                'transition': 'color 0.2s',
-                'letter-spacing': '.5px',
+                'transition': 'text-shadow 0.2s',
                 'white-space': 'nowrap',
                 'user-select': 'none',
                 ':hover': {
-                    'font-weight': '400',
-                    'color': 'rgb(255 255 255)',
-                    'letter-spacing': '0',
+                    'text-shadow': '-0.2px -0.2px 1px rgb(255 255 255 / 90%), 0.2px 0.2px 1px rgb(255 255 255 / 90%)',
                 }
             },
             GNavMainMenu_ul__subsection: {
@@ -42,10 +39,14 @@ const styles = {
                 'align-items': 'center',
                 'position': 'absolute',
                 'top': '0.7rem',
-                'right': '102%',
+                'right': '107%',
                 'margin-right': '.2rem',
                 'transform-origin': 'right top',
             },
+            GNavMainMenu_li_tooltip: {
+                'position': 'absolute',
+                'top': '1.3rem'
+            }
         };
 
         return css;

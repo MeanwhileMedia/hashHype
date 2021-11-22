@@ -45,7 +45,6 @@ class TextInput extends React.Component {
         if (e.target.innerText === this.determineRenderedVal(this.props.placeholder) && !this.props.preservePlaceholder) {
             const curSelection = document.getSelection();
             const focusOffset = curSelection.focusOffset;
-            console.log('JWW1', focusOffset)
             // remove placeholder text now that user has focused
             this.setState({
                 value: '',

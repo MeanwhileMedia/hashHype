@@ -2,11 +2,11 @@ const styles = {
 
     generate(view) {
 
-        let modalPaddingTop = '8rem';
-        const gNavEl = document.querySelector('.GNav');
-        if (gNavEl) {
-            modalPaddingTop = gNavEl.getBoundingClientRect().height + 10 + 'px';
-        }
+        // let modalPaddingTop = '8rem';
+        // const gNavEl = document.querySelector('.GNav');
+        // if (gNavEl) {
+        //     modalPaddingTop = gNavEl.getBoundingClientRect().height + 10 + 'px';
+        // }
 
         let modalTitleMarginBottom = '3rem';
         if (view.props.content.subtitle) {
@@ -29,7 +29,7 @@ const styles = {
                 'overflow-x': 'hidden',
                 'overflow-y': 'auto',
                 'padding': '40px 0',
-                'padding-top': modalPaddingTop,
+                'padding-top': '4.6rem',
                 'box-sizing': 'border-box'
             },
             // Alignment "classes" can be applied to any element class by appending a common a modifier. Only the "align__left" is passed in js during modal instantiation.

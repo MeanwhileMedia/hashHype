@@ -77,7 +77,7 @@ class GNavMainMenu extends React.Component {
             let loginTooltip = null;
             if (this.state.blockedTrendCats.indexOf(thisTrendCatName) !== -1) {
                 loginTooltip = (
-                    <button onClick={self.props.gNav.showAboutModal.bind(self.props.gNav)}>
+                    <button style={css.GNavMainMenu_li_tooltip} onClick={self.props.gNav.showAboutModal.bind(self.props.gNav)}>
                         <Icon iconName="error" />
                         Log in
                     </button>

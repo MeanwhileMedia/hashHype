@@ -87,7 +87,7 @@ class Reddit {
         if (comment.media_metadata) {
             const wordsWithAssocs = Object.values(comment.media_metadata);
             wordsWithAssocs.forEach((thisWordAssoc) => {
-                if (!thisWordAssoc.id || !thisWordAssoc.e || !thisWordAssoc.s || !thisWordAssoc.s.u) {
+                if (!thisWordAssoc.id || !thisWordAssoc.e || !thisWordAssoc.s || (!thisWordAssoc.s.u && !thisWordAssoc.s.gif)) {
                     console.warn(`A media_metadata entry in a Reddit comment was not valid:`, thisWordAssoc);
                     return;
                 }
@@ -99,7 +99,10 @@ class Reddit {
                     wordVal = `:${wordValParts[2]}:`;
                 }
 
-                wordAssocs[wordVal] = {assoc: thisWordAssoc.s.u, type: thisWordAssoc.e.toLowerCase()};
+                let type = thisWordAssoc.e.toLowerCase();
+                if (type === 'animatedimage') type = 'image';
+                let mediaUrl = thisWordAssoc.s.u || thisWordAssoc.s.gif;
+                wordAssocs[wordVal] = {assoc: mediaUrl, type: type};
             });
         }
 
