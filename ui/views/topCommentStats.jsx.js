@@ -1,16 +1,17 @@
 import React from '/node_modules/react';
 import Radium from '/node_modules/radium';
-import d3 from '/node_modules/d3';
 import throttleDebounce from '/node_modules/throttle-debounce';
 import socketViewResponses from '../helpers/hbClientSocketViewResponses.js';
 import utils from '../helpers/utils.js'
 import GNav from './gNav.jsx.js';
-import TopTagWheel from './topTagNetworks-wheel.jsx.js';
-import TopTagnewsColumns from './topTagNetworks-newsColumns.jsx.js';
 import Modal from './modal.jsx.js';
-import styles from './styles/topTagNetworks.css.js';
+import BarRace from './barRace.jsx.js';
+let SpinWheel; // lazy loaded
+let spinWheelPath = './spinWheel.jsx.js';
 
-class TopTagNetworks extends React.Component {
+import styles from './styles/topCommentStats.css.js';
+
+class TopCommentStats extends React.Component {
     // ////////
     // React lifecycle functions
     constructor(props) {
@@ -18,10 +19,11 @@ class TopTagNetworks extends React.Component {
 
         this.state = {
             pageIsReady: false, // all page content will have 0 opacity until this is set to true
-            focusedTopTag: null,
+            focusedTopComments: null,
             freezeState: false, // set to true and all calls to receiveNewState (from our server socket) will be discarded.
             comments: [],
-            topTagsLastUpdated: Date.now(), // when was the last time we got a fresh stats:topComments from the server
+            topCommentsLastUpdated: Date.now(), // when was the last time we got a fresh stats:topComments from the server
+            topCommentsVizType: 'barRace', // barRace or spinWheel
             modalContent: {
                 title: '',
                 body: '',
@@ -44,8 +46,58 @@ class TopTagNetworks extends React.Component {
             // console.log('State is frozen...');
             return;
         }
-        socketData.topTagsLastUpdated = Date.now();
+        socketData.topCommentsLastUpdated = Date.now();
         this.setState(socketData);
+    }
+
+    setTopCommentsVizType(type = 'barRace') { // 'barRace', 'spinWheel', or 'toggle'
+        if (type === 'toggle') {
+            type = 'spinWheel';
+            if (this.state.topCommentsVizType === 'spinWheel') type = 'barRace';
+        }
+        if (this.state.topCommentsVizType !== type) this.setPageIsReady(false);
+        if (type === 'spinWheel') {
+            if (!SpinWheel) { // spinWheel is not the default landing viz and is lazy loaded
+                import(spinWheelPath).then((asyncModule) => {
+                    SpinWheel = asyncModule.default;
+                    this.setState({topCommentsVizType: type});
+                });
+            } else {
+                this.setState({topCommentsVizType: type});
+            }
+        } else {
+            this.setState({topCommentsVizType: type});
+        }
+    }
+
+    createCommentVisEl() {
+        let commentVisEl;
+        if (!this.state.topCommentsVizType || this.state.topCommentsVizType === 'barRace') {
+            commentVisEl = (
+                <BarRace
+                    topComments={this.state.comments}
+                    topCommentsLastUpdated={this.state.topCommentsLastUpdated}
+                    focusTopComment={throttleDebounce.throttle(200, this.focusTopComment).bind(this)}
+                    focusedTopComment={this.state.focusedTopComment}
+                    toggleFreezeState={this.toggleFreezeState.bind(this)}
+                    setPageIsReady={this.setPageIsReady.bind(this)}
+                    gNav={this.gNavRef.current}
+                />
+            );
+        } else {
+            commentVisEl = (
+                <SpinWheel
+                    topComments={this.state.comments}
+                    topCommentsLastUpdated={this.state.topCommentsLastUpdated}
+                    focusTopComment={throttleDebounce.throttle(200, this.focusTopComment).bind(this)}
+                    focusedTopComment={this.state.focusedTopComment}
+                    toggleFreezeState={this.toggleFreezeState.bind(this)}
+                    setPageIsReady={this.setPageIsReady.bind(this)}
+                    gNav={this.gNavRef.current}
+                />
+            );
+        }
+        return commentVisEl;
     }
 
     render() {
@@ -53,44 +105,33 @@ class TopTagNetworks extends React.Component {
         const css = styles.generate(this);
         const StyleRoot = Radium.StyleRoot;
 
-        // Note which topTag wheel part is currently focused on the topTag itself (within state.topTagStats)
-        this.state.comments.forEach((topTag, key) => {
-            topTag.id === thisView.state.focusedTopTag ? topTag.isFocused = true : topTag.isFocused = false;
+        this.state.comments.forEach((topComment, key) => {
+            topComment.id === thisView.state.focusedTopComment ? topComment.isFocused = true : topComment.isFocused = false;
         });
 
+        const commentVisEl = this.createCommentVisEl();
         return (
             <StyleRoot>
-                <div className="topTags" style={css.topTags}>
-                    <TopTagWheel
-                        topTags={this.state.comments}
-                        topTagsLastUpdated={this.state.topTagsLastUpdated}
-                        focusTopTag={throttleDebounce.throttle(200, this.focusTopTag).bind(this)}
-                        toggleFreezeState={this.toggleFreezeState.bind(this)}
-                        setPageIsReady={this.setPageIsReady.bind(this)}
-                        gNav={this.gNavRef.current}
-                    />
-                    <TopTagnewsColumns
-                        topTags={this.state.comments}
-                        modal={this.modalControls}
-                    />
+                <div className="topCommentStats" style={css.topCommentStats}>
+                    {commentVisEl}
                 </div>
                 <Modal content={this.state.modalContent} modal={this.modalControls} />
                 <GNav
                     ref={this.gNavRef}
-                    topTags={this.state.comments}
+                    topComments={this.state.comments}
                     modal={this.modalControls}
+                    setTopCommentsVizType={this.setTopCommentsVizType.bind(this)}
                 />
             </StyleRoot>
         );
     }
 
-    setPageIsReady() {
-        this.setState({pageIsReady: true});
+    setPageIsReady(isReady = true) {
+        this.setState({pageIsReady: isReady});
     }
 
-    focusTopTag(id) {
-        // The wheel was rotated and a new topTag has come into view.
-        this.setState({ focusedTopTag: id });
+    focusTopComment(id) {
+        this.setState({ focusedTopComment: id });
     }
 
     toggleFreezeState(frozen) {
@@ -149,4 +190,4 @@ class TopTagNetworks extends React.Component {
 
 } // end view
 
-export default TopTagNetworks;
+export default TopCommentStats;

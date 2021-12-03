@@ -49,8 +49,8 @@ class SetTrendAction extends React.Component {
         ];
 
         let renderSymbolText = '';
-        if (this.props.activeTopTag && this.props.activeTopTag.renderedSymbol && this.props.activeTopTag.renderedSymbol.symbol) {
-            renderSymbolText = this.props.activeTopTag.renderedSymbol.symbol;
+        if (this.props.activeTopComment && this.props.activeTopComment.renderedSymbol && this.props.activeTopComment.renderedSymbol.symbol) {
+            renderSymbolText = this.props.activeTopComment.renderedSymbol.symbol;
         }
         const robinhoodForm = (
             <div key="robinhoodActionForm" style={css.setTrendAction_thirdAppsActionForm}>
@@ -77,8 +77,8 @@ class SetTrendAction extends React.Component {
             {label: 'Sell'}
         ];
         let renderSymbolText = '';
-        if (this.props.activeTopTag && this.props.activeTopTag.renderedSymbol && this.props.activeTopTag.renderedSymbol.symbol) {
-            renderSymbolText = this.props.activeTopTag.renderedSymbol.symbol;
+        if (this.props.activeTopComment && this.props.activeTopComment.renderedSymbol && this.props.activeTopComment.renderedSymbol.symbol) {
+            renderSymbolText = this.props.activeTopComment.renderedSymbol.symbol;
         }
         const coinbaseForm = (
             <div key="coinbaseActionForm" style={css.setTrendAction_thirdAppsActionForm}>
@@ -101,8 +101,8 @@ class SetTrendAction extends React.Component {
 
     renderTwitterActionForm(css) {
         let renderSymbolText = 'this';
-        if (this.props.activeTopTag && this.props.activeTopTag.renderedSymbol && this.props.activeTopTag.renderedSymbol.symbol) {
-            renderSymbolText = this.props.activeTopTag.renderedSymbol.symbol;
+        if (this.props.activeTopComment && this.props.activeTopComment.renderedSymbol && this.props.activeTopComment.renderedSymbol.symbol) {
+            renderSymbolText = this.props.activeTopComment.renderedSymbol.symbol;
         }
         const twitterForm = (
             <div key="twitterActionForm" style={css.setTrendAction_thirdAppsActionForm}>
@@ -117,8 +117,8 @@ class SetTrendAction extends React.Component {
 
     renderEmailActionForm(css) {
         let renderSymbolText = 'this';
-        if (this.props.activeTopTag && this.props.activeTopTag.renderedSymbol && this.props.activeTopTag.renderedSymbol.symbol) {
-            renderSymbolText = this.props.activeTopTag.renderedSymbol.symbol;
+        if (this.props.activeTopComment && this.props.activeTopComment.renderedSymbol && this.props.activeTopComment.renderedSymbol.symbol) {
+            renderSymbolText = this.props.activeTopComment.renderedSymbol.symbol;
         }
         const emailForm = (
             <div key="emailActionForm" style={css.setTrendAction_thirdAppsActionForm}>
@@ -143,8 +143,8 @@ class SetTrendAction extends React.Component {
         if (this.state.activeThirdApp) activeThirdAppForm = this.renderAppActionForms()[this.state.activeThirdApp];
 
         let renderSymbolText = '';
-        if (this.props.activeTopTag && this.props.activeTopTag.renderedSymbol && this.props.activeTopTag.renderedSymbol.symbol) {
-            renderSymbolText = this.props.activeTopTag.renderedSymbol.symbol;
+        if (this.props.activeTopComment && this.props.activeTopComment.renderedSymbol && this.props.activeTopComment.renderedSymbol.symbol) {
+            renderSymbolText = this.props.activeTopComment.renderedSymbol.symbol;
         }
 
         return (
@@ -152,7 +152,7 @@ class SetTrendAction extends React.Component {
                 <div style={css.setTrendAction_section}>
                     <h3>
                         <span className="noBreakTextGroup">The next time<TextInput placeholder={renderSymbolText} minWidth="6rem" /></span>
-                        <span className="noBreakTextGroup">trends to<TextInput placeholder={this.props.activeTopTag.rank} type="ordinal" minWidth="4rem" />place:</span>
+                        <span className="noBreakTextGroup">trends to<TextInput placeholder={this.props.activeTopComment.rank} type="ordinal" minWidth="4rem" />place:</span>
                     </h3>
                 </div>
                 <div style={css.setTrendAction_section}>

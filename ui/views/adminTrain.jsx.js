@@ -4,10 +4,10 @@ import highlightJs from '/node_modules/highlight/js';
 import highlightJsStyles from '/node_modules/highlight/jsStyles.css';
 highlight.registerLanguage('javascript', highlightJs);
 
-import AdminTrainRow from './topTagNetworks-adminTrain-row.jsx.js'
+import AdminTrainRow from './adminTrain-row.jsx.js'
 import Icon from './hbWidgets/icon.jsx.js'
 
-import styles from './styles/topTagNetworks-adminTrain.css.js';
+import styles from './styles/adminTrain.css.js';
 
 import hbClientSocketDbRequests_admin from '../helpers/hbClientSocketDbRequests-admin.js';
 
@@ -25,12 +25,12 @@ class AdminTrain extends React.Component {
 
         let commentSection = (
             <AdminTrainRow
-                topTag={thisView.props.topTag}
-                label={(<><p>{thisView.props.topTag.body}</p><div><p>({thisView.props.topTag.id})</p></div></>)}
+                topComment={thisView.props.topComment}
+                label={(<><p>{thisView.props.topComment.body}</p><div><p>({thisView.props.topComment.id})</p></div></>)}
                 editIcon={<Icon iconName='dangerous' width="2rem"/>}
                 deletePrompt={(
                     <><p><i>Comment is not relevant?</i>
-                        <button className="button__sev1" onClick={this.deleteComment.bind(this, this.props.topTag)}>Confirm</button>
+                        <button className="button__sev1" onClick={this.deleteComment.bind(this, this.props.topComment)}>Confirm</button>
                     </p></>
                 )}
             />
@@ -39,12 +39,12 @@ class AdminTrain extends React.Component {
 
         let usernameSection = (
             <AdminTrainRow
-                topTag={thisView.props.topTag}
-                label={(<><p>{this.props.topTag.author.name}</p></>)}
+                topComment={thisView.props.topComment}
+                label={(<><p>{this.props.topComment.author.name}</p></>)}
                 editIcon={<Icon iconName='dangerous' width="2rem"/>}
                 deletePrompt={(
                     <><p><i>User is not relevant?</i>
-                        <button className="button__sev1" onClick={this.markUserNotRelevant.bind(this, this.props.topTag.author.name, this.props.topTag)}>Confirm</button>
+                        <button className="button__sev1" onClick={this.markUserNotRelevant.bind(this, this.props.topComment.author.name, this.props.topComment)}>Confirm</button>
                     </p></>
                 )}
             />
@@ -52,7 +52,7 @@ class AdminTrain extends React.Component {
         if (this.state.accordionCollapsed.indexOf('Username') !== -1) usernameSection = null;
 
         let wordsSection = [];
-        const sortedWords = Object.entries(this.props.topTag.points['1Hr']).sort((a, b) => {
+        const sortedWords = Object.entries(this.props.topComment.points['1Hr']).sort((a, b) => {
             return b[1] - a[1];
         });
         sortedWords.forEach((word) => {
@@ -62,13 +62,13 @@ class AdminTrain extends React.Component {
             );
             const deletePrompt = (
                 <><p><i>Word is not relevant to:</i>
-                    <button className="button__sev1" onClick={this.deleteWordFromComment.bind(this, word[0], this.props.topTag, rowRef)}>Comment</button>
-                    <button className="button__sev2" onClick={this.markWordNotRelevant.bind(this, word[0], this.props.topTag, rowRef)}>All</button>
+                    <button className="button__sev1" onClick={this.deleteWordFromComment.bind(this, word[0], this.props.topComment, rowRef)}>Comment</button>
+                    <button className="button__sev2" onClick={this.markWordNotRelevant.bind(this, word[0], this.props.topComment, rowRef)}>All</button>
                 </p></>
             );
             wordsSection.push((
                 <AdminTrainRow
-                    topTag={thisView.props.topTag}
+                    topComment={thisView.props.topComment}
                     label={rowLabel}
                     editIcon={<Icon iconName='dangerous' width="2rem"/>}
                     deletePrompt={deletePrompt}
@@ -79,7 +79,7 @@ class AdminTrain extends React.Component {
         if (this.state.accordionCollapsed.indexOf('Words') !== -1) wordsSection = [];
 
         let symbolsSection = [];
-        this.props.topTag.symbols.forEach((symbol) => {
+        this.props.topComment.symbols.forEach((symbol) => {
             const rowRef = React.createRef();
             let symbolSymbolText = symbol.symbol.toUpperCase();
             if (symbolSymbolText.indexOf('HTTP') !== -1) {
@@ -110,7 +110,7 @@ class AdminTrain extends React.Component {
             );
             symbolsSection.push((
                 <AdminTrainRow
-                    topTag={thisView.props.topTag}
+                    topComment={thisView.props.topComment}
                     label={rowLabel}
                     editIcon={<Icon iconName='article' width="2rem"/>}
                     deletePrompt={deletePrompt}
@@ -125,7 +125,7 @@ class AdminTrain extends React.Component {
                 <div style={css.adminTrain_section}>
                     <div style={{position: 'relative'}}>
                         <h6 style={{cursor: 'ns-resize'}} onClick={this.toggleAccord.bind(this)}>Comment</h6>
-                        <p style={{position: 'absolute', right: 0, top: '-1.2rem'}}>Points: <b>{thisView.props.topTag.totalPoints['1Hr']}</b></p>
+                        <p style={{position: 'absolute', right: 0, top: '-1.2rem'}}>Points: <b>{thisView.props.topComment.totalPoints['1Hr']}</b></p>
                     </div>
                     {commentSection}
                 </div>

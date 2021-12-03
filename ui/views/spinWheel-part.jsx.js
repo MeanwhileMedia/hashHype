@@ -3,9 +3,9 @@ import Radium from '/node_modules/radium';
 import d3 from '/node_modules/d3';
 import Icon from './hbWidgets/icon.jsx.js'
 import socketViewResponses from '../helpers/hbClientSocketViewResponses.js';
-import styles from './styles/topTagNetworks-wheel-part.css.js';
+import styles from './styles/spinWheel-part.css.js';
 
-class TopTagWheelPart extends React.Component {
+class SpinWheelPart extends React.Component {
     // ////////
     // React lifecycle functions
     constructor(props) {
@@ -20,18 +20,18 @@ class TopTagWheelPart extends React.Component {
     }
 
     componentDidUpdate(prevProps, prevState) {
-        const topTagMsgCount = this.props.data.totalPoints['1Hr'];
-        const prevtopTagMsgCount = prevProps.data.totalPoints['1Hr'];
+        const topCommentMsgCount = this.props.data.totalPoints['1Hr'];
+        const prevtopCommentMsgCount = prevProps.data.totalPoints['1Hr'];
 
-        if (topTagMsgCount > prevtopTagMsgCount && !prevState.justGrew) {
+        if (topCommentMsgCount > prevtopCommentMsgCount && !prevState.justGrew) {
             // Strobe the wheel part once for every new point.
-            this.strobePart({ times: topTagMsgCount - prevtopTagMsgCount });
+            this.strobePart({ times: topCommentMsgCount - prevtopCommentMsgCount });
         }
 
         this.applyPostRenderStyleTransitions();
     }
 
-    renderActiveTopTagStats(statRowSpacing){
+    renderActiveTopCommentStats(statRowSpacing){
         const self = this;
         const css = styles.generate(this);
 
@@ -54,7 +54,7 @@ class TopTagWheelPart extends React.Component {
         return statsEl;
     }
 
-    renderActiveTopTagSymbolStats(statRowSpacing){
+    renderActiveTopCommentSymbolStats(statRowSpacing){
         const self = this;
         const css = styles.generate(this);
         let symbolStatsEl = null;
@@ -150,8 +150,8 @@ class TopTagWheelPart extends React.Component {
             growthAnim = css['wheel_part__grew'];
         }
 
-        const topTagStatsEls = this.renderActiveTopTagStats(3.2);
-        const topTagSymbolStatsEl = this.renderActiveTopTagSymbolStats(0);
+        const topCommentStatsEls = this.renderActiveTopCommentStats(3.2);
+        const topCommentSymbolStatsEl = this.renderActiveTopCommentSymbolStats(0);
 
         const mainClasses = `wheel_part ${this.props.data.isFocused ? 'active' : ''}`;
         return (
@@ -164,8 +164,8 @@ class TopTagWheelPart extends React.Component {
                 <g className="wheel_part_text" transform={`rotate(${this.computeTextRotation(this.props, x)})`}>
                     <foreignObject transform={`rotate(90 ${this.props.maxOuterRadius} 0)`} x={this.props.maxOuterRadius} y="-22em" width="1" height="1000" style={Object.assign({}, css.wheel_part_text_wrapper)}>
                         <div style={Object.assign({}, css.wheel_part_text_inner)}>
-                            <div style={Object.assign({}, css.wheel_part_text_section)}>{topTagStatsEls}</div>
-                            <div style={Object.assign({}, css.wheel_part_text_section)}>{topTagSymbolStatsEl}</div>
+                            <div style={Object.assign({}, css.wheel_part_text_section)}>{topCommentStatsEls}</div>
+                            <div style={Object.assign({}, css.wheel_part_text_section)}>{topCommentSymbolStatsEl}</div>
                             <div style={Object.assign({}, css.wheel_part_text_section)}>
                                 <div className="wheel_part_buttons" style={Object.assign({}, css.wheel_part_buttons)}>
                                     <button className="button__sev1 button__light" onClick={self.props.gNav.showSetTrendActionModal.bind(self.props.gNav)} style={Object.assign({}, css.wheel_text__button)}>
@@ -193,4 +193,4 @@ class TopTagWheelPart extends React.Component {
     }
 }
 
-export default Radium(TopTagWheelPart);
+export default Radium(SpinWheelPart);

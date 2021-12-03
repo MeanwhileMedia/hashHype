@@ -45,6 +45,16 @@ class MaintainLogsAndBackups {
         self.cloudArchiveCleanupInterval = null;
         self.cloudArchiveCleanupIntervalTime = 60000*720; // twice per 24hrs crawl the files backed up to cloud (google drive) - both logs and rdbs. Delete files older than X days.
 
+        // In case of cback errors, manually unlock these flags in intervals.
+        self.isCleaningArchive = false;
+        self.isArchivingLogs = false;
+        self.isArchivingRDBs = false;
+        setInterval(() => {
+            self.isCleaningArchive = false;
+            self.isArchivingLogs = false;
+            self.isArchivingRDBs = false;
+        }, self.rotateLogsIntervalTime*3.5); // maintain an offset interval from rotateLogsIntervalTime and rotateRDBIntervalTime
+
         self.initRedisClient(() => {
             self.initGoogleDriveClient(() => {
                 self.initDbHealthLogInterval();
@@ -238,7 +248,10 @@ class MaintainLogsAndBackups {
 
     initArchiveLogsInterval() {
         const self = this;
-        if (self.isArchivingLogs) return; // in case this interval elapses before the previous one finished uploading, don't allow overlap.
+        if (self.isArchivingLogs) {
+            console.warn(`Skipping initArchiveLogsInterval because isArchivingLogs == true...`);
+            return; // in case this interval elapses before the previous one finished uploading, don't allow overlap.
+        }
         // This interval uploads the active log file (00000) AND today's log to google drive
         const todayTstamp = self.getDayTstamps(1)[0]; // Just need today's tstamp
         self.getAllLogFileNames((fileNames) => {
@@ -264,7 +277,10 @@ class MaintainLogsAndBackups {
 
     initArchiveRDBInterval() {
         const self = this;
-        if (self.isArchivingRDBs) return; // in case this interval elapses before the previous one finished uploading, don't allow overlap.
+        if (self.isArchivingRDBs) {
+            console.warn(`Skipping initArchiveRDBInterval because isArchivingRDBs == true...`);
+            return; // in case this interval elapses before the previous one finished uploading, don't allow overlap.
+        }
         // This interval only uploads the active RDB file (00000) to google drive, but then also copies/renames it in-place on gdrive using today's timstamp
         const todayTstamp = self.getDayTstamps(1)[0]; // Just need today's tstamp
         self.getAllRDBFileNames((localRDBFileNames) => {
@@ -306,7 +322,10 @@ class MaintainLogsAndBackups {
 
     initCloudArchiveCleanupInterval() {
         const self = this;
-        if (self.isCleaningArchive) return; // in case this interval elapses before the previous one finished uploading, don't allow overlap.
+        if (self.isCleaningArchive) {
+            console.warn(`Skipping initCloudArchiveCleanupInterval because isCleaningArchive == true...`);
+            return; // in case this interval elapses before the previous one finished uploading, don't allow overlap.
+        }
         const notExpiredDayTstamps = self.getDayTstamps(3); // Keep daily log files and daily RDB backupes in cloud for 3 days
         const oldestNotExpiredTstamp = notExpiredDayTstamps.pop();
         console.log(`Now checking google drive for expired archived log/db files which should be deleted...`)

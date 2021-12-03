@@ -9,6 +9,8 @@ import error from '/node_modules/@material-icons/error.svg'
 import check_circle_outline from '/node_modules/@material-icons/check_circle_outline.svg';
 import dangerous from '/node_modules/@material-icons/dangerous.svg';
 import article from '/node_modules/@material-icons/article.svg';
+import pie_chart from '/node_modules/@material-icons/pie_chart.svg';
+import leaderboard from '/node_modules/@material-icons/leaderboard.svg';
 
 class Icon extends React.Component {
     constructor(props) {
@@ -27,7 +29,9 @@ class Icon extends React.Component {
             error,
             check_circle_outline,
             dangerous,
-            article
+            article,
+            pie_chart,
+            leaderboard
         };
     }
 
@@ -105,8 +109,11 @@ class Icon extends React.Component {
         const targetIconSize = this.calcIconPxSize(tempIconEl, true);
         this.setIconSize(tempIconEl, targetIconSize);
 
+        let interactiveClass = 'icon--interactive';
+        if (this.props.interactive === 'false') interactiveClass = '';
+
         return (
-            <span class="hbWidgets icon" dangerouslySetInnerHTML={{__html: tempIconEl.innerHTML}}></span>
+            <span class={`hbWidgets icon ${interactiveClass}`} dangerouslySetInnerHTML={{__html: tempIconEl.innerHTML}}></span>
         );
     }
 }

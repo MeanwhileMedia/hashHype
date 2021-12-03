@@ -71,7 +71,6 @@ class GNavMainMenu extends React.Component {
         self.allTrendCats.forEach((thisTrendCatName, index) => {
             const isChecked = self.state.activeTrendCats.indexOf(thisTrendCatName) !== -1;
             const onClick = (e) => {
-                if (e.target.tagName === 'INPUT') return; // supress click events that bubble of from the input el changing "checked" attr
                 self.toggleTrendCat.call(self, thisTrendCatName, e);
             }
             let loginTooltip = null;

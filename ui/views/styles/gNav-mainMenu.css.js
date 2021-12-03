@@ -4,7 +4,7 @@ const styles = {
         // Gnav is a fixed size and all rules are defined in px
         const css = {
             GNavMainMenu: {
-                'margin-left': 'min(5.4rem, 14vw)',
+                'margin-left': 'min(5rem, 13vw)',
                 'text-align': 'left',
             },
             GNavMainMenu_li: {
@@ -38,7 +38,7 @@ const styles = {
                 'flex-direction': 'row',
                 'align-items': 'center',
                 'position': 'absolute',
-                'top': '0.7rem',
+                'top': '0.8rem',
                 'right': '107%',
                 'margin-right': '.2rem',
                 'transform-origin': 'right top',

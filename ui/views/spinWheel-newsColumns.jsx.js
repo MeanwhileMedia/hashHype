@@ -1,7 +1,7 @@
 import React from '/node_modules/react';
-import styles from './styles/topTagNetworks-newsColumns.css.js';
+import styles from './styles/spinWheel-newsColumns.css.js';
 
-class TopTagnewsColumns extends React.Component {
+class SpinWheelNewsColumns extends React.Component {
 
     formatCommentBody(comment) {
         const self = this;
@@ -51,19 +51,19 @@ class TopTagnewsColumns extends React.Component {
     }
 
     render() {
-        if (this.props.topTags.length === 0) { return null; }
+        if (!this.props.topComments || this.props.topComments.length === 0) { return null; }
         const thisView = this;
         const css = styles.generate(this);
 
-        thisView.activeTopTag = this.props.topTags.find(topTag => topTag.isFocused);
-        if (!thisView.activeTopTag) { return null; }
+        thisView.activeTopComment = this.props.topComments.find(topComment => topComment.isFocused);
+        if (!thisView.activeTopComment) { return null; }
 
         let topSymbolName = '';
-        if (thisView.activeTopTag.topSymbolHigh['1Hr'].key) {
+        if (thisView.activeTopComment.topSymbolHigh['1Hr'].key) {
             let wordTopSymbolObj;
-            thisView.activeTopTag.symbols.forEach((thisSymbol) => {
+            thisView.activeTopComment.symbols.forEach((thisSymbol) => {
                 const thisSymbolKey = `symbol:${thisSymbol.type}:${thisSymbol.symbol}`;
-                if (thisSymbolKey === thisView.activeTopTag.topSymbolHigh['1Hr'].key) wordTopSymbolObj = thisSymbol;
+                if (thisSymbolKey === thisView.activeTopComment.topSymbolHigh['1Hr'].key) wordTopSymbolObj = thisSymbol;
             });
             if (wordTopSymbolObj && wordTopSymbolObj.type !== 'emoji') {
                 let topSymbolNameText = wordTopSymbolObj.name;
@@ -77,21 +77,21 @@ class TopTagnewsColumns extends React.Component {
         }
 
         let commentAuthorAndPoints = '';
-        if (thisView.activeTopTag.author && thisView.activeTopTag.author.name) {
+        if (thisView.activeTopComment.author && thisView.activeTopComment.author.name) {
             commentAuthorAndPoints = (
-                <div className="topTagNetworks_newsColumns_left_author">
-                    <h2>@{thisView.activeTopTag.author.name}</h2>
+                <div className="spinWheel_newsColumns_left_author">
+                    <h2>@{thisView.activeTopComment.author.name}</h2>
                 </div>
             );
         }
 
-        const formattedCommentBody = this.formatCommentBody(thisView.activeTopTag);
+        const formattedCommentBody = this.formatCommentBody(thisView.activeTopComment);
         const showComment = (
             <>
                 <h5>
                     {formattedCommentBody}
                     {topSymbolName &&
-                        <div><span style={css.newsColumns_right_author}>@{thisView.activeTopTag.author.name || ''}</span></div>
+                        <div><span style={css.newsColumns_right_author}>@{thisView.activeTopComment.author.name || ''}</span></div>
                     }
                 </h5>
             </>
@@ -101,7 +101,7 @@ class TopTagnewsColumns extends React.Component {
         const rightColumn = showComment || '';
 
         return (
-            <div className="topTagNetworks_newsColumns" style={css.newsColumns}>
+            <div className="spinWheel_newsColumns" style={css.newsColumns}>
                 <div style={css.newsColumns_left}>
                     {leftColumn}
                 </div>
@@ -114,4 +114,4 @@ class TopTagnewsColumns extends React.Component {
 
 }
 
-export default TopTagnewsColumns;
+export default SpinWheelNewsColumns;

@@ -223,10 +223,10 @@ class TopCommentsStats {
             // We have recorded all relevant words and comments that need to be a part of this pointing refresh, but it was fast and dirty
             // with no checks for dups. We wait until now to resolve dup words and comments as to not bog down CPU before the refreshTopComments interval.
             for (const [wordString, commentIds] of Object.entries(pendingWordsToTopComments)) {
-                pendingWordsToTopComments[wordString] =  [...new Set(commentIds)];
+                pendingWordsToTopComments[wordString] = [...new Set(commentIds)];
             };
             for (const [commentId, wordStrings] of Object.entries(pendingCommentIdsToWords)) {
-                pendingCommentIdsToWords[commentId] =  [...new Set(wordStrings)];
+                pendingCommentIdsToWords[commentId] = [...new Set(wordStrings)];
             };
 
             // Proceed to set comment get promises, and point counting promises. After they all complete we can save the newly calculated self.topComments to redis.
@@ -1129,7 +1129,7 @@ class TopCommentsStats {
             absKey: this.topCommentsStatsKey,
             comments: [],
             ui: {
-                viewPath: '/ui/views/topTagNetworks.jsx.js'
+                viewPath: '/ui/views/topCommentStats.jsx.js'
             }
          }
     }

@@ -51,7 +51,7 @@ const styles = {
             modal_inner: {
                 'margin': 'auto 0',
                 'padding-top': 'max(3rem, 5vh)',
-                'padding-bottom': 'max(3rem, 5vh)',
+                'padding-bottom': '20vh',
             },
             // Alignment "classes" can be applied to any element class by appending a common a modifier. Only the "align__left" is passed in js during modal instantiation.
             modal_inner__align__top: {

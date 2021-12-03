@@ -4,11 +4,12 @@ import GNavMainMenu from './gNav-mainMenu.jsx.js';
 import SetTrendAction from './setTrendAction.jsx.js';
 import MsgBox__reqInvite from './msgBox--reqInvite.jsx.js'
 import Icon from './hbWidgets/icon.jsx.js'
+import ToggleSwitch from './hbWidgets/toggleSwitch.jsx.js';
 import utils from '../helpers/utils.js'
 
 import menuText from './styles/gNav-mainMenu-text.jsx.js';
 
-{/* <hbCC-fEAdmin> */} import AdminTrain from './topTagNetworks-adminTrain.jsx.js'; {/* </hbCC-fEAdmin> */}
+{/* <hbCC-fEAdmin> */} import AdminTrain from './adminTrain.jsx.js'; {/* </hbCC-fEAdmin> */}
 
 import logo from '../images/logo.svg.js';
 import styles from './styles/gNav.css.js';
@@ -34,7 +35,7 @@ class GNav extends React.Component {
 
     render() {
         const thisView = this;
-        thisView.activeTopTag = this.props.topTags.find(topTag => topTag.isFocused);
+        thisView.activeTopComment = this.props.topComments.find(topComment => topComment.isFocused);
 
         const css = styles.generate(this);
         let gNavStyles = css.GNav;
@@ -77,6 +78,15 @@ class GNav extends React.Component {
                         </div>
                     </div>
                 </div>
+                <div className="GNav_bottom_right" style={css.GNav_bottom_right}>
+                    <div className="GNav_bottom_right_ctrls" style={css.GNav_bottom_right_ctrls}>
+                        <div style={css.GNav_bottom_right_ctrls_vizCtrl} >
+                            <span style={css.GNav_bottom_right_ctrls_vizCtrl_icon__leaderboard}><Icon iconName="leaderboard" width="1.6rem" interactive="false" /></span>
+                            <span className="magicScale" style={css.GNav_bottom_right_ctrls_vizCtrl_toggle}><span onClick={ (e) => { this.props.setTopCommentsVizType('toggle') } }><ToggleSwitch color="dark" /></span></span>
+                            <Icon iconName="pie_chart" width="1.6rem" interactive="false" />
+                        </div>
+                    </div>
+                </div>
             </div>
         );
     }
@@ -98,7 +108,7 @@ class GNav extends React.Component {
 
     showSetTrendActionModal() {
         const setTrendActionUi = (
-            <SetTrendAction activeTopTag={this.activeTopTag} hideModal={this.hideModal.bind(this)}/>
+            <SetTrendAction activeTopComment={this.activeTopComment} hideModal={this.hideModal.bind(this)}/>
         );
         this.props.modal.show({
             title: 'Set Trend Action',
@@ -144,7 +154,7 @@ class GNav extends React.Component {
     {/* <hbCC-fEAdmin> */}
     showAdminCtrlsModal() {
         const trainingUi = (
-            <AdminTrain topTag={this.activeTopTag} hideModal={this.hideModal.bind(this)}/>
+            <AdminTrain topComment={this.activeTopComment} hideModal={this.hideModal.bind(this)}/>
         );
         this.props.modal.show({
             title: 'Relevancy Training',

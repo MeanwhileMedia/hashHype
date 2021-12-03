@@ -8,7 +8,7 @@ const styles = {
                 'flex-direction': 'row',
                 'justify-content': 'space-between',
                 'padding': '12vh 5vw',
-                'padding-top': 'min(8rem, 10vh)',
+                'padding-top': '0',
                 'box-sizing': 'border-box',
             },
             newsColumns_left: {

@@ -43,6 +43,27 @@ const styles = {
             GNav_closeModalBtn: {
                 'margin-right': '2rem'
             },
+            GNav_bottom_right: {
+                'position': 'fixed',
+                'right': '0',
+                'bottom': '0',
+                'margin': '1rem'
+            },
+            GNav_bottom_right_ctrls: {
+
+            },
+            GNav_bottom_right_ctrls_vizCtrl: {
+
+            },
+            GNav_bottom_right_ctrls_vizCtrl_toggle: {
+                'display': 'inline-block', // is magicScale
+                'width': '3.6rem',
+                'text-align': 'center'
+            },
+            GNav_bottom_right_ctrls_vizCtrl_icon__leaderboard: {
+                'display': 'inline-block',
+                'transform': 'rotate(90deg) translateX(-2px) translateY(4px)'
+            },
 
             GNav_theme__light: {
                 'color': '#fff',
