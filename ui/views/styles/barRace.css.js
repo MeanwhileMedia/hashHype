@@ -2,38 +2,42 @@ const styles = {
 
     generate(view) {
 
-        const barHeight = 7; //rem. used when setting abs top position on each bar
-        const barSpaceBetween = .5; //rem
-
         const css = {
             topCommentStats_barRace: {
-
+                'flex-direction': 'row',
+                'display': 'flex'
             },
+
             topCommentStats_barRace_bars: {
                 'width': '50%',
                 'position': 'relative'
             },
-            topCommentStats_barRace_bar: {
-                'position': 'absolute',
-                'left': '0',
-                'height': `${barHeight}rem`,
-                'cursor': 'pointer'
+
+            topCommentStats_barRace_activeCommentInfo: {
+                'width': '50%',
+                'text-align': 'right',
+                'padding-left': '5rem',
+                'padding-right': '2rem'
             },
-            topCommentStats_barRace_bar__active: {
-                'border': '1px solid #000'
+            topCommentStats_barRace_activeCommentInfo_symbolTitle: {
+                'margin-bottom': '4rem',
             },
-            topCommentStats_barRace_bar_label: {
-                'position': 'absolute',
-                'right': '1rem',
-                'top': '1.4rem',
-                'color': '#ffff',
-                'font-size': '3.5rem',
-                'text-align': 'right'
+            topCommentStats_barRace_activeCommentInfo_bodyText: {
+
+            },
+            topCommentStats_barRace_activeCommentInfo_author: {
+                'font-weight': '400',
+                'font-style': 'italic',
+                'margin-top': '2rem',
+                'padding-top': '0.5rem',
+                'display': 'inline-block',
+                'border-top': '1px solid rgba(0,0,0,0.15)',
+                'font-size': '1.4rem'
+            },
+            topCommentStats_barRace_activeCommentInfo_actionBtn: {
+                'margin-top': '4rem'
             }
         };
-
-        css.barHeight = barHeight;
-        css.barSpaceBetween = barSpaceBetween;
 
         return css;
     }, // end generate

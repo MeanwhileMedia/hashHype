@@ -34,7 +34,8 @@ const styles = {
                 'margin-top': '2rem',
                 'padding-top': '0.5rem',
                 'display': 'inline-block',
-                'border-top': '1px solid rgba(0,0,0,0.15)'
+                'border-top': '1px solid rgba(0,0,0,0.15)',
+                'font-size': '1.4rem'
             },
             newsAttribution: {
                 'margin-top': '1.4rem',

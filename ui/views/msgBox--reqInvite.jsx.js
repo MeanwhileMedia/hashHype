@@ -29,20 +29,17 @@ class MsgBox__reqInvite extends React.Component {
 
     render() {
         const self = this;
+        if (this.state.didRequestInvite) {
+            return null;
+        }
+
         let inviteForm = (
             <div className="inviteForm" style={{position: 'relative', marginTop: '2rem'}}>
                 <button style={{position: 'absolute', top: '-0.4rem', right: 0}} className="button__sev1" onClick={(e) => self.clickedRequestInvite.call(self, e)}>Request</button>
                 <TextInput placeholder="you@email.com" textAlign="left" minWidth="100%" />
             </div>
         );
-        if (this.state.didRequestInvite) {
-            inviteForm = (
-                <div className="inviteForm" style={{position: 'relative', marginTop: '2rem'}}>
-                    <Icon iconName="check_circle_outline" width="2rem" /><span style={{marginLeft: '0.5rem'}}>Thank you for your interest.</span>
-                </div>
-            );
-        }
-
+        
         return (
             <MsgBox getAttn={this.props.getAttn} title='Request Invite' subtitle={this.props.subtitle} body={inviteForm} />
         );

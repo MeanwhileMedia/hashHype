@@ -53,16 +53,17 @@ const styles = {
 
             },
             GNav_bottom_right_ctrls_vizCtrl: {
-
+                'display': 'flex', // is magicScaled
+                'align-items': 'center',
             },
             GNav_bottom_right_ctrls_vizCtrl_toggle: {
                 'display': 'inline-block', // is magicScale
-                'width': '3.6rem',
-                'text-align': 'center'
+                'margin-left': '1rem',
+                'margin-right': '0.8rem'
             },
             GNav_bottom_right_ctrls_vizCtrl_icon__leaderboard: {
                 'display': 'inline-block',
-                'transform': 'rotate(90deg) translateX(-2px) translateY(4px)'
+                'transform': 'rotate(90deg) translateX(-2px)'
             },
 
             GNav_theme__light: {

@@ -1,5 +1,9 @@
 import React from '/node_modules/react';
 import Radium from '/node_modules/radium';
+import Icon from './hbWidgets/icon.jsx.js'
+import BarRaceBar from './barRace-bar.jsx.js'
+import commentFormatter from '../helpers/commentFormatter.js'
+import utils from '../helpers/utils.js'
 
 import styles from './styles/barRace.css.js';
 
@@ -11,20 +15,29 @@ class BarRace extends React.Component {
             showOnlyTopCommentsWithSymbols: true, // don't display an comments on our wheel unless they are associated with at least one symbol
             showTopCommentSymbolsOnlyOnce: true, // our server will send a max of 2 comments to represent any single symbol. Set this true and we will only render the higher scoring one. Will only apply when showOnlyTopCommentsWithSymbols == true.
             showTopCommentSymbolTypes: ['stock'], // can be set to one or more of strings equaling a symbol.type
+            topCommentsLastUpdated: this.props.topCommentsLastUpdated || Date.now()
         };
 
-        this.activeTopComment = null;
         this.reducedTopComments = []; // the comments after passing through above state filters
-        this.barColorPallette = ["#f94144","#f3722c","#f8961e","#f9844a","#f9c74f","#90be6d","#43aa8b","#4d908e","#577590","#277da1"]; //https://coolors.co/palettes/trending
+        this.rankOnePoints = null; // set to the highest scoring topComment, but only when that topComment points exceeds this.rankOnePoints. This makes for a more stable graph that doesn't rerender the scale of all bars based on the top scoring bar.
+
+        this.barEls = null; // We maintain the same child react components across state changes so that we can animate their style changes (rather than re-instantiation a new child (bar) component during every rerender of this parent)
+        this.barElRefs = null; // so this parent can set state to it's children
     }
 
     componentDidMount() {
         this.props.setPageIsReady();
     }
 
-    componentDidUpdate() {
-        if (this.lastUpdated === this.props.topCommentsLastUpdated) return; // we only need to run the below after we have received new stats:topComments from the server
-        this.lastUpdated = this.props.topCommentsLastUpdated;
+    componentDidUpdate(prevProps, prevState) {
+        this.reducedTopComments = this.reduceTopComments();
+        if (!this.barEls) {
+            this.createBarEls();
+        } else {
+            this.updateBarEls();
+        }
+        this.restoreActiveCommentSelection();
+        if (this.state.topCommentsLastUpdated !== this.props.topCommentsLastUpdated) this.setState({topCommentsLastUpdated: this.props.topCommentsLastUpdated});
     }
 
     reduceTopComments() {
@@ -41,6 +54,7 @@ class BarRace extends React.Component {
                     if (hasTopSymbol && self.state.showTopCommentSymbolTypes.indexOf(hasTopSymbol.type) !== -1) {
                         reducedTopCommentsBySymbol[hasTopSymbolKey] = reducedTopCommentsBySymbol[hasTopSymbolKey] || [];
                         reducedTopCommentsBySymbol[hasTopSymbolKey].push(thisTopComment);
+                        thisTopComment.renderedSymbol = hasTopSymbol; // save on comment object for easy access later and in other classes
                     }
                 }
             });
@@ -55,12 +69,10 @@ class BarRace extends React.Component {
         }
         if (reducedTopComments.length === 0) { return []; }
 
-        let confirmedActiveTopComment = false;
         reducedTopComments.sort((a, b) => b.totalPoints['1Hr'] - a.totalPoints['1Hr']);
         reducedTopComments = reducedTopComments.slice(0, this.state.topCommentCount);
         reducedTopComments.forEach( (topComment, index) => {
             topComment.rank = index+1;
-            if (self.activeTopComment && topComment.id === self.activeTopComment.id) confirmedActiveTopComment = true; // after a re-render, confirm that the comment marked as actively selected is actually still rendered.
             const getUniquePointCount = (lastTriedUniqueCount) => {
                 if (allPointCounts.indexOf(lastTriedUniqueCount) !== -1) { // Because we use this array to rank trends, we cannot use tie scores. If a tie is found, increment the dup by 1 until it's no longer a dup.
                     lastTriedUniqueCount++;
@@ -73,69 +85,148 @@ class BarRace extends React.Component {
             getUniquePointCount(topComment.totalPoints['1Hr']);
         });
 
-        // Either the previous active comment was no longer rendered, or this is page load and no comment has been activated yet. By default, set rank 1 comment active.
-        if (!confirmedActiveTopComment) self.activeTopComment = reducedTopComments[0];
-
         return reducedTopComments;
     }
 
     createBarEls() {
         const self = this;
         const barEls = [];
+        const barElRefs = [];
         if (!self.reducedTopComments.length) return barEls;
+
+        self.rankOnePoints = Math.max(self.reducedTopComments[0].totalPoints['1Hr'], this.rankOnePoints);
+        self.reducedTopComments.forEach((thisTopComment) => { // reducedTopComment is already sorted descending
+            const thisBarElRef = React.createRef();
+            barEls.push(
+                <BarRaceBar
+                    topComment={thisTopComment}
+                    rankOnePoints={self.rankOnePoints}
+                    focusTopComment={self.props.focusTopComment}
+                    activeTopComment={self.props.focusedTopComment}
+                    ref={thisBarElRef}
+                />
+            );
+            barElRefs.push(thisBarElRef);
+        });
+
+        // Since we instantiate and reuse these components for each topCommentStats state change, we need to make sure we have a placeholder bar el even if this initial batch of reducedTopComments is less than 10 (self.state.topCommentCount)
+        for (let barCount = barEls.length; barCount <= self.state.topCommentCount; barCount++) {
+            const thisBarElRef = React.createRef();
+            barEls.push(
+                <BarRaceBar
+                    topComment={null}
+                    rankOnePoints={self.rankOnePoints}
+                    focusTopComment={self.props.focusTopComment}
+                    activeTopComment={self.props.focusedTopComment}
+                    ref={thisBarElRef}
+                />
+            );
+            barElRefs.push(thisBarElRef);
+        }
+
+        this.barEls = barEls;
+        this.barElRefs = barElRefs;
+    }
+
+    updateBarEls() {
+        const self = this;
+        const updatedBarEls = [];
+        const orphanBarEls = [];
+        const orphanTopComments = [];
+        self.rankOnePoints = Math.max(self.reducedTopComments[0].totalPoints['1Hr'], this.rankOnePoints);
+
+        self.reducedTopComments.forEach((thisTopComment) => { // reducedTopComment is already sorted descending
+            let matchedExistingBarEl = self.barElRefs.find(thisBarRef => {
+                if (!thisBarRef.current.state.topComment) return false;
+                return thisBarRef.current.state.topComment.id === thisTopComment.id;
+            });
+            if (matchedExistingBarEl) {
+                matchedExistingBarEl.current.setState({
+                    topComment: thisTopComment,
+                    rankOnePoints: self.rankOnePoints,
+                    activeTopComment: self.props.focusedTopComment
+                });
+                updatedBarEls.push(matchedExistingBarEl);
+            } else {
+                orphanTopComments.push(thisTopComment);
+            }
+        });
+
+        self.barElRefs.forEach((thisBarElRef) => {
+            if (updatedBarEls.indexOf(thisBarElRef) === -1) {
+                thisBarElRef.current.setState({
+                    topComment: orphanTopComments.shift(),
+                    rankOnePoints: self.rankOnePoints,
+                    activeTopComment: self.props.focusedTopComment
+                });
+                updatedBarEls.push(thisBarElRef);
+            }
+        });
+    }
+
+    restoreActiveCommentSelection() {
+        // After all the bar els are updated with fresh topComment data, the activeTopComment may have exited view. In this case, we should reset the activeTopComment
+        // to be whichever visible topComment shares the same renderedSymbol (if that visible topComment exists). If none exists, set to default the rank 1 comment active.
+        const self = this;
+        if (!self.props.focusedTopComment) {
+            if (self.reducedTopComments[0]) self.props.focusTopComment(self.reducedTopComments[0]); // prob pageload. set rank 1 active
+            return;
+        }
+
+        let foundReplacementActiveTopComment = null;
+        self.reducedTopComments.some((thisTopComment) => {
+            if (self.props.focusedTopComment.id === thisTopComment.id) {
+                foundReplacementActiveTopComment = thisTopComment;
+                return true; // break some loop
+            }
+            if (thisTopComment.renderedSymbol && self.props.focusedTopComment.renderedSymbol && thisTopComment.renderedSymbol.symbol === self.props.focusedTopComment.renderedSymbol.symbol) {
+                foundReplacementActiveTopComment = thisTopComment;
+                return true;
+            }
+        });
+        if (!foundReplacementActiveTopComment) {
+            foundReplacementActiveTopComment = self.reducedTopComments[0];
+        }
+        if (foundReplacementActiveTopComment && foundReplacementActiveTopComment !== self.props.focusedTopComment) {
+            self.props.focusTopComment(foundReplacementActiveTopComment);
+        }
+    }
+
+    createActiveCommentInfoEl() {
+        const self = this;
+        if (!self.props.focusedTopComment) return null;
         const css = styles.generate(self);
 
-        const rankOnePoints = self.reducedTopComments[0].totalPoints['1Hr'];
-        self.reducedTopComments.forEach((thisTopComment) => { // reducedTopComment is already sorted descending
-            const thisCommentPoints = thisTopComment.totalPoints['1Hr'];
-            let thisCommentIsActive = false;
-            if (self.activeTopComment && self.activeTopComment.id === thisTopComment.id) thisCommentIsActive = true;
-
-            let symbolText = '';
-            let thisCommentTopSymbol = thisTopComment.topSymbolHigh['1Hr'].key || thisTopComment.topSymbolLow['1Hr'].key || null;
-            if (thisCommentTopSymbol) {
-                thisTopComment.symbols.forEach((thisSymbol) => {
-                    const thisSymbolKey = `symbol:${thisSymbol.type}:${thisSymbol.symbol}`;
-                    if (thisSymbolKey === thisCommentTopSymbol) thisCommentTopSymbol = thisSymbol;
-                });
-                symbolText = thisCommentTopSymbol.symbol;
-                thisTopComment.renderedSymbol = thisCommentTopSymbol; // save on comment object for easy access by other classes
-            } else {
-                symbolText = '';
-            }
-            const zBasedRank = thisTopComment.rank - 1;
-            let theseStyles = {
-                'top': `${(css.barHeight*zBasedRank)+(css.barSpaceBetween*zBasedRank)}rem`,
-                'width': `${(thisCommentPoints/rankOnePoints)*100}%`,
-                'background-color': self.barColorPallette[zBasedRank]
-            };
-            if (thisCommentIsActive) theseStyles = Object.assign({}, css.topCommentStats_barRace_bar__active, theseStyles);
-
-            barEls.push((
-                <li className="topCommentStats_barRace_bar" style={Object.assign({}, css.topCommentStats_barRace_bar, theseStyles)} onClick={(e) => { self.props.focusTopComment(thisTopComment.id) } }>
-                    <h2 className="topCommentStats_barRace_bar_label" style={css.topCommentStats_barRace_bar_label}>{symbolText}</h2>
-                </li>
-            ));
-        });
-        return barEls;
+        const topSymbolName = commentFormatter.getRenderableSymbolName(self.props.focusedTopComment);
+        const formattedBody = commentFormatter.formatCommentBody(self.props.focusedTopComment);
+        return (
+            <div className="topCommentStats_barRace_activeComment" style={css.topCommentStats_barRace_activeCommentInfo}>
+                <h6><span style={{'opacity': '0.25'}}>Rank:</span> {commentFormatter.getNumberOrdinal(self.props.focusedTopComment.rank)}</h6>
+                <h2 style={css.topCommentStats_barRace_activeCommentInfo_symbolTitle} dangerouslySetInnerHTML={{ __html: topSymbolName }}></h2>
+                <h6 style={{'opacity': '0.25'}}>Top Comment:</h6>
+                <h5 style={css.topCommentStats_barRace_activeCommentInfo_bodyText} dangerouslySetInnerHTML={{ __html: formattedBody }}></h5>
+                <span style={css.topCommentStats_barRace_activeCommentInfo_author}>@{self.props.focusedTopComment.author.name || ''}</span>
+                <div style={css.topCommentStats_barRace_activeCommentInfo_actionBtn}>
+                    <button className="button__sev1 button__light" onClick={self.props.gNav.showSetTrendActionModal.bind(self.props.gNav)}>
+                        <Icon iconName="data_saver_on" height="100%" />
+                        Action
+                    </button>
+                </div>
+            </div>
+        )
     }
 
     render() {
         const self = this;
         const css = styles.generate(self);
-        self.activeTopComment = self.props.topComments.find(topComment => topComment.isFocused);
-        self.reducedTopComments = self.reduceTopComments();
-        if (self.activeTopComment && self.activeTopComment.id !== self.props.focusedTopComment) self.props.focusTopComment(self.activeTopComment.id);
 
-        const bars = self.createBarEls();
+        const activeCommentInfoEl = self.createActiveCommentInfoEl();
         return (
             <div className="topCommentStats_barRace" style={css.topCommentStats_barRace}>
                 <ul className="topCommentStats_barRace_bars" style={css.topCommentStats_barRace_bars}>
-                    {bars}
+                    {this.barEls}
                 </ul>
-                <div className="topCommentStats_barRace_activeComment" style={css.topCommentStats_barRace}>
-                    // JWW stopping
-                </div>
+                {activeCommentInfoEl}
             </div>
         );
     }

@@ -22,15 +22,17 @@ const styles = {
         const viewRefreshRate = 2; // (s) try to keep in sync with hbKoa.socketEventThrottle. Hardcoded for now.
         const grewFlashInterval = viewRefreshRate / Math.min(view.state.wheelGrowthCount, 10);
 
-        // because our SVG viewport scales, our text elements don't show our true rem scaling. Our wheel has it's
-        // own static font-size which is based on the scaled magicScreenMeasure.
-        let wheelWidth = window.innerWidth;
-        if (document.querySelector('.spinWheel')) wheelWidth = document.querySelector('.spinWheel').clientWidth;
-        const wheelViewboxScaleRatio = (view.props.maxOuterRadius*2) / wheelWidth;
-        const scaledStaticPxMeasure = utils.curMagicScreenMeasure*wheelViewboxScaleRatio;
+        // JWW deleted below. Found out the reason we needed it was because the wheel width was getting set to % screen width. Changed to set to view.props.maxOuterRadius and we no longer have mismatched scaling
+        // // because our SVG viewport scales, our text elements don't show our true rem scaling. Our wheel has it's
+        // // own static font-size which is based on the scaled magicScreenMeasure.
+        // let wheelWidth = window.innerWidth;
+        // if (document.querySelector('.spinWheel')) wheelWidth = document.querySelector('.spinWheel').clientWidth;
+        // const wheelViewboxScaleRatio = (view.props.maxOuterRadius*2) / wheelWidth;
+        // const scaledStaticPxMeasure = utils.curMagicScreenMeasure*wheelViewboxScaleRatio;
+
         return {
             'wheel_part': {
-                'font-size': `min(${scaledStaticPxMeasure}px, 0.8vw)`,
+                // 'font-size': `min(${scaledStaticPxMeasure}px, 1.6vw)`,
             },
             'wheel_part_path': {
                 'stroke': '#fff',

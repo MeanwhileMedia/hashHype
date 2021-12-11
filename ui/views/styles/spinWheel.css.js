@@ -1,21 +1,32 @@
+import utils from '../../helpers/utils.js'
 
 const styles = {
 
     generate(view) {
-        const winWidth = window.outerWidth;
-        const winHeight = window.outerHeight;
-        const maxOuterRadius = winWidth * 1.2 / 2;
-        const minOuterRadius = maxOuterRadius - Math.min(winHeight * 0.3, maxOuterRadius * 0.6);
-        const percOverflow = (maxOuterRadius * 2 / winWidth * 100) - 100;
-        let topPos = winHeight - (maxOuterRadius - minOuterRadius); // first position to be perfectly aligned at bottom
-        topPos = topPos - ((winHeight/winWidth) * 60); // then move slightly up base on screen ratio. It moves higher on portrait size screens.
+        const winWidth = window.innerWidth;
+        const winHeight = window.innerHeight;
+
+        let embiggen, maxOuterRadius, minOuterRadius, bottomPos;
+        if (winWidth / winHeight > 0.7) { // landscape
+            embiggen = 0.8;
+        } else { // portrait
+            embiggen = 1.2;
+        }
+        maxOuterRadius = (winWidth * embiggen) / 2;
+        minOuterRadius = maxOuterRadius * 0.6;
+
+        bottomPos = maxOuterRadius * -1;
+        if (maxOuterRadius > winHeight / 2) {
+            bottomPos = (maxOuterRadius * 1.4) * -1;
+        }
 
         const css = {
             wheel: {
                 'position': 'fixed',
-                'top': `${topPos / winHeight * 100}vh`,
-                'left': `-${percOverflow / 2}%`,
-                'width': `${100 + percOverflow}%`,
+                'bottom': `${bottomPos}px`,
+                'left': `50vw`,
+                'width': `${maxOuterRadius * 2}px`,
+                'margin-left': `-${maxOuterRadius}px`,
                 'overflow': 'visible',
                 '-webkit-font-smoothing': 'subpixel-antialiased'
             },
@@ -34,10 +45,11 @@ const styles = {
             },
         };
 
-        if (view.wheelShouldAutoRotate && view.didAutoRotateToStart) {
-            // upon pageload wheel rotates very slowly to intro motion. looks much better with transition
-            css.wheel.transition = 'transform .2s';
-        }
+        // css.wheelRotateTransition = 'transform 10s';
+        // if (view.cssTransitionRotate) {
+        //     // upon pageload wheel rotates very slowly to intro motion. looks much better with transition
+        //     css.wheel.transition = css.wheelRotateTransition;
+        // }
 
         css.maxOuterRadius = maxOuterRadius;
         css.minOuterRadius = minOuterRadius;

@@ -3,6 +3,8 @@ import Radium from '/node_modules/radium';
 import d3 from '/node_modules/d3';
 import Icon from './hbWidgets/icon.jsx.js'
 import socketViewResponses from '../helpers/hbClientSocketViewResponses.js';
+import commentFormatter from '../helpers/commentFormatter.js'
+
 import styles from './styles/spinWheel-part.css.js';
 
 class SpinWheelPart extends React.Component {
@@ -31,7 +33,7 @@ class SpinWheelPart extends React.Component {
         this.applyPostRenderStyleTransitions();
     }
 
-    renderActiveTopCommentStats(statRowSpacing){
+    renderActiveTopCommentStats(){
         const self = this;
         const css = styles.generate(this);
 
@@ -47,14 +49,14 @@ class SpinWheelPart extends React.Component {
                     className="heading3"
                     style={Object.assign({}, css.wheel_part_title, css.wheel_part_title__rank, css.wheel_text__h3)}
                 >
-                    {this.getNumberOrdinal(this.props.data.rank)}
+                    {commentFormatter.getNumberOrdinal(this.props.data.rank)}
                 </h3>
             </div>
         );
         return statsEl;
     }
 
-    renderActiveTopCommentSymbolStats(statRowSpacing){
+    renderActiveTopCommentSymbolStats(){
         const self = this;
         const css = styles.generate(this);
         let symbolStatsEl = null;
@@ -107,7 +109,7 @@ class SpinWheelPart extends React.Component {
 
     applyPostRenderStyleTransitions() {
         const textEls = this.wheelPartGRef.current.querySelectorAll('h2, h3, h5, .wheel_part_buttons');
-        if (this.props.data.isFocused) {
+        if (this.props.focusedTopComment.id === this.props.data.id) {
             textEls.forEach((textEl) => {
                 textEl.style.opacity = 1;
             });
@@ -132,7 +134,7 @@ class SpinWheelPart extends React.Component {
         this.props.data.rank = this.props.allMsgCounts.indexOf(this.props.data.totalPoints['1Hr']) + 1;
 
         const rankSpace = this.props.maxOuterRadius - this.props.minOuterRadius;
-        const innerPadding = (rankSpace/2);
+        const innerPadding = (rankSpace*.2);
         const rankPercentage = 1 - (Math.max(...this.props.allMsgCounts) - this.props.data.totalPoints['1Hr']) / (Math.max(...this.props.allMsgCounts) - Math.min(...this.props.allMsgCounts));
         const outerRadius = (this.props.minOuterRadius+innerPadding) + ((rankSpace-innerPadding)*rankPercentage);
 
@@ -141,7 +143,7 @@ class SpinWheelPart extends React.Component {
         const arc = d3.arc()
         .startAngle(d => Math.max(0, Math.min(2 * Math.PI, x(d.x0))))
         .endAngle(d => Math.max(0, Math.min(2 * Math.PI, x(d.x1))))
-        .innerRadius(d => self.props.minOuterRadius * 0.9)
+        .innerRadius(d => self.props.minOuterRadius)
         .outerRadius(d => outerRadius);
 
         const css = styles.generate(this);
@@ -150,10 +152,10 @@ class SpinWheelPart extends React.Component {
             growthAnim = css['wheel_part__grew'];
         }
 
-        const topCommentStatsEls = this.renderActiveTopCommentStats(3.2);
-        const topCommentSymbolStatsEl = this.renderActiveTopCommentSymbolStats(0);
+        const topCommentStatsEls = this.renderActiveTopCommentStats();
+        const topCommentSymbolStatsEl = this.renderActiveTopCommentSymbolStats();
 
-        const mainClasses = `wheel_part ${this.props.data.isFocused ? 'active' : ''}`;
+        const mainClasses = `wheel_part ${this.props.focusedTopComment && this.props.focusedTopComment.id === this.props.data.id ? 'active' : ''}`;
         return (
             <g ref={this.wheelPartGRef} className={mainClasses} data-trend-name={this.props.data.id} style={css.wheel_part}>
                 <path
@@ -162,7 +164,7 @@ class SpinWheelPart extends React.Component {
                 />
 
                 <g className="wheel_part_text" transform={`rotate(${this.computeTextRotation(this.props, x)})`}>
-                    <foreignObject transform={`rotate(90 ${this.props.maxOuterRadius} 0)`} x={this.props.maxOuterRadius} y="-22em" width="1" height="1000" style={Object.assign({}, css.wheel_part_text_wrapper)}>
+                    <foreignObject transform={`rotate(90 ${this.props.maxOuterRadius} 0)`} x={this.props.maxOuterRadius} y="-19rem" width="1" height="1000" style={Object.assign({}, css.wheel_part_text_wrapper)}>
                         <div style={Object.assign({}, css.wheel_part_text_inner)}>
                             <div style={Object.assign({}, css.wheel_part_text_section)}>{topCommentStatsEls}</div>
                             <div style={Object.assign({}, css.wheel_part_text_section)}>{topCommentSymbolStatsEl}</div>
@@ -186,11 +188,6 @@ class SpinWheelPart extends React.Component {
         return (x((d.x0 + d.x1) / 2) - Math.PI / 2) / Math.PI * 180;
     }
 
-    getNumberOrdinal(n) {
-        const s = ['th', 'st', 'nd', 'rd'];
-        const v = n % 100;
-        return n + (s[(v - 20) % 10] || s[v] || s[0]);
-    }
 }
 
 export default Radium(SpinWheelPart);

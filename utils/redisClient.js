@@ -236,7 +236,7 @@ class RedisClient {
                             }, usePreserveToConfig.dbName);
                         }
                     }
-                    if (commandArgs.command === 'zadd') { // JWW stopping - this has not been tested
+                    if (commandArgs.command === 'zadd') {
                         // Follows nearly identical logic to above rpush
                         const redisSortedSetLength = redisRes;
                         preserveToNow(redisSortedSetLength);

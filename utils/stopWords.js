@@ -56,6 +56,8 @@ const ignore = [ // these are matched against STEMMED tokens during getWordPoint
     'to',
     'not',
     'would',
+    'be',
+    'being'
 ];
 
 export default {remove, ignore};

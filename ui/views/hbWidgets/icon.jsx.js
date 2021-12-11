@@ -11,6 +11,7 @@ import dangerous from '/node_modules/@material-icons/dangerous.svg';
 import article from '/node_modules/@material-icons/article.svg';
 import pie_chart from '/node_modules/@material-icons/pie_chart.svg';
 import leaderboard from '/node_modules/@material-icons/leaderboard.svg';
+import place from '/node_modules/@material-icons/place.svg';
 
 class Icon extends React.Component {
     constructor(props) {
@@ -31,7 +32,8 @@ class Icon extends React.Component {
             dangerous,
             article,
             pie_chart,
-            leaderboard
+            leaderboard,
+            place
         };
     }
 
@@ -101,6 +103,11 @@ class Icon extends React.Component {
         }
     }
 
+    setIconFill(tempIconEl, fillColor) {
+        const tempSvgEl = tempIconEl.querySelector('svg');
+        tempSvgEl.setAttribute('fill', fillColor);
+    }
+
     render() {
         const iconSvg = this.getRequestedIconName();
         const tempIconEl = document.createElement("div");
@@ -108,6 +115,8 @@ class Icon extends React.Component {
 
         const targetIconSize = this.calcIconPxSize(tempIconEl, true);
         this.setIconSize(tempIconEl, targetIconSize);
+
+        if (this.props.fill) this.setIconFill(tempIconEl, this.props.fill);
 
         let interactiveClass = 'icon--interactive';
         if (this.props.interactive === 'false') interactiveClass = '';

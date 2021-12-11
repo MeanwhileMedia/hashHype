@@ -32,9 +32,9 @@ h2, .heading2 {
     -ms-text-size-adjust: none;
 
 }
-svg h2, svg .heading2 {
+/* svg h2, svg .heading2 {
     font-size: 4em;
-}
+} */
 h3, .heading3 {
     font-size: min(3rem, 6vw);
     margin: 0px;
@@ -49,9 +49,9 @@ h3, .heading3 {
     -moz-text-size-adjust: none;
     -ms-text-size-adjust: none;
 }
-svg h3, svg .heading3 {
+/* svg h3, svg .heading3 {
     font-size: 3em;
-}
+} */
 h4, .heading4 {
     font-size: min(2rem, 5vw);
     margin: 0px;
@@ -68,9 +68,9 @@ h4, .heading4 {
     -ms-text-size-adjust: none;
 }
 
-svg h4, svg .heading4 {
+/* svg h4, svg .heading4 {
     font-size: 2em;
-}
+} */
 h5, .heading5 {
     font-size: min(2rem, 4vw);
     margin: 0px;
@@ -85,9 +85,9 @@ h5, .heading5 {
     -moz-text-size-adjust: none;
     -ms-text-size-adjust: none;
 }
-svg h5, svg .heading5 {
+/* svg h5, svg .heading5 {
     font-size: 3em;
-}
+} */
 h6, .heading6 {
     text-transform: uppercase;
     font-size: min(1.4rem, 3.6vw);
@@ -104,10 +104,10 @@ h6, .heading6 {
     -moz-text-size-adjust: none;
     -ms-text-size-adjust: none;
 }
-svg h6, svg .heading6 {
+/* svg h6, svg .heading6 {
     font-size: 1.2rem;
     padding-bottom: .5em;
-}
+} */
 
 p {
     font-size: max(1rem, 12px);

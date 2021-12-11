@@ -19,9 +19,9 @@ class TopCommentStats extends React.Component {
 
         this.state = {
             pageIsReady: false, // all page content will have 0 opacity until this is set to true
-            focusedTopComments: null,
             freezeState: false, // set to true and all calls to receiveNewState (from our server socket) will be discarded.
             comments: [],
+            focusedTopComment: null,
             topCommentsLastUpdated: Date.now(), // when was the last time we got a fresh stats:topComments from the server
             topCommentsVizType: 'barRace', // barRace or spinWheel
             modalContent: {
@@ -39,6 +39,7 @@ class TopCommentStats extends React.Component {
     componentDidMount() {
         const wheelAbsKey = 'stats:topComments';
         socketViewResponses.initViewChangeListener(wheelAbsKey, this);
+        this.registerKeyboardCtrls();
     }
 
     receiveNewState(socketData) {
@@ -48,6 +49,29 @@ class TopCommentStats extends React.Component {
         }
         socketData.topCommentsLastUpdated = Date.now();
         this.setState(socketData);
+    }
+
+    registerKeyboardCtrls() {
+        utils.registerKeyboardCtrlsListener('focusNextTopCommentRight', this.focusNextTopComment.bind(this), {
+            keyCode: 39, // "ArrowRight"
+            ctrlKey: false,
+            shiftKey: false
+        });
+        utils.registerKeyboardCtrlsListener('focusNextTopCommentDown', this.focusNextTopComment.bind(this), {
+            keyCode: 40, // "ArrowDown"
+            ctrlKey: false,
+            shiftKey: false
+        });
+        utils.registerKeyboardCtrlsListener('focusPrevTopCommentLeft', this.focusPrevTopComment.bind(this), {
+            keyCode: 37, // "ArrowLeft"
+            ctrlKey: false,
+            shiftKey: false
+        });
+        utils.registerKeyboardCtrlsListener('focusPrevTopCommentUp', this.focusPrevTopComment.bind(this), {
+            keyCode: 38, // "ArrowUp"
+            ctrlKey: false,
+            shiftKey: false
+        });
     }
 
     setTopCommentsVizType(type = 'barRace') { // 'barRace', 'spinWheel', or 'toggle'
@@ -77,7 +101,7 @@ class TopCommentStats extends React.Component {
                 <BarRace
                     topComments={this.state.comments}
                     topCommentsLastUpdated={this.state.topCommentsLastUpdated}
-                    focusTopComment={throttleDebounce.throttle(200, this.focusTopComment).bind(this)}
+                    focusTopComment={this.focusTopComment.bind(this)}
                     focusedTopComment={this.state.focusedTopComment}
                     toggleFreezeState={this.toggleFreezeState.bind(this)}
                     setPageIsReady={this.setPageIsReady.bind(this)}
@@ -105,22 +129,21 @@ class TopCommentStats extends React.Component {
         const css = styles.generate(this);
         const StyleRoot = Radium.StyleRoot;
 
-        this.state.comments.forEach((topComment, key) => {
-            topComment.id === thisView.state.focusedTopComment ? topComment.isFocused = true : topComment.isFocused = false;
-        });
-
         const commentVisEl = this.createCommentVisEl();
         return (
             <StyleRoot>
                 <div className="topCommentStats" style={css.topCommentStats}>
                     {commentVisEl}
                 </div>
+                <div style={css.topCommentStats_loadSpinner}><div class="loadSpinner__ring"><div></div><div></div><div></div><div></div></div></div>
                 <Modal content={this.state.modalContent} modal={this.modalControls} />
                 <GNav
                     ref={this.gNavRef}
                     topComments={this.state.comments}
                     modal={this.modalControls}
                     setTopCommentsVizType={this.setTopCommentsVizType.bind(this)}
+                    topCommentsVizType={this.state.topCommentsVizType}
+                    focusedTopComment={this.state.focusedTopComment}
                 />
             </StyleRoot>
         );
@@ -130,8 +153,22 @@ class TopCommentStats extends React.Component {
         this.setState({pageIsReady: isReady});
     }
 
-    focusTopComment(id) {
-        this.setState({ focusedTopComment: id });
+    focusTopComment(comment) {
+        this.setState({ focusedTopComment: comment });
+    }
+    focusNextTopComment() {
+        const self = this;
+        if (!this.state.focusedTopComment) return;
+        const curRank = this.state.focusedTopComment.rank;
+        const nextTopComment = this.state.comments.find(thisTopComment => thisTopComment.rank === curRank + 1);
+        if (nextTopComment) setTimeout(() => self.focusTopComment(nextTopComment), 0); // when passing functions into input event listeners (keyboard controls) should wait until next tick so all registered events have time to process.
+    }
+    focusPrevTopComment() {
+        const self = this;
+        if (!this.state.focusedTopComment) return;
+        const curRank = this.state.focusedTopComment.rank;
+        const prevTopComment = this.state.comments.find(thisTopComment => thisTopComment.rank === curRank - 1);
+        if (prevTopComment) setTimeout(() => self.focusTopComment(prevTopComment), 0);
     }
 
     toggleFreezeState(frozen) {

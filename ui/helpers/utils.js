@@ -1,11 +1,44 @@
 import throttleDebounce from '/node_modules/throttle-debounce';
 
 // random helper functions that don't belong to any specific component
-var utils = {
+const utils = {
 
     init() {
+        // console.log('Utils init...');
         utils.setPageRemParent();
-        window.addEventListener('resize', throttleDebounce.debounce(200, utils.setPageRemParent));
+        utils.initWindowResizeListener();
+        utils.initKeyboardCtrlsListener();
+
+        utils.registerWindowResizeEvent('setPageRemParent', utils.setPageRemParent);
+    },
+
+    windowResizeEvents: {}, // {'eventName': func, etc..}
+    registerWindowResizeEvent(eventName, func) { // must pass unique eventName arg to registerWindowResizeEvent to avoid duplicated events
+        utils.windowResizeEvents[eventName] = func;
+    },
+    initWindowResizeListener() {
+        window.addEventListener('resize', throttleDebounce.debounce(200, () => {
+            for (const [eventName, eventFunc] of Object.entries(utils.windowResizeEvents)) {
+                // console.log(`${eventName} for window resize...`);
+                eventFunc();
+            };
+        }));
+    },
+
+    keyboardCtrlsEvents: {}, // {'eventName': {keyOpts: {keyCode: 'keyCode', etc..}, func: func}, etc..}
+    registerKeyboardCtrlsListener(eventName, func, keyOpts) { // must pass unique eventName arg to registerKeyboardCtrlsListener to avoid duplicated events
+        // keyOpts should be identical to a native key key event fragment. Used below are keyOpts.keyCode, keyOpts.ctrlKey, and keyOpts.shiftKey
+        utils.keyboardCtrlsEvents[eventName] = {keyOpts, func};
+    },
+    initKeyboardCtrlsListener() {
+        document.addEventListener('keydown', (event) => {
+            for (const [eventName, eventOpts] of Object.entries(utils.keyboardCtrlsEvents)) {
+                if (event.keyCode === eventOpts.keyOpts.keyCode && event.ctrlKey === eventOpts.keyOpts.ctrlKey && event.shiftKey === eventOpts.keyOpts.shiftKey) {
+                    // console.log(`${eventName} for "${event.key}" keydown...`);
+                    eventOpts.func();
+                }
+            };
+        });
     },
 
     // getMagicScreenMeasure function returns a px measurement which accounts for screeen size, orientation, and pixel density.
@@ -38,10 +71,11 @@ var utils = {
         if (!magicScreenMeasure) magicScreenMeasure = utils.getMagicScreenMeasure();
         // an additional feature of getMagicScreenMeasure is to search for els with class "magicScale"
         // and apply a transform: scale to each of them using utils.curMagicScreenScale. This is useful
-        // for widgets with complex CSS that do better with px measurements, then an overall scale (like our hbWidgets).
+        // for widgets with complex CSS that do better with px measurements, than an overall scale (like our hbWidgets).
         const magicScaleEls = document.querySelectorAll('.magicScale');
         magicScaleEls.forEach((thisMagicScaleEl) => {
-            thisMagicScaleEl.style.transform = `scale(${utils.curMagicScreenScale})`;
+            thisMagicScaleEl.firstChild.style.transform = `scale(${utils.curMagicScreenScale})`;
+            thisMagicScaleEl.firstChild.style.transformOrigin = `top`;
         });
     }
 

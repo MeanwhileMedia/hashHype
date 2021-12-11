@@ -150,10 +150,10 @@ class SetTrendAction extends React.Component {
         return (
             <div className="setTrendAction" style={css.setTrendAction}>
                 <div style={css.setTrendAction_section}>
-                    <h3>
+                    <h2>
                         <span className="noBreakTextGroup">The next time<TextInput placeholder={renderSymbolText} minWidth="6rem" /></span>
                         <span className="noBreakTextGroup">trends to<TextInput placeholder={this.props.activeTopComment.rank} type="ordinal" minWidth="4rem" />place:</span>
-                    </h3>
+                    </h2>
                 </div>
                 <div style={css.setTrendAction_section}>
                     <div style={css.setTrendAction_thirdApps}>

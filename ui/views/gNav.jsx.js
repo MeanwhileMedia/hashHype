@@ -35,7 +35,6 @@ class GNav extends React.Component {
 
     render() {
         const thisView = this;
-        thisView.activeTopComment = this.props.topComments.find(topComment => topComment.isFocused);
 
         const css = styles.generate(this);
         let gNavStyles = css.GNav;
@@ -55,6 +54,8 @@ class GNav extends React.Component {
                 </div>
             );
         }
+
+        const spinWheelToggleSelected = this.props.topCommentsVizType === 'spinWheel';
 
         return (
             <div className="GNav" style={gNavStyles}>
@@ -81,9 +82,9 @@ class GNav extends React.Component {
                 <div className="GNav_bottom_right" style={css.GNav_bottom_right}>
                     <div className="GNav_bottom_right_ctrls" style={css.GNav_bottom_right_ctrls}>
                         <div style={css.GNav_bottom_right_ctrls_vizCtrl} >
-                            <span style={css.GNav_bottom_right_ctrls_vizCtrl_icon__leaderboard}><Icon iconName="leaderboard" width="1.6rem" interactive="false" /></span>
-                            <span className="magicScale" style={css.GNav_bottom_right_ctrls_vizCtrl_toggle}><span onClick={ (e) => { this.props.setTopCommentsVizType('toggle') } }><ToggleSwitch color="dark" /></span></span>
-                            <Icon iconName="pie_chart" width="1.6rem" interactive="false" />
+                            <span onClick={ (e) => { if (this.props.topCommentsVizType !== 'barRace') this.props.setTopCommentsVizType('toggle') } } style={css.GNav_bottom_right_ctrls_vizCtrl_icon__leaderboard}><Icon iconName="leaderboard" width="1.6rem" /></span>
+                            <span onClick={ (e) => { this.props.setTopCommentsVizType('toggle') } } className="magicScale" style={css.GNav_bottom_right_ctrls_vizCtrl_toggle}><ToggleSwitch color="dark" checked={spinWheelToggleSelected} /></span>
+                            <span onClick={ (e) => { if (this.props.topCommentsVizType !== 'spinWheel') this.props.setTopCommentsVizType('toggle') } }><Icon iconName="pie_chart" width="1.6rem" /></span>
                         </div>
                     </div>
                 </div>
@@ -108,11 +109,11 @@ class GNav extends React.Component {
 
     showSetTrendActionModal() {
         const setTrendActionUi = (
-            <SetTrendAction activeTopComment={this.activeTopComment} hideModal={this.hideModal.bind(this)}/>
+            <SetTrendAction activeTopComment={this.props.focusedTopComment} hideModal={this.hideModal.bind(this)}/>
         );
         this.props.modal.show({
-            title: 'Set Trend Action',
-            subtitle: 'How would you like to act on this trend in the future?',
+            // title: 'Set Trend Action',
+            // subtitle: 'How would you like to act on this trend in the future?',
             body: setTrendActionUi,
             customStyleClasses: ['align__center']
         });
@@ -154,7 +155,7 @@ class GNav extends React.Component {
     {/* <hbCC-fEAdmin> */}
     showAdminCtrlsModal() {
         const trainingUi = (
-            <AdminTrain topComment={this.activeTopComment} hideModal={this.hideModal.bind(this)}/>
+            <AdminTrain topComment={this.props.focusedTopComment} hideModal={this.hideModal.bind(this)}/>
         );
         this.props.modal.show({
             title: 'Relevancy Training',
