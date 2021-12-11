@@ -130,12 +130,20 @@ class TopCommentStats extends React.Component {
         const StyleRoot = Radium.StyleRoot;
 
         const commentVisEl = this.createCommentVisEl();
+
+        let loadSpinnerEl = null;
+        if (!this.state.pageIsReady) {
+            loadSpinnerEl = (
+                <div class="loadSpinner_wrapper"><div class="loadSpinner__ring"><div></div><div></div><div></div><div></div></div></div>
+            );
+        }
+
         return (
             <StyleRoot>
                 <div className="topCommentStats" style={css.topCommentStats}>
                     {commentVisEl}
                 </div>
-                <div style={css.topCommentStats_loadSpinner}><div class="loadSpinner__ring"><div></div><div></div><div></div><div></div></div></div>
+                {loadSpinnerEl}
                 <Modal content={this.state.modalContent} modal={this.modalControls} />
                 <GNav
                     ref={this.gNavRef}
@@ -154,21 +162,29 @@ class TopCommentStats extends React.Component {
     }
 
     focusTopComment(comment) {
+        if (!comment) return;
         this.setState({ focusedTopComment: comment });
     }
     focusNextTopComment() {
         const self = this;
         if (!this.state.focusedTopComment) return;
         const curRank = this.state.focusedTopComment.rank;
-        const nextTopComment = this.state.comments.find(thisTopComment => thisTopComment.rank === curRank + 1);
-        if (nextTopComment) setTimeout(() => self.focusTopComment(nextTopComment), 0); // when passing functions into input event listeners (keyboard controls) should wait until next tick so all registered events have time to process.
+        let nextTopComment = this.state.comments.find(thisTopComment => thisTopComment.rank === curRank + 1);
+        if (!nextTopComment) nextTopComment = this.state.comments.find(thisTopComment => thisTopComment.rank === 1);
+        setTimeout(() => self.focusTopComment(nextTopComment), 0); // when passing functions into input event listeners (keyboard controls) should wait until next tick so all registered events have time to process.
     }
     focusPrevTopComment() {
         const self = this;
-        if (!this.state.focusedTopComment) return;
-        const curRank = this.state.focusedTopComment.rank;
-        const prevTopComment = this.state.comments.find(thisTopComment => thisTopComment.rank === curRank - 1);
-        if (prevTopComment) setTimeout(() => self.focusTopComment(prevTopComment), 0);
+        if (!self.state.focusedTopComment) return;
+        const curRank = self.state.focusedTopComment.rank;
+        const targetRank = curRank - 1;
+        let prevTopComment;
+        if (targetRank < 1) {
+            self.state.comments.forEach(thisTopComment => { if (thisTopComment.rank > targetRank) prevTopComment = thisTopComment });
+        } else {
+            prevTopComment = self.state.comments.find(thisTopComment => thisTopComment.rank === targetRank);
+        }
+        setTimeout(() => self.focusTopComment(prevTopComment), 0);
     }
 
     toggleFreezeState(frozen) {

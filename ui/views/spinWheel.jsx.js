@@ -26,6 +26,7 @@ class SpinWheel extends React.Component {
 
         this.defaultActiveRank = 3; // We will auto rotate to 3rd ranked wheel part upon initial load.
         this.didAutoRotateToStart = false;
+        this.isDemoRotating = false;
     }
 
     componentDidMount() {
@@ -38,9 +39,10 @@ class SpinWheel extends React.Component {
         const self = this;
 
         if (prevProps.focusedTopComment && this.props.focusedTopComment && prevProps.focusedTopComment.id !== this.props.focusedTopComment.id) {
+            // The focused comment just changed
             if (this.pendingKeyPress) {
-                this.pendingKeyPress = false;
                 this.autoRotateToTopComment(this.props.focusedTopComment, true);
+                this.pendingKeyPress = false;
             }
         }
 
@@ -48,17 +50,13 @@ class SpinWheel extends React.Component {
         if (this.lastUpdated === this.props.topCommentsLastUpdated) return;
         this.lastUpdated = this.props.topCommentsLastUpdated;
 
-        this.spinWheelPosDegs = {}; // reset our cached wheel part degree positions now that our data has changed.
+        this.spinWheelPartsTopmostPosMatrix = {}; // reset our cached wheel part positions now that our data has changed.
 
-        //
-        // // In case the wheel part rankings just changed, re-check that we have the correct one marked as focused
-        // const activePartEl = this.determineActiveWheelPart();
-        // if (!activePartEl) return;
-        // if (!activePartEl.classList.contains('active')) {
-        //     const focusedComment = this.props.topComments.find(thisTopComment => thisTopComment.id === activePartEl.getAttribute('data-trend-name'));
-        //     this.props.focusTopComment(focusedComment);
-        // }
-
+        // In case the wheel part rankings just changed, re-check that the focused comment is still on top
+        const topmostPartEl = this.determineTopmostWheelPart();
+        if (this.props.focusedTopComment && topmostPartEl && topmostPartEl.getAttribute('data-trend-name') !== this.props.focusedTopComment.id && !self.isDemoRotating) {
+            this.autoRotateToTopComment(this.props.focusedTopComment, true);
+        }
     }
 
     initPanListeners() {
@@ -66,16 +64,21 @@ class SpinWheel extends React.Component {
         const hammer = new Hammer(document.querySelector('.spinWheel .panCatcher'));
         let prevFocusedComment;
         hammer.on('panleft panright', (e) => {
+            self.isDemoRotating = false;
             const wheelEl = document.querySelector('.spinWheel');
             if (!wheelEl) return;
             self.props.toggleFreezeState(true);
             // console.log('velocity:', e.velocityX) // speed of pan (-,+)
             // console.log('deltaX:', e.deltaX) // pixel position change (-,+)
+
             const curRotation = self.getCurrentWheelRotation();
-            const newRotation = Math.ceil(e.velocityX * 10 + curRotation); // We round to whole degrees to avoid jittering AND performance issues (returns if rounded angle shows no change)
+            const curRotationDegs = self.convertMatrixToDegs(curRotation);
+            const newRotationDegs = Math.ceil(e.velocityX * 10 + curRotationDegs); // We round to whole degrees to avoid jittering AND performance issues (returns if rounded angle shows no change)
+            const newRotation = self.convertDegsToMatrix(newRotationDegs);
+
             if (curRotation === newRotation) return;
-            self.setCurrentWheelRotation(`rotate(${newRotation}deg)`, 'none');
-            const activePartEl = self.determineActiveWheelPart();
+            self.setCurrentWheelRotation(newRotation, 'none');
+            const activePartEl = self.determineTopmostWheelPart();
             if (activePartEl) {
                 const focusedComment = self.props.topComments.find(thisTopComment => thisTopComment.id === activePartEl.getAttribute('data-trend-name'));
                 if (focusedComment !== prevFocusedComment) {
@@ -91,22 +94,34 @@ class SpinWheel extends React.Component {
 
     autoRotateToStart () {
         const self = this;
-        if (this.didAutoRotateToStart) return;
         const defaultActiveTopComment = this.props.topComments.find(thisTopComment => thisTopComment.rank === self.defaultActiveRank);
-        this.didAutoRotateToStart = this.autoRotateToTopComment(defaultActiveTopComment);
+        this.autoRotateToTopComment(defaultActiveTopComment);
         this.props.focusTopComment(defaultActiveTopComment);
         this.props.setPageIsReady();
         setTimeout(() => {
-            this.initAutoRotate();
+            this.initDemoRotate();
         }, 0);
     }
-    initAutoRotate() {
+    initDemoRotate() { // upon pageload the wheel slowly turns on it's own (to demonstrated the functionality to the user)
         const self = this;
         const wheelEl = document.querySelector('.spinWheel');
         if (!wheelEl) return;
 
-        const curRotation = self.getCurrentWheelRotation();
-        self.setCurrentWheelRotation(`rotate(-${360-Math.abs(curRotation)}deg)`, `transform 80s linear`);
+        self.isDemoRotating = true;
+        self.setCurrentWheelRotation(self.convertDegsToMatrix(360), `transform 80s linear`);
+
+        let prevTopmostPartEl;
+        const checkTopmostWheelPart = () => {
+            if (!self.isDemoRotating) return;
+            const topmostPartEl = self.determineTopmostWheelPart();
+            if (topmostPartEl && topmostPartEl !== prevTopmostPartEl) {
+                prevTopmostPartEl = topmostPartEl;
+                const focusedComment = self.props.topComments.find(thisTopComment => thisTopComment.id === topmostPartEl.getAttribute('data-trend-name'));
+                self.props.focusTopComment(focusedComment);
+            }
+            setTimeout(checkTopmostWheelPart, 1000);
+        };
+        checkTopmostWheelPart();
     }
 
     registerKeyboardCtrls() {
@@ -129,37 +144,37 @@ class SpinWheel extends React.Component {
         if (!wheelEl) return 0;
         const wheelComputedStyle = window.getComputedStyle(wheelEl);
         const curTransformMatrix = wheelComputedStyle.transform;
-        if (!curTransformMatrix || curTransformMatrix === 'none') return 0;
-        const matrixVals = curTransformMatrix.split('(')[1].split(')')[0].split(',');
-        const degrees = Math.round(Math.atan2(matrixVals[1], matrixVals[0]) * (180/Math.PI));
-        return degrees;
+        if (!curTransformMatrix) return 'none';
+        return curTransformMatrix;
     }
     setCurrentWheelRotation(transform, transition = 'none', wheelEl) { // transform and transition are strings that are the exact CSS setting to apply
         wheelEl = wheelEl || document.querySelector('.spinWheel');
         if (!wheelEl) return;
-        wheelEl.style.transform = transform;
+        wheelEl.style.transform = transform; // expects a matrix string
         wheelEl.style.transition = transition;
     }
 
     autoRotateToTopComment(destTopComment, withTransition = false) {
-        if (!destTopComment) return false;
-        this.getSpinWheelPartDegToActive(destTopComment);
-        if (!this.spinWheelPosDegs[destTopComment.id]) return false;
-        const wheelEl = document.querySelector('.spinWheel');
+        if (!destTopComment) return;
         let transition = 'none';
         if (withTransition) transition = `transform .2s`;
-        this.setCurrentWheelRotation(`rotate(${this.spinWheelPosDegs[destTopComment.id]}deg)`, transition);
-        return true;
+        this.isDemoRotating = false;
+
+        this.getSpinWheelPartDegToActive(destTopComment);
+        let targetRotation = this.spinWheelPartsTopmostPosMatrix[destTopComment.id];
+        if (!targetRotation) return;
+
+        this.setCurrentWheelRotation(targetRotation, transition);
     }
 
     getSpinWheelPartDegToActive(destTopComment) {
         const self = this;
         if (!destTopComment) return;
-        this.spinWheelPosDegs = this.spinWheelPosDegs || {};
-        if (this.spinWheelPosDegs[destTopComment.id]) return;
+        this.spinWheelPartsTopmostPosMatrix = this.spinWheelPartsTopmostPosMatrix || {};
+        if (this.spinWheelPartsTopmostPosMatrix[destTopComment.id]) return;
 
         // clone the wheel, rotate that clone in 1 degree intervals, take measurements at each interval, determine which degree places the text closest to top center, delete clone node.
-        const degreeAndOffsetRecord = []; //[{deg: 1, offset: 235}, {deg: 2, offset: 242}, etc]
+        const degreeAndOffsetRecord = []; //[{matrix: 1, offset: 235}, {matrix: 2, offset: 242}, etc]
         const wheelEl = document.querySelector('.spinWheel');
         const wheelElClone = wheelEl.cloneNode(true);
         wheelElClone.style.opacity = 0;
@@ -171,7 +186,7 @@ class SpinWheel extends React.Component {
             const boundingClientRect = topCommentTextEl.getBoundingClientRect();
             if (boundingClientRect.top < window.innerHeight) {
                 const textOffCenterPx = (boundingClientRect.x+boundingClientRect.width/2) - (window.innerWidth/2);
-                degreeAndOffsetRecord.push({deg: self.getCurrentWheelRotation(wheelElClone), offset: textOffCenterPx, top: boundingClientRect.top});
+                degreeAndOffsetRecord.push({matrix: self.getCurrentWheelRotation(wheelElClone), offset: textOffCenterPx, top: boundingClientRect.top});
             }
         }
         wheelElClone.remove()
@@ -180,22 +195,22 @@ class SpinWheel extends React.Component {
             return Math.abs(a.offset) - Math.abs(b.offset);
         });
         if (!degreeAndOffsetRecord[0]) return;
-        this.spinWheelPosDegs[destTopComment.id] = degreeAndOffsetRecord[0].deg;
+        this.spinWheelPartsTopmostPosMatrix[destTopComment.id] = degreeAndOffsetRecord[0].matrix;
     }
 
-    determineActiveWheelPart() {
+    determineTopmostWheelPart() {
         const viewportBoundingRect = document.querySelector('#main').getBoundingClientRect();
         let smallestOffset = null; // the wheel with the smallest measurement from center
-        let activeWheelPartEl = null;
+        let topmostWheelPartEl = null;
         document.querySelectorAll('.wheel_part .wheel_part_anchor').forEach((thisWheelEl) => {
             const wheelElBoundingRect = thisWheelEl.getBoundingClientRect();
             const wheelOffCenter = Math.abs(wheelElBoundingRect.left - viewportBoundingRect.width / 2);
             if ((!smallestOffset || wheelOffCenter < smallestOffset) && wheelElBoundingRect.top < viewportBoundingRect.height) {
                 smallestOffset = wheelOffCenter;
-                activeWheelPartEl = thisWheelEl.closest('.wheel_part');
+                topmostWheelPartEl = thisWheelEl.closest('.wheel_part');
             }
         });
-        return activeWheelPartEl;
+        return topmostWheelPartEl;
     }
 
     createSpinWheelParts(css) {
@@ -266,6 +281,25 @@ class SpinWheel extends React.Component {
         });
 
         return spinWheelParts;
+    }
+
+    convertMatrixToDegs(matrixStr) { // returns int degrees
+        const matrixVals = matrixStr.split('(')[1].split(')')[0].split(',');
+        const degrees = Math.round(Math.atan2(matrixVals[1], matrixVals[0]) * (180/Math.PI));
+        return degrees;
+    }
+    convertDegsToMatrix(degsInt) { // returns matrix string
+        const radians = degsInt * Math.PI / 180;
+        const matrix = [
+            Math.cos(radians),
+            Math.sin(radians),
+            Math.sin(radians) * -1,
+            Math.cos(radians),
+            0,
+            0
+        ];
+        const matrixStr = `matrix(${matrix[0]},${matrix[1]},${matrix[2]},${matrix[3]},${matrix[4]},${matrix[5]})`;
+        return matrixStr;
     }
 
     render() {
