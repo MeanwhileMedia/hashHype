@@ -14,8 +14,9 @@ const commentObjModel = {
             author: props.author || {name: null},
             createdUtc: props.createdUtc || Date.now(), // when the comment was posted (ms)
             foundAt: props.foundAt || Date.now(), // when the comment registered to hashHype
-            words: props.words || [], // array of wordRef objects { word: 'word_seq' (also redis key to word object "word:word_seq"), hasSymbols: ['symbolKey', 'symbol:stock:gme', etc] }
+            words: props.words || {}, // object with wordRef objects for vals { 'word_!!_1': wordRef1, 'other_!!_word_!!_GME': wordRef2, etc}
             wordAssocs: props.wordAssocs || {}, // {':happy_face:': {assoc: 'http://imgUrl.jpg', type: 'img'}, etc..} - When parsing raw comments, this offers a way to preserve a word association within comment.body to an image, url, etc greater context. When the raw comment is later processed in "extractWordsFromComments" - this data should be transferred to the individual word/symbol redis object, and this property can be deleted from comment object.
+            wordsFor2dGram: props.wordsFor2dGram || [], // a record of which words (previously pointed above 0) are valid words to be used in forming 2dGrams for this comment. See topCommentStats.extractNew2dGramsFromTopComment
             points: {
                 '1Hr': {}, // {foo_bar: 342, other_word: etc...}
                 '12Hr': {},

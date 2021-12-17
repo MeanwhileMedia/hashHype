@@ -26,8 +26,12 @@ class BarRaceBar extends React.Component {
         if (self.state.activeTopComment && self.state.activeTopComment.id === this.state.topComment.id) thisCommentIsActive = true;
 
         let symbolText = '';
-        if (this.state.topComment.renderedSymbol) {
-            symbolText = this.state.topComment.renderedSymbol.symbol;
+        let hasTopSymbol = null;
+        const hasTopSymbolKey = this.state.topComment.topSymbolHigh['1Hr'].key || this.state.topComment.topSymbolLow['1Hr'].key || null;
+        if (hasTopSymbolKey) hasTopSymbol = this.state.topComment.symbols.find(thisSymbol => thisSymbol.redisKey === hasTopSymbolKey);
+        if (hasTopSymbol) {
+            this.state.topComment.renderedSymbol = hasTopSymbol; // save on comment object for easy access later and in other classes
+            symbolText = hasTopSymbol.symbol;
         }
 
         const zBasedRank = this.state.topComment.rank - 1;

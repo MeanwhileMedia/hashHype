@@ -4,9 +4,19 @@ const wordObjModel = {
     // Every 10 minutes, all wordToCommentsIndex and word:foo_bar:foundAt redis objects are cleaned up. Comments and foundAt timestamps
     // which are older than this.trackWordsFor will be removed from redis.
     trackWordsFor: 86400000, // ms (24hrs) How long should we keep tstamps stored to word:foo_bar:foundAt lists
-    cleanupWordRecordsInterval: null,
-    cleanupWordRecordsIntervalTime: 6000*10,
-    cleanupWordRecords: [], // array of word strings
+    wordUseInterval: 3600000, // ms (1hr) How long until a single user can recomment the same word and have it earn points. See addFoundAtTstampForWord
+
+    cleanupWordToCommentsIndexesInterval: null,
+    cleanupWordToCommentsIndexesIntervalTime: 6000*10,
+    cleanupWordToCommentsIndexes: [], // array of redis sorted set keys
+
+    cleanupWordToUsersIndexesInterval: null,
+    cleanupWordToUsersIndexesIntervalTime: 7000*10, // staggered for performance
+    cleanupWordToUsersIndexes: [], // array of redis sorted set keys
+
+    cleanupWordFoundAtListsInterval: null,
+    cleanupWordFoundAtListsIntervalTime: 8000*10,
+    cleanupWordFoundAtLists: [], // array of redis list keys
 
     createWordObject: function(props = {}) { // Must provide value, and type
         // returns an initial state for a new word, bigram, trigram object. Word objects are stored as their own redis objects and contain
@@ -25,6 +35,11 @@ const wordObjModel = {
     createWordRefObject: function(props = {}) { // Must provide value, and type
         // returns an initial state for a new word ref. Word ref objects are stored inside comments and contain word data that pertains to that specific comment.
         // A word ref will have the info needed to lookup a full word object when necc.
+
+        let distance = null;
+        if (typeof props.distance === 'number') distance = props.distance;
+        let pointVal = null;
+        if (typeof props.pointVal === 'number') pointVal = props.pointVal;
         const wordRefObj = {
             class: 'wordRef',
             word: props.word, // Stringified version (foo_!!_bar) of what would be the word.value prop on the actual word object. Can be used to form a redis key for word (word:foo_bar)
@@ -32,7 +47,8 @@ const wordObjModel = {
             rawWords: props.rawWords || [], // when rawWords is stored on a wordRef - it is an array of ONLY the unstemmed word sequence strings (space delimeted) which are found in THIS comment.
             hasSymbols: props.hasSymbols || [], // array of symbol object keys ['symbol:stock:gme', etc]
             index: props.index || [], // array of integer indexes which identify this words location(s) within the comment.body
-            distance: props.distance || null // a measure of how far apart each word is within this multi word sequence within this comment (2dGrams only, null otherwise)
+            distance: distance, // a measure of how far apart each word is within this multi word sequence within this comment (2dGrams only, null otherwise)
+            pointVal: pointVal, // the result from topCommentStats.getWordPointCount. Stored/cached on the wordRef object.
         };
 
         return wordRefObj;
@@ -45,16 +61,8 @@ const wordObjModel = {
             wordObjectKey = `word:${wordObjOrString}`;
             return wordObjectKey;
         }
+        wordObjectKey = `word:${wordObjOrString.value.join('_!!_')}`; // _!!_ is the hashHype word delimeter
 
-        if (wordObjOrString.type === '2dGram') {
-            wordObjOrString.value.forEach((thisWordSeq) => {
-                if (wordObjectKey !== '') wordObjectKey = wordObjectKey + '__!!!!__';
-                wordObjectKey = wordObjectKey + thisWordSeq.join('_!!_');
-            });
-            wordObjectKey = `word:${wordObjectKey}`;
-        } else {
-            wordObjectKey = `word:${wordObjOrString.value.join('_!!_')}`; // _!!_ is the hashHype word delimeter
-        }
         return wordObjectKey;
     },
 
@@ -72,71 +80,139 @@ const wordObjModel = {
         return existingWord;
     },
 
-    registerWordToCommentsIndex: function(wordString, comment, redisClient, cback) {
+    registerWordToCommentsIndex: function(wordString, comment, redisClient, cback, delay = 5000) {
         const self = wordObjModel;
-        // a comment index (index:wordToComments:foo_bar) is a redis sorted set of comment ids (pointed using their
-        // createdUtc tstamps). Sorted sets let us later fetch ranges based on createdUtc time frames.
+        // A wordToComments index (index:wordToComments:foo_bar) is a redis sorted set of comment ids (order pointed using their createdUtc tstamps). Sorted sets let us later fetch ranges based on createdUtc time frames.
+        // This index is used by topCommentStats when it gets another redis '__keyspace@0__:word:*:foundAt' and needs to determine all of the comments that may be eligible for new points.
         // cback returns true if was added and saved. false otherwise.
-        const thisIndexKey = `index:wordToComments:${wordString}`;
+
+        // The delay arg, defaulting to 5 seconds, is in place because our topCommentStats process waits in 5 second intervals for all new '__keyspace@0__:word:*:foundAt' events.
+        // if this comment is added to a wordToComment index before it's own word:foundAt events are processed, it could wrongly trigger points for itself by it's own words.
+        setTimeout(() => {
+            const thisIndexKey = `index:wordToComments:${wordString}`;
+            self.registerWordToUsersIndex(wordString, comment, redisClient, () => {
+                redisClient.zadd(thisIndexKey, [comment.createdUtc, comment.id], (itemsAddedCount) => {
+                    if (itemsAddedCount === 0) {
+                        // If zadd returns 0, this implies that the item could not be added because it already existed, or the command errored.
+                        console.warn(`Could not zadd comment:${comment.id} to ${thisIndexKey}. Most likely, that comment id already existed in the sorted set.`);
+                        if (cback) cback(false);
+                        return;
+                    }
+                    if (cback) cback(true);
+
+                    // We must also save a record of all words which have changed wordToCommentsIndex. This process cleans up those objects in intervals. See initCleanupWordToCommentsIndexesInterval
+                    self.cleanupWordToCommentsIndexes.push(thisIndexKey);
+                    self.initCleanupWordToCommentsIndexesInterval(redisClient);
+                });
+            });
+        }, delay);
+    },
+
+    registerWordToUsersIndex: function(wordString, comment, redisClient, cback) {
+        const self = wordObjModel;
+        // A wordToUsers index (index:wordToUsers:foo_bar:agentOOjoe) is a redis sorted set of comment ids (order pointed using their createdUtc tstamps). Sorted sets let us later fetch ranges based on createdUtc time frames.
+        // This index is used by topCommentStats to get a list of all comments, by a user, which contained a specific word. A user can only earn points when one of their words is recommented IF they aren't the one who recommented it.
+        // cback returns true if was added and saved. false otherwise.
+
+        const thisIndexKey = `index:wordToUsers:${wordString}:${comment.author.name}`;
         redisClient.zadd(thisIndexKey, [comment.createdUtc, comment.id], (itemsAddedCount) => {
             if (itemsAddedCount === 0) {
-                // If zadd returns 0, this implies that the item could not be added because it already existed, or the command errored.
                 console.warn(`Could not zadd comment:${comment.id} to ${thisIndexKey}. Most likely, that comment id already existed in the sorted set.`);
-                if (cback) cback(false); // return false and no word:foundAt tstamp will be registered either.
+                if (cback) cback(false);
                 return;
             }
             if (cback) cback(true);
 
-            // We must also save a record of all words which have changed wordToCommentsIndex. This process cleans up those objects in intervals. See initCleanupWordRecordsInterval
-            self.cleanupWordRecords.push(wordString);
-            self.initCleanupWordRecordsInterval(redisClient);
+            self.cleanupWordToUsersIndexes.push(thisIndexKey);
+            self.initCleanupWordToUsersIndexesInterval(redisClient);
         });
     },
 
-    addFoundAtTstampForWord: function(redisWordKey, hostComment, redisClient, cback) {
+    addFoundAtTstampForWord: function(wordString, hostComment, redisClient, cback) {
+        const self = wordObjModel;
         // All "foundAt" tstamps are stored to their own redis list at key: word:foo_!!_bar:foundAt
-        const foundAtListKey = `${redisWordKey}:foundAt`; // rpush auto creates list if it does not already exist
-        redisClient.rpush(foundAtListKey, [hostComment.foundAt], (listLength) => {
-            if (cback) cback();
+
+        ////////////
+        // We add the foundAt timestamp for this word, but ONLY if this is the first time this user commented it. This is to comply with the following rules:
+        //   - A user can never earn points for a word because they themselves re-commented that word (or users could artificially boost their own comments)
+        //   - A user can only earn points ONCE for a word recommented by another user. A user can recomment it more than once (or two users could artificially boost eachothers comment)
+        const wordToUsersIndexKey = `index:wordToUsers:${wordString}:${hostComment.author.name}`;
+        const now = Date.now();
+        redisClient.zrange(wordToUsersIndexKey, now - self.wordUseInterval, now, (commentIdsInRange) => {
+            if (commentIdsInRange && commentIdsInRange.length > 0) {
+                // console.warn(`Will not store a foundAt tstamp for word:${wordString} because this user (${hostComment.author.name}) already used it within the last ${self.wordUseInterval/3600000}hrs.`)
+                if (cback) cback();
+                return;
+            }
+            const foundAtListKey = `word:${wordString}:foundAt`; // rpush auto creates list if it does not already exist
+            redisClient.rpush(foundAtListKey, [hostComment.foundAt], (listLength) => {
+                if (cback) cback();
+
+                self.cleanupWordFoundAtLists.push(foundAtListKey);
+                self.initCleanupWordFoundAtListsInterval(redisClient);
+            });
         });
     },
 
-    initCleanupWordRecordsInterval: function(redisClient) {
+    initCleanupWordToCommentsIndexesInterval: function(redisClient) {
         const self = wordObjModel;
-        if (self.cleanupWordRecordsInterval) return;
-        self.cleanupWordRecordsInterval = setInterval(() => {
-            self.execWordRecordsCleanup(redisClient);
-        }, self.cleanupWordRecordsIntervalTime);
+        if (self.cleanupWordToCommentsIndexesInterval) return;
+        self.cleanupWordToCommentsIndexesInterval = setInterval(() => {
+            const cleanupWordToCommentsIndexesClone = [...new Set(self.cleanupWordToCommentsIndexes)]; // remove dups
+            self.cleanupWordToCommentsIndexes = []; // reset
+            const commentMaxAge = Date.now() - self.trackWordsFor;
+            self.execCleanupRedisSortedSet(cleanupWordToCommentsIndexesClone, commentMaxAge, redisClient);
+        }, self.cleanupWordToCommentsIndexesIntervalTime);
     },
 
-    execWordRecordsCleanup: function(redisClient) {
+    initCleanupWordToUsersIndexesInterval: function(redisClient) {
         const self = wordObjModel;
-        // const cleanupWordRecordsClone = [...self.cleanupWordRecords]; // jww stoppping remove dups
-        const cleanupWordRecordsClone = [...new Set(self.cleanupWordRecords)]; // remove dups
-        self.cleanupWordRecords = [];
-        console.log(`Redis word records will now be cleaned up for ${cleanupWordRecordsClone.length} words. They will be trimmed of all items older than ${self.trackWordsFor/3600000}hrs...`);
-        cleanupWordRecordsClone.forEach((thisWordStr) => {
-            // 1. Clean up the wordToCommentsIndex sorted set first
-            const thisWordToCommentsIndexKey = `index:wordToComments:${thisWordStr}`;
-            const now = Date.now();
-            const maxAge = now - self.trackWordsFor;
-            redisClient.zremrangebyscore(thisWordToCommentsIndexKey, 0, maxAge, (itemsRemovedCount) => {
-                if (itemsRemovedCount === 0) return;
-                console.log(`Removed ${itemsRemovedCount} items from redis sorted list: ${thisWordToCommentsIndexKey}`);
-            });
+        if (self.cleanupWordToUsersIndexesInterval) return;
+        self.cleanupWordToUsersIndexesInterval = setInterval(() => {
+            const cleanupWordToUsersIndexesClone = [...new Set(self.cleanupWordToUsersIndexes)]; // remove dups
+            self.cleanupWordToUsersIndexes = []; // reset
+            const commentMaxAge = Date.now() - self.trackWordsFor;
+            self.execCleanupRedisSortedSet(cleanupWordToUsersIndexesClone, commentMaxAge, redisClient);
+        }, self.cleanupWordToUsersIndexesIntervalTime);
+    },
 
-            // 2. Now clean up the word:foundAt list
-            const foundAtListKey = `word:${thisWordStr}:foundAt`;
-            redisClient.lrange(foundAtListKey, 0, -1, (allFoundAtTstamps) => {
+    initCleanupWordFoundAtListsInterval: function(redisClient) {
+        const self = wordObjModel;
+        if (self.cleanupWordFoundAtListsInterval) return;
+        self.cleanupWordFoundAtListsInterval = setInterval(() => {
+            const cleanupWordFoundAtListsClone = [...new Set(self.cleanupWordFoundAtLists)]; // remove dups
+            self.cleanupWordFoundAtLists = []; // reset
+            const wordMaxAge = Date.now() - self.trackWordsFor;
+            self.execCleanupRedisTstampList(cleanupWordFoundAtListsClone, wordMaxAge, redisClient);
+        }, self.cleanupWordFoundAtListsIntervalTime);
+    },
+
+    execCleanupRedisSortedSet: function(sortedSetsKeys, maxAge, redisClient) {
+        const self = wordObjModel;
+        // console.log(`execCleanupRedisSortedSet: Redis word records will now be cleaned up for ${sortedSetsKeys.length} words. They will be trimmed of all items older than ${(Date.now()-maxAge)/3600000}hrs...`);
+        sortedSetsKeys.forEach((thisSortedSetKey) => {
+            // 1. Clean up the wordToCommentsIndex sorted set first
+            redisClient.zremrangebyscore(thisSortedSetKey, 0, maxAge, (itemsRemovedCount) => {
+                if (itemsRemovedCount === 0) return;
+                console.log(`Removed ${itemsRemovedCount} items from redis sorted list: ${thisSortedSetKey}`);
+            });
+        });
+    },
+
+    execCleanupRedisTstampList: function(listKeys, maxAge, redisClient) {
+        const self = wordObjModel;
+        // console.log(`execCleanupRedisTstampList: Redis word records will now be cleaned up for ${listKeys.length} words. They will be trimmed of all items older than ${(Date.now()-maxAge)/3600000}hrs...`);
+        listKeys.forEach((thisListKey) => {
+            redisClient.lrange(thisListKey, 0, -1, (allFoundAtTstamps) => {
                 let trimStart = 0; // the index in list at which tstamps stop being too old. These lists are sorted ascending.
                 allFoundAtTstamps.some((thisTstamp, thisTstampIndex) => {
-                    const isOldTstamp = Date.now() - thisTstamp > self.trackWordsFor;
+                    const isOldTstamp = thisTstamp < maxAge;
                     if (!isOldTstamp) return true; // break from loop. We have looped through all the old tstamps.
                     trimStart = thisTstampIndex;
                 });
                 if (trimStart === 0) return;
-                redisClient.ltrim(foundAtListKey, trimStart, -1);
-                console.log(`Trimmed ${trimStart} items from redis list: ${foundAtListKey}`);
+                redisClient.ltrim(thisListKey, trimStart, -1);
+                console.log(`Trimmed ${trimStart} items from redis list: ${thisListKey}`);
             });
         });
     }

@@ -26,7 +26,7 @@ const styles = {
             newsColumns_right_body: {
                 'overflow-y': 'auto',
                 'max-height': '50vh',
-                'display': 'inline-block'
+                'padding-bottom': '0.5rem'
             },
             newsColumns_right_author: {
                 'font-weight': '400',
@@ -34,7 +34,6 @@ const styles = {
                 'margin-top': '2rem',
                 'padding-top': '0.5rem',
                 'display': 'inline-block',
-                'border-top': '1px solid rgba(0,0,0,0.15)',
                 'font-size': '1.4rem'
             },
             newsAttribution: {

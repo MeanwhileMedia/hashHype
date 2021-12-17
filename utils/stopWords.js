@@ -32,7 +32,6 @@ const remove = [
     // Reserved charachter sequences for hashHype (delimeters etc.)
     '_',
     '_!!_',
-    '__!!!!__',
     ' ',
 ];
 

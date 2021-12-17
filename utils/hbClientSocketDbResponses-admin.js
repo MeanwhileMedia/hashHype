@@ -173,9 +173,8 @@ class HbClientSocketDbResponses_admin {
                 delete pointsTimeBucket[removeWord];
             }
 
-            // then, remove it from the comment's words array
-            const wordIndex = comment.words.findIndex((thisWord) => thisWord.word === removeWord);
-            if (wordIndex !== -1) comment.words.splice(wordIndex, 1);
+            // then, remove it from the comment's words array);
+            delete comment.words[removeWord];
 
             // save back to redis
             self.redisClient.set(commentRedisKey, comment);

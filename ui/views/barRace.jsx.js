@@ -12,7 +12,7 @@ class BarRace extends React.Component {
         super(props);
         this.state = {
             topCommentCount: 10, // how many topComments to show in our wheel
-            showOnlyTopCommentsWithSymbols: true, // don't display an comments on our wheel unless they are associated with at least one symbol
+            showOnlyTopCommentsWithSymbols: false, // don't display an comments on our wheel unless they are associated with at least one symbol
             showTopCommentSymbolsOnlyOnce: true, // our server will send a max of 2 comments to represent any single symbol. Set this true and we will only render the higher scoring one. Will only apply when showOnlyTopCommentsWithSymbols == true.
             showTopCommentSymbolTypes: ['stock'], // can be set to one or more of strings equaling a symbol.type
             topCommentsLastUpdated: this.props.topCommentsLastUpdated || Date.now()
@@ -21,17 +21,19 @@ class BarRace extends React.Component {
         this.reducedTopComments = []; // the comments after passing through above state filters
         this.rankOnePoints = null; // set to the highest scoring topComment, but only when that topComment points exceeds this.rankOnePoints. This makes for a more stable graph that doesn't rerender the scale of all bars based on the top scoring bar.
 
-        this.barEls = null; // We maintain the same child react components across state changes so that we can animate their style changes (rather than re-instantiation a new child (bar) component during every rerender of this parent)
-        this.barElRefs = null; // so this parent can set state to it's children
+        this.barEls = []; // We maintain the same child react components across state changes so that we can animate their style changes (rather than re-instantiation a new child (bar) component during every rerender of this parent)
+        this.barElRefs = []; // so this parent can set state to it's children
     }
 
     componentDidMount() {
         this.props.setPageIsReady();
+        this.reducedTopComments = this.reduceTopComments();
+        this.createBarEls();
     }
 
     componentDidUpdate(prevProps, prevState) {
         this.reducedTopComments = this.reduceTopComments();
-        if (!this.barEls) {
+        if (!this.barEls.length) {
             this.createBarEls();
         } else {
             this.updateBarEls();
@@ -54,7 +56,6 @@ class BarRace extends React.Component {
                     if (hasTopSymbol && self.state.showTopCommentSymbolTypes.indexOf(hasTopSymbol.type) !== -1) {
                         reducedTopCommentsBySymbol[hasTopSymbolKey] = reducedTopCommentsBySymbol[hasTopSymbolKey] || [];
                         reducedTopCommentsBySymbol[hasTopSymbolKey].push(thisTopComment);
-                        thisTopComment.renderedSymbol = hasTopSymbol; // save on comment object for easy access later and in other classes
                     }
                 }
             });
@@ -66,6 +67,8 @@ class BarRace extends React.Component {
             } else {
                 reducedTopComments = Object.values(reducedTopCommentsBySymbol).flat()
             }
+        } else {
+            reducedTopComments = this.props.topComments;
         }
         if (reducedTopComments.length === 0) { return []; }
 
@@ -173,12 +176,17 @@ class BarRace extends React.Component {
             return;
         }
 
-        let foundReplacementActiveTopComment = null;
+        let prevActiveCommentStillExists = false;
         self.reducedTopComments.some((thisTopComment) => {
             if (self.props.focusedTopComment.id === thisTopComment.id) {
-                foundReplacementActiveTopComment = thisTopComment;
+                prevActiveCommentStillExists = true;
                 return true; // break some loop
             }
+        });
+        if (prevActiveCommentStillExists) return;
+
+        let foundReplacementActiveTopComment = null;
+        self.reducedTopComments.some((thisTopComment) => {
             if (thisTopComment.renderedSymbol && self.props.focusedTopComment.renderedSymbol && thisTopComment.renderedSymbol.symbol === self.props.focusedTopComment.renderedSymbol.symbol) {
                 foundReplacementActiveTopComment = thisTopComment;
                 return true;

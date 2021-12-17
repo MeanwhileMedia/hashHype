@@ -284,21 +284,21 @@ class TopCommentsStats {
                     // Before calculating points for this word, we will extract 2dGrams and store them as new word objects in redis. We do this before pointing so we can
                     // determine if this word is about to earn points on this comment for the first time (see extractNew2dGramsFromTopComment for more).
                     self.extractNew2dGramsFromTopComment(pendingCommentIdsToWords[comment.id], comment, (all2dGramStrings) => {
-                        comment.words.forEach( (thisWordRef) => {
-                            if (all2dGramStrings.indexOf(thisWordRef.word) !== -1 && pendingCommentIdsToWords[comment.id].indexOf(thisWordRef.word) === -1) {
+                        all2dGramStrings.forEach((this2dGramString) => {
+                            if (pendingCommentIdsToWords[comment.id].indexOf(this2dGramString) === -1) {
                                 // looks like the above extractNew2dGramsFromTopComment found a new 2dGram for this comment. Let's add it to our local record objects before proceeding.
-                                pendingCommentIdsToWords[comment.id].push(thisWordRef.word);
-                                pendingWordsToTopComments[thisWordRef.word] = pendingWordsToTopComments[thisWordRef.word] || [];
-                                pendingWordsToTopComments[thisWordRef.word].push(comment);
+                                pendingCommentIdsToWords[comment.id].push(this2dGramString);
+                                pendingWordsToTopComments[this2dGramString] = pendingWordsToTopComments[this2dGramString] || [];
+                                pendingWordsToTopComments[this2dGramString].push(comment);
                             }
-                            // Only run point updating on the words that just triggered new foundAt occurances
-                            if (pendingCommentIdsToWords[comment.id].indexOf(thisWordRef.word) === -1) return;
+                        });
+                        pendingCommentIdsToWords[comment.id].forEach((thisPendingWordStr) => {
                             allCommentPointingPromises.push(new Promise( (resolve, reject) => {
                                 // first we must collect all comments which are getting points re-counted for this specific word re-occurance. This list
                                 // is used by applyPointsToCommentForWord to deduct points for word re-uses by the same comment author.
-                                const allCommentsWithThisWord = pendingWordsToTopComments[thisWordRef.word];
+                                const allCommentsWithThisWord = pendingWordsToTopComments[thisPendingWordStr];
                                 // Now we can proceed to add up comment.points for this word, and later determine if this comment is a topComment.
-                                self.applyPointsToCommentForWord(comment, thisWordRef, allCommentsWithThisWord, () => {
+                                self.applyPointsToCommentForWord(comment, comment.words[thisPendingWordStr], allCommentsWithThisWord, () => {
                                     resolve();
                                 });
                             }));
@@ -319,7 +319,7 @@ class TopCommentsStats {
                     });
 
                     self.groupPendingTopCommentsByTopSymbols(finalPossibleTopComments); // assigns all finalPossibleTopComments to self.pendingTopComments
-                    self.calcTotalPointsForPendingTopComments(); // alters self.pendingTopComments AND comments in place - assigns comment.totalPoints
+                    self.calcTotalPointsForPendingTopComments(finalPossibleTopComments, pendingCommentIdsToWords); // alters comments in place - assigns comment.totalPoints, reduces duplicate points for nested 2dGrams
 
                     // Now take a final pass at self.pendingTopComments and transfer to self.topComments to be saved to redis. We will also do any necc. cleanup/additions to each topComment to prep for rendering.
                     const allTopCommentCleanupPromises = [];
@@ -346,16 +346,19 @@ class TopCommentsStats {
 
     applyPointsToCommentForWord(comment, wordRef, allCommentsWithThisWord, cback) { // alters comment in-place (updates points object)
         const self = this;
-        this.getWordPointCount(comment, wordRef, (points) => {
-            // re-fetch from redis all of the foundAt tstamps for this word, and assign them to comment.points[timebucket][wordString] = totalWordPointsForThisTimebucket (int)
-            self.timeBucketWordPointsForComment(comment, wordRef, points, allCommentsWithThisWord, () => {
-                if (cback) cback();
-            });
+        const points = this.getWordPointCount(comment, wordRef);
+        // re-fetch from redis all of the foundAt tstamps for this word, and assign them to comment.points[timebucket][wordString] = totalWordPointsForThisTimebucket (int)
+        self.timeBucketWordPointsForComment(comment, wordRef, points, allCommentsWithThisWord, () => {
+            if (cback) cback();
         });
     }
 
-    getWordPointCount(comment, wordRef, cback) {
+    getWordPointCount(comment, wordRef) {
         const self = this;
+        if (typeof wordRef.pointVal === 'number') {
+            return wordRef.pointVal; // remember that we cache this calculation on the comment's wordRef objects.
+        }
+
         //(0 points for words), 5 points when word is symbol
         //(5 for bigrams) x 2 when a symbol was in bigram (only multiplies max once)
         //(10 for trigrams) x 3 when a symbol(s) was in bigram (only multiplies max twice)
@@ -382,32 +385,34 @@ class TopCommentsStats {
             maxSymbols = 2; // A word sequence must have at least ONE token that is not a symbol to be pointed for contextful meaning.
         }
         if (wordRef.type === '2dGram') {
-            let seqCount = wordRef.word.split('__!!!!__').length;
-            // our extractNew2dGramsFromTopComment function will collapse multiple pointed words into a single sequence when those pointed words are adjacent. i.e: first_!!_part__!!!!__lose_!!_monei_!!_you_!!_can_!!_lose
-            // This essentially forms a new word type (beyond length trigram) and should not be penalized by basing our seqCount only on the '__!!!!__' delimeter.
-            const theseTokens = wordRef.word.replaceAll('__!!!!__', '_!!_').split('_!!_');
-            seqCount = Math.floor(Math.max(seqCount, theseTokens.length/3));
+            const theseTokens = wordRef.word.split('_!!_')
+            const seqCount = theseTokens.length;
+
             // For 2dGrams, we handle ignoreTokenCount differently. We count the chars in each of our ignore tokens, and add them to our distance penalizer.
             let distance = wordRef.distance;
             theseTokens.forEach((thisToken) => {
                 if (stopWords.ignore.indexOf(thisToken) !== -1) distance = distance + thisToken.length;
             });
             // The avg distance measurement penalizes the point count. The higher the distance, the less meaningful this 2dGram.
-            const avgDistance = Math.floor(wordRef.distance / seqCount);
-            points = (20 * seqCount) - avgDistance;
-            maxSymbols = seqCount / 2; // For 2dGrams, we only award points for a max of 1 symbol per every other sequence (no GME__!!!!__APPL)
+            points = (20 * seqCount) - distance;
+            maxSymbols = seqCount / 2; // For 2dGrams, we only award points for a max of 1 symbol per every other sequence (no GME + APPL)
         }
 
-        if(wordRef.hasSymbols && wordRef.hasSymbols.length > 0) {
-            const multiplyForSymbolCount = Math.min(wordRef.hasSymbols.length, maxSymbols);
-            points = points * (isSymbolMultiplier*multiplyForSymbolCount);
-        }
+        // if(wordRef.hasSymbols && wordRef.hasSymbols.length > 0) {
+        //     const multiplyForSymbolCount = Math.min(wordRef.hasSymbols.length, maxSymbols);
+        //     points = points * (isSymbolMultiplier*multiplyForSymbolCount);
+        // }
 
-        if (cback) cback(Math.max(0, Math.floor(points)));
+        const wordPointVal = Math.max(0, Math.floor(points));
+        wordRef.pointVal = wordPointVal; // update the wordRef so this point tally math is cached on the comment object
+        return wordPointVal;
     } //end getWordPointCount
 
     timeBucketWordPointsForComment(comment, wordRef, points, allCommentsWithThisWord, cback) { // alters comment in-place (updates comment.points)
         const self = this;
+
+        //////////
+        // Get every single timestamp for when this word was in any comment, then sort sort them into timebuckets and total the points
         const foundAtListKey = `word:${wordRef.word}:foundAt`;
         self.redisClient.throttle.lrange(foundAtListKey, 0, -1, (foundAtLrangeRes) => {
             if (!foundAtLrangeRes || !foundAtLrangeRes.length) {
@@ -416,40 +421,6 @@ class TopCommentsStats {
             }
             const allFoundAtTstamps = [...foundAtLrangeRes]; // We copy because we edit this array in place. The original foundAtLrangeRes object may be passed to multiple throttled lrange cbacks.
             // console.log(`Now running timeBucketWordPointsForComment for word: ${wordRef.word} and comment: ${comment.id}`)
-
-            // First loop through the provided allCommentsWithThisWord array to determine if we must strip foundAt timestamps
-            // from allFoundAtTstamps. This is determined by a couple factors:
-            // 1. When any of allCommentsWithThisWord contain the same author as comment (an author can't boost his own prior comment, and a single comment doesn't earn points for itself)
-            // 2. When we find any duplicate authors in allCommentsWithThisWord (another user can only boost an authors comment ONCE PER WORD PER 24Hrs)
-            // This will eliminate point count inflation for identical comments from a single user, or other foulplay to influence a trend.
-            const commentsWithThisWordByAuthors = {}; // {agentOOjoe: [comment45, comment25], otherUser: [comment21, comment762], etc...}
-            allCommentsWithThisWord.forEach((thisComment) => {
-                if (!thisComment.author || !thisComment.author.name) return;
-                commentsWithThisWordByAuthors[thisComment.author.name] = commentsWithThisWordByAuthors[thisComment.author.name] || [];
-                commentsWithThisWordByAuthors[thisComment.author.name].push(thisComment);
-            });
-            for (const [thisAuthor, commentsWithThisWordByThisAuthor] of Object.entries(commentsWithThisWordByAuthors)) {
-                let keepMostRecentComment = false;
-                if (thisAuthor !== comment.author.name) keepMostRecentComment = true; // Since thisAuthor is not the author of current comment, then just one of their comments (the most recent) can be kept for pointing.
-                let mostRecentCommentTstamp = 0;
-                commentsWithThisWordByThisAuthor.forEach((thisCommentByThisAuthor) => {
-                    const thisCommentTstamp = thisCommentByThisAuthor.foundAt;
-                    const indexOfMatchedFoundAtTstamp = allFoundAtTstamps.indexOf(`${thisCommentTstamp}`); // remember that allFoundAtTstamps is an array of string timestamps...
-                    if (indexOfMatchedFoundAtTstamp === -1) {
-                        // Looks like we are checking against a comment which has a timestamp which is no longer present in the word:foundAt list. It was likely
-                        // expired from the word:foundAt list but the comment was wrongly preserved as a part of topComments.
-                        console.warn(`While verifying word point count (${wordRef.word}) for comment:${comment.id}, a re-occurance of that same word by another user could not be confirmed. The invalid re-occurance was in comment:${thisCommentByThisAuthor.id}`);
-                        // Since we can't reconcile this mismatch, our next-most-accurate option is to delete the comment alltogether.
-                        self.removeCommentFromAll({comment: thisCommentByThisAuthor});
-                        return;
-                    } else {
-                        // console.log(`Matched a foundAt timestamp (${thisCommentTstamp}) for word ${wordRef.word} to a comment by author "${thisAuthor}".`);
-                    }
-                    if (keepMostRecentComment && thisCommentTstamp > mostRecentCommentTstamp) mostRecentCommentTstamp = thisCommentTstamp;
-                    allFoundAtTstamps.splice(indexOfMatchedFoundAtTstamp, 1);
-                });
-                if (keepMostRecentComment && mostRecentCommentTstamp) allFoundAtTstamps.push(mostRecentCommentTstamp);
-            };
 
             // Converts an ordered array of word foundAt tstamps into time bucketed points. Where "foo_bar" is word:  {1hr: {foo_bar: 234}, 12hr: etc...}
             // It then takes this timebucketed points object and merges into comment.points (overwriting any previous point counts for this word)
@@ -491,7 +462,7 @@ class TopCommentsStats {
     initCommentTopSymbols(comment) {
         const self = this;
         const allSymbols = this.newTimeBucketObject(); // { '1Hr': {'symbol:key': pointsInt, 'symbol:word:GME': 265, etc}, etc... }
-        comment.words.forEach( (thisWordRef) => {
+        Object.values(comment.words).forEach((thisWordRef) => {
             if (!thisWordRef.hasSymbols || thisWordRef.hasSymbols.length === 0) return;
             Object.keys(allSymbols).forEach((timeBucketKey) => {
                 const pointsForThisSymbolWord = comment.points[timeBucketKey][thisWordRef.word];
@@ -655,45 +626,40 @@ class TopCommentsStats {
         // console.log(`Pending topComments by topSymbols:`, util.inspect(self.pendingTopComments, {depth: 4, colors: true}));
     } // end groupPendingTopCommentsByTopSymbols
 
-    calcTotalPointsForPendingTopComments() {
+    calcTotalPointsForPendingTopComments(pendingTopComments, newlyPointedWordsByComment) { // newlyPointedWordsByComment is a copy of self.pendingCommentIdsToWords {commentId1: [wordString1, wordString2], commentId2: [wordString3, wordString6], etc...}
         const self = this;
-        // Sum total points for this comment BUT with some rules for how many symbols will count towards total, etc.
-        for (const [symbolKey, comments] of Object.entries(self.pendingTopComments)) {
-            comments.forEach((thisComment) => {
-                for (const [timeBucketKey, prevPoints] of Object.entries(thisComment.totalPoints)) {
-                    thisComment.totalPoints[timeBucketKey] = 0;
-                    thisComment.words.forEach((thisWordRef) => {
-                        const pointsForThisWord = thisComment.points[timeBucketKey][thisWordRef.word];
-                        if (!pointsForThisWord) return;
-                        if (thisWordRef.hasSymbols.length === 0) {
-                            // No symbols on this word sequence. Just add the points without any deduction logic.
-                            thisComment.totalPoints[timeBucketKey] = thisComment.totalPoints[timeBucketKey] + pointsForThisWord;
-                            return;
-                        }
-                        const topSymbolHighKey = thisComment.topSymbolHigh[timeBucketKey].key;
-                        const topSymbolLowKey = thisComment.topSymbolLow[timeBucketKey].key
-                        if (thisWordRef.hasSymbols.length && (topSymbolHighKey || topSymbolLowKey)) {
-                            let discardWordPoints = false;
-                            if (thisWordRef.hasSymbols.length > 2) { // at most, this word can contain our high and low topSymbol. If it has more symbols than that than we must discard.
-                                discardWordPoints = true;
-                            } else {
-                                thisWordRef.hasSymbols.some((thisWordRefSymbolKey) => {
-                                    if (thisWordRefSymbolKey !== topSymbolHighKey && thisWordRefSymbolKey !== topSymbolLowKey) {
-                                        discardWordPoints = true;
-                                        return true; // break some loop
-                                    }
-                                });
-                            }
-                            if (discardWordPoints) {
-                                // console.log(`Word ${thisWordRef.word} earns no points for comment:${thisComment.id} because the word has symbols which were not present in comment.topSymbols['${timeBucketKey}']`, thisComment.topSymbols[timeBucketKey]);
-                                return;
-                            }
-                            thisComment.totalPoints[timeBucketKey] = thisComment.totalPoints[timeBucketKey] + pointsForThisWord;
-                        }
+        // Sum total points for this comment into timebuckets
+        pendingTopComments.forEach((thisComment) => {
+
+            // 1. We now look at all the words which have been pointed this round for this comment. If there is overlap, then we must deduct points from the shorter word sequences.
+            // I.e. trigram "must_!!_go_!!_GME" and "go_!!_GME" both earned - then we deduct points earned for "go_!!_GME"
+            // The same logic applies to 2dGrams. This ensures that points don't get counted twice when a long word sequence is re-commented.
+            // We only need to look at the comment's 1 hour timebucket because this logic is only applicable to the current batch of new word points (every 5 seconds). This is a real-time adjustment.
+            // for (const [thisPointedWordString, pointCount] of Object.entries(thisComment.points[timeBucketKey])) {
+            if (newlyPointedWordsByComment[thisComment.id]) {
+                newlyPointedWordsByComment[thisComment.id].forEach((longWordString) => {
+                    newlyPointedWordsByComment[thisComment.id].forEach((shortWordString) => {
+                        if (!thisComment.points['1Hr'][shortWordString]) return;
+                        if (longWordString === shortWordString || longWordString.indexOf(shortWordString) === -1) return;
+                        // console.warn(`Detected overlapping points for words ${longWordString} and ${shortWordString} in comment:${thisComment.id}`);
+                        const shortWord = thisComment.words[shortWordString];
+                        const shortWordPointDeduction = self.getWordPointCount(thisComment, shortWord);
+                        // console.warn(`Deducting ${shortWordPointDeduction} from ${thisComment.points['1Hr'][shortWord.word]} points for word ${shortWord.word}`);
+                        thisComment.points['1Hr'][shortWordString] = Math.max(0, thisComment.points['1Hr'][shortWordString] - shortWordPointDeduction);
                     });
-                }; // end for Object.entries(thisComment.totalPoints)) {
-            }); // end comments.forEach((thisComment) => {
-        }; // end for Object.entries(self.pendingTopComments)) {
+                });
+            } // end 1
+
+            // 2. We are now ready to sum the totalPoints.
+            for (const [timeBucketKey, prevPoints] of Object.entries(thisComment.totalPoints)) {
+                thisComment.totalPoints[timeBucketKey] = 0;
+                for (const [thisWordStr, pointsForThisWord] of Object.entries(thisComment.points[timeBucketKey])) {
+                    if (!pointsForThisWord) return;
+                    thisComment.totalPoints[timeBucketKey] = thisComment.totalPoints[timeBucketKey] + pointsForThisWord;
+                }
+            }; // end 2
+
+        }); // end comments.forEach((thisComment) => {
 
     } // end calcTotalPointsForPendingTopComments
 
@@ -739,172 +705,231 @@ class TopCommentsStats {
         // word sequences IN THE SAME ORDER as a past comment. For example:
         // Step 1: A new (stemmed) comment 'Hey reddit guy insane stuff GME is awesome and is going rocket moon Makes me happy comment about stocks and money'
         // Step 2: Some time passes and other users comment "guy_!!_insane" and "GME" and "going_!!_rocket_!!_moon" and "happy_!!_comment". extractNew2dGramsFromTopComment will create the following 2dGrams ONLY from the sequences which have earned points:
-            // [ 'guy_!!_insane__!!!!__GME', (clusters of 2)
-            //   'GME__!!!!__going_!!_rocket_!!_moon',
-            //   'going_!!_rocket_!!_moon__!!!!__happy_!!_comment',
-            //   'guy_!!_insane__!!!!__GME__!!!!__going_!!_rocket_!!_moon', (clusters of 3)
-            //   'GME__!!!!__going_!!_rocket_!!_moon__!!!!__happy_!!_comment',
-            //   'guy_!!_insane__!!!!__GME__!!!!__going_!!_rocket_!!_moon__!!!!__happy_!!_comment', (clusters of 4)
+            // [ 'guy_!!_insane + GME', (clusters of 2)
+            //   'GME + going_!!_rocket_!!_moon',
+            //   'going_!!_rocket_!!_moon + happy_!!_comment',
+            //   'guy_!!_insane + GME + going_!!_rocket_!!_moon', (clusters of 3)
+            //   'GME + going_!!_rocket_!!_moon + happy_!!_comment',
+            //   'guy_!!_insane + GME + going_!!_rocket_!!_moon + happy_!!_comment', (clusters of 4)
             //   etc... there is currently no limit on how long a cluster can be (other than the comment length max), and longer clusters are awarded more points when re-commented.
             // ]
-            // (note that '__!!!!__' is the sequence delimeter within a sequence cluster (2dGram). _!!_ is the word delimeter within a sequence.)
         // Step 3: Each new 2dGram is saved as a new redis word entity, and added to wordToCommentsIndex and foundAt list - just like our symbols/bigrams/trigrams.
         // Step 4: More time passes, and new comments contain the same 2dGrams, receive points accordingly (see applyPointsToCommentForWord). Note that when a comment creates a new 2dgram within itself for the first time, it does not gain points until the next time.
         const self = this;
-        const all2dGramStrings = []; // array wordRef.word strings (of word.type == 2dGram)
+        const all2dGramStrings = []; // array wordRef.word strings (of word.type == 2dGram) produced by this function
 
+        //////////
         // If this comment has less than 2 words which have earned, or will soon earn points, then we can't create a 2dGram and should return immediately.
-        let previouslyPointedWordsForComment = Object.keys(comment.points['24Hr']);
+        const previouslyPointedWordsForComment = Object.keys(comment.points['24Hr']);
         if (previouslyPointedWordsForComment.length + newlyPointedWordsForComment.length < 2) {
             // console.log(`comment:${comment.id} does not have enough pointed words to create any 2dGrams.`);
             if (cback) cback(all2dGramStrings);
             return;
         }
-        const validWordsFor2dGram = [...new Set(previouslyPointedWordsForComment.concat(newlyPointedWordsForComment))]; // combine and remove dups
-
-        // Only proceed if validWordsFor2dGram contains at least one word which is not already present in previouslyPointedWordsForComment. We know that when a comment earns points for a word for the first time,
-        // two things occur: 1. Points are calculated for that word, and is set to comment.points. 2. extractNew2dGramsFromTopComment is run because this newly pointed word may result in a new 2dGram. This 2nd step only ever needs to occur once because comment.body is static.
-        if (validWordsFor2dGram.length <= previouslyPointedWordsForComment.length) {
+        /////////
+        // Now count JUST the new word occurances which are valid to produce new 2dGrams. If none are, can return immediately.
+        const validNewWordsFor2dGram = [];
+        newlyPointedWordsForComment.forEach((thisNewlyPointedWord) => { // newlyPointedWordsForComment will not contain any dups when passed to extractNew2dGramsFromTopComment
+            if (!comment.points['24Hr'][thisNewlyPointedWord] || // we aren't going to calc 2dGrams for words that re-occurred, but scored 0 points or just re-occurred for the first time and haven't yet been pointed. This means that a pointed word won't become valid for 2dGram until AFTER it get's recommented twice post comment creation (because points arent calculated until after this function returns).
+                comment.words[thisNewlyPointedWord].type === '2dGram' || // obvi 2dGrams can't combine to create more 2dGrams
+                comment.wordsFor2dGram.indexOf(thisNewlyPointedWord) !== -1 // This newly pointed word was already accounted for in a previous iteration of extractNew2dGramsFromTopComment. comment.wordsFor2dGram is the record persisted to comment object to make this repeat comparison more performant
+            ) return;
+            validNewWordsFor2dGram.push(thisNewlyPointedWord);
+        });
+        if (validNewWordsFor2dGram.length === 0) {
             // console.log(`Already created all 2dGrams for comment:${comment.id} which could result from incoming points for words:`, newlyPointedWordsForComment);
-            if (cback) cback(all2dGramStrings); // as this is an early return to improve performance, we will wrongly pass an empty array for all2dGrams
+            if (cback) cback(all2dGramStrings);
             return;
         }
 
+        /////////
+        // We now know that we should proceed with below (heavy) logic. Combine all new and old words which are valid to create 2dGrams together.
+        const validWordsFor2dGram = comment.wordsFor2dGram.concat(validNewWordsFor2dGram);
+        comment.wordsFor2dGram = validWordsFor2dGram; // and update our cached record on comment now that it's changed
+
+        ///////////
         // Now take all the pointed words for this comment, condense them, and get them in the correct order.
         // We use a charachter index map because some of the pointed word sequences will overlap and we can only count each token once (i.e. "guy_!!_insane" AND "guy_!!_insane_!!_stuff" both earned points)
         let pointedWordsOrdered = {}; // {'{charIndex11}': 'g', '12': 'u', '13': 'y', '14': '_', '15': 'i', '16': 'n', '17': 's', '18': 'a', '19': 'n', '20': 'e', '28': 'G', '29': 'M', etc...}
-        comment.words.forEach((thisWordRef) => {
-            if (thisWordRef.type === '2dGram') return;
-            if (validWordsFor2dGram.indexOf(thisWordRef.word) === -1) return;
-
+        let lowestCharIndex = null;
+        let highestCharIndex = 0;
+        let totalTokenCount = 0;
+        validWordsFor2dGram.forEach((thisValidWordStr) => {
+            const thisWordRef = comment.words[thisValidWordStr];
+            if (!thisWordRef) return;
             const thisWordString = thisWordRef.word.replaceAll('_!!_', ' '); // For this logic our word delimeter must be only 1 char (because our word indexes are based on a stemmed body with single space delimeters)
             thisWordRef.index.forEach((thisIndex) => { // remember that a word sequence may occur more than once in a single comment
                 const startIndex = thisIndex;
                 for (let curIndex = startIndex; curIndex < startIndex+thisWordString.length; curIndex++) {
-                    pointedWordsOrdered[curIndex] = thisWordString[curIndex-startIndex];
+                    if (pointedWordsOrdered[curIndex]) {
+                        // we have a word overlap - prob between a bigram/trigram. Make sure we preserve all rawWords from both
+                        pointedWordsOrdered[curIndex].rawWords = pointedWordsOrdered[curIndex].rawWords.concat(thisWordRef.rawWords);
+                        pointedWordsOrdered[curIndex].hasSymbols = pointedWordsOrdered[curIndex].hasSymbols.concat(thisWordRef.hasSymbols);
+                    } else {
+                        const thisChar = thisWordString[curIndex-startIndex];
+                        pointedWordsOrdered[curIndex] = {
+                            index: curIndex,
+                            char: thisChar,
+                            rawWords: thisWordRef.rawWords,
+                            hasSymbols: thisWordRef.hasSymbols
+                        };
+                        if (thisChar === ' ') ++totalTokenCount;
+                    }
+                    if (curIndex > highestCharIndex) highestCharIndex = curIndex;
+                    if (lowestCharIndex === null || curIndex < lowestCharIndex) lowestCharIndex = curIndex;
+
+                    if (typeof pointedWordsOrdered[curIndex-1] === 'undefined' && curIndex !== 0) {
+                        pointedWordsOrdered[curIndex-1] = {index: curIndex-1, char: ' ', rawWords: [], hasSymbols: []}; // Prob just jumped between two words. Make sure we represent the distance between in pointedWordsOrdered via a single space.
+                        if (lowestCharIndex === null || curIndex-1 < lowestCharIndex) lowestCharIndex = curIndex-1;
+                        ++totalTokenCount;
+                    }
                 }
             });
         });
-        // console.log('comment.stemmedBody', comment.stemmedBody);
-        // console.log('pointedWordsOrdered', pointedWordsOrdered);
-
-        // Determine the index of each condensed pointed word within stemmed body
-        const all2dGramSequencesWithIndex = []; //[ [{seqIndex11}, 'guy_insane'], [28, 'GME'] , etc...}
-        let curSequence = '';
-        let curSequenceStartIndex = null;
-        let prevCharIndex = null;
-        for (let [thisCharIndex, thisChar] of Object.entries(pointedWordsOrdered)) {
-            if (prevCharIndex === null) {
-                curSequenceStartIndex = thisCharIndex;
-                prevCharIndex = thisCharIndex;
-            }
-            if (prevCharIndex < thisCharIndex-1) {
-                // looks like we just finished re-combining a sequence
-                all2dGramSequencesWithIndex.push([parseInt(curSequenceStartIndex), curSequence])
-                curSequenceStartIndex = thisCharIndex;
-                curSequence = '';
-            }
-            curSequence = curSequence + thisChar;
-            prevCharIndex = thisCharIndex;
+        if (highestCharIndex) { // make sure the last token also has a trailing space for below logic.
+            pointedWordsOrdered[highestCharIndex+1] = {index: highestCharIndex+1, char: ' ', rawWords: [], hasSymbols: []};
+            ++totalTokenCount;
         }
-        all2dGramSequencesWithIndex.push([curSequenceStartIndex, curSequence])
-        // console.log('all2dGramSequencesWithIndex', all2dGramSequencesWithIndex);
+        if (lowestCharIndex && pointedWordsOrdered[lowestCharIndex].char === ' ') { // make sure the first token does not have a preceding space. If so, we counted one too many tokens above.
+            delete pointedWordsOrdered[lowestCharIndex];
+            --totalTokenCount;
+        }
+        // console.log('comment.stemmedBody', comment.id, comment.stemmedBody);
+        // console.log('pointedWordsOrdered', pointedWordsOrdered);
+        // console.log('totalTokenCount', totalTokenCount);
 
-        // Now we will go through all possible combinations of pointed sequences using natural ngrams. Then we calculate
-        // the "distance" property for each combination which will become part of this a wordRef object on this comment (wordRef.type == '2dGram')
-        const all2dGrams = []; // [ [{distance: 7, index: 11, word:guy_!!_insane__!!!!__GME], etc... ]
-        for (let thisN = 2; thisN <= all2dGramSequencesWithIndex.length; thisN++) {
-            const theseSequenceSets = naturalNGrams.ngrams(all2dGramSequencesWithIndex, thisN);
-            theseSequenceSets.forEach((thisSequenceSet) => {
-                const allDistances = [];
-                const allSequenceStrings = [];
-                let lowestSeqIndex = null; // this is the number we use to set the index for this 2dGram (the index of it's first child word sequence)
-                let prevSequenceEndIndex = null;
-                let this2dGramString = '';
-                thisSequenceSet.forEach((thisSequence) => {
-                    const thisSequenceIndex = thisSequence[0];
-                    const thisSequenceStr = thisSequence[1];
-                    if (allSequenceStrings.length && allSequenceStrings[allSequenceStrings.length-1] === thisSequenceStr) return; // Do not allow a word sequence to occur twice sequentially in a 2dGram
-                    allSequenceStrings.push(thisSequenceStr);
-                    if (prevSequenceEndIndex !== null) allDistances.push(thisSequenceIndex - prevSequenceEndIndex);
-                    prevSequenceEndIndex = thisSequenceIndex + thisSequenceStr.length;
-                    // distance has now been calculated restore our proper word delimeter
-                    if (this2dGramString !== '') this2dGramString = this2dGramString + '__!!!!__';
-                    this2dGramString = this2dGramString + thisSequenceStr.replaceAll(' ', '_!!_');
-                    if (lowestSeqIndex === null || thisSequenceIndex < lowestSeqIndex) lowestSeqIndex = thisSequenceIndex;
+        const extract2dGramParts = (tokenClusterLengthFor2dGramPart) => {
+            // Now go through and extract groups of {tokenClusterLengthFor2dGramPart}, where each group is object {tokens: ['guy', 'insane', 'GME', 'going'], index: 11, distance: 25}
+            const possible2dGramCount = totalTokenCount - tokenClusterLengthFor2dGramPart + 1;
+            const all2dGramParts = [];
+            for (let thisTokenInsetCount = 0; thisTokenInsetCount < possible2dGramCount; thisTokenInsetCount++) {
+                let skippedTokenCount = 0;
+                let extractedTokenCount = 0;
+                let thisTokenSet = [];
+                let thisTokenSetDistance = 0;
+                let thisTokenSetIndex = null;
+                let thisTokenSetRawWords = [];
+                let thisTokenSetHasSymbols = [];
+                let curExtractingToken = '';
+                let curExtractingTokenIndex = 0;
+                let prevCharObj = null;
+                for (let [thisCharObjIndex, thisCharObj] of Object.entries(pointedWordsOrdered)) {
+                    if (extractedTokenCount === tokenClusterLengthFor2dGramPart) continue;
+
+                    if (curExtractingToken === '') {
+                        // just started a new token.
+                        curExtractingTokenIndex = thisCharObj.index;
+                        if (thisTokenSet.length > 0) {
+                            // Account for the distance from the preceding token.
+                            const distanceFromLastToken = thisCharObj.index - prevCharObj.index;
+                            if (distanceFromLastToken > 2) thisTokenSetDistance = thisTokenSetDistance + distanceFromLastToken;
+                        }
+                    }
+
+                    if (thisCharObj.char === ' ' && curExtractingToken.length > 0) {
+                        // just completed a token.
+                        if (skippedTokenCount < thisTokenInsetCount) {
+                            // skipping this token this loop around
+                            ++skippedTokenCount;
+                        } else {
+                            if (thisTokenSetIndex === null) thisTokenSetIndex = curExtractingTokenIndex;
+                            ++extractedTokenCount;
+                            thisTokenSetRawWords = thisTokenSetRawWords.concat(prevCharObj.rawWords); // must use prevCharObj to get rawWords because we are currently positioned over a space which may not have rawWords assigned to it.
+                            thisTokenSetHasSymbols = thisTokenSetHasSymbols.concat(prevCharObj.hasSymbols);
+                            thisTokenSet.push(curExtractingToken);
+                        }
+                        curExtractingToken = '';
+                        continue;
+                    }
+
+                    if (thisCharObj.char !== ' ') {
+                        prevCharObj = thisCharObj;
+                        curExtractingToken = curExtractingToken + thisCharObj.char;
+                    }
+                }
+
+                all2dGramParts.push({
+                    word: thisTokenSet.join('_!!_'), // at this point we will also convert the tokens array into a word string ('_!!_' delimeted) that can be used below in creating the wordRef object
+                    tokens: thisTokenSet,
+                    index: thisTokenSetIndex,
+                    distance: thisTokenSetDistance,
+                    rawWords: [...new Set(thisTokenSetRawWords)], // remove dups
+                    hasSymbols: [...new Set(thisTokenSetHasSymbols)]
                 });
-                if (allSequenceStrings.length < 2) return;
-                const totalDistance = allDistances.reduce((prev, cur) => prev + cur); // just a sum
-                all2dGrams.push({distance: totalDistance, index: lowestSeqIndex, word: this2dGramString});
-                all2dGramStrings.push(this2dGramString);
-            });
+            }
+            return all2dGramParts;
+        } // end function extract2dGramParts
+
+        const minTokenClusterLengthFor2dGram = 4;
+        let all2dGrams = [];
+        for (let thisN = minTokenClusterLengthFor2dGram; thisN <= totalTokenCount; thisN++) {
+            all2dGrams = all2dGrams.concat(extract2dGramParts(thisN));
         }
         // console.log('all2dGrams', all2dGrams);
 
+        ////////////
         // Last, create word objects for the 2dGrams that we have extracted, and save to redis. We also create wordRef objects to be saved directly on this comment.
+        const wordRefSavePromises = [];
+        const wordSavePromises = [];
         all2dGrams.forEach((this2dGram) => {
             const newWordAbsKey = wordModel.generateWordObjectKey(this2dGram.word);
-            let allRawWords = [];
-            let allHasSymbols = [];
-            const wordSeqsIn2dGram = this2dGram.word.split('__!!!!__');
-            const wordObjValue = []; // for setting newWordObject.value below
-            wordSeqsIn2dGram.forEach((thisWordSeqStr) => {
-                const matchedWordRef = comment.words.find(thisWord => thisWord.word === thisWordSeqStr);
-                if (matchedWordRef) {
-                    allRawWords = allRawWords.concat(matchedWordRef.rawWords);
-                    allHasSymbols = allHasSymbols.concat(matchedWordRef.hasSymbols);
-                }
-                wordObjValue.push(thisWordSeqStr.split('_!!_'));
-            });
-            allRawWords = [...new Set(allRawWords)]; // remove dups
-            allHasSymbols = [...new Set(allHasSymbols)];
-
             // add wordRef to comment
-            const wordRefExists = comment.words.find(thisWordRef => thisWordRef.word === this2dGram.word);
-            if (!wordRefExists) {
+            if (!comment.words[this2dGram.word]) { // first check if already exists
                 // console.log(`comment:${comment.id} earned a new 2dGram: ${this2dGram.word}`)
                 const newWordRefObject = wordModel.createWordRefObject({
                     type: '2dGram',
                     word: this2dGram.word,
-                    rawWords: allRawWords,
-                    hasSymbols: allHasSymbols,
-                    index: this2dGram.index,
+                    rawWords: this2dGram.rawWords,
+                    hasSymbols: this2dGram.hasSymbols,
+                    index: [this2dGram.index], // remember that wordRefs use an array for index
                     distance: this2dGram.distance
                 });
-                comment.words.push(newWordRefObject);
-                // Save this word to it's WordToCommentsIndex (creating one if it does not yet exist)
-                wordModel.registerWordToCommentsIndex(this2dGram.word, comment, self.redisClient, (addedCommentToIndex) => { // this needs to be done before the rpush because of topCommentsStats logic
-                    if (!addedCommentToIndex) return; // for some reason the comment id was not added to the wordToCommentsIndex. Do not proceed to add word tstamp.
-                    wordModel.addFoundAtTstampForWord(newWordAbsKey, comment, self.redisClient);
-                });
-                // This comment will be saved at the bottom of refreshTopComments BUT ONLY if this comment is deemed a top comment (see reducePendingTopComments). For this reason, because we just altered the comment object, and don't know yet if it's going to become a topComment, we must save now too.
-                self.redisClient.set(`comment:${comment.id}`, commentModel.minimizeForDb(comment));
+                comment.words[this2dGram.word] = newWordRefObject;
+                wordRefSavePromises.push(new Promise( (resolve, reject) => {
+                    // Save this word to it's WordToCommentsIndex (creating one if it does not yet exist)
+                    wordModel.addFoundAtTstampForWord(this2dGram.word, comment, self.redisClient, () => { // must do addFoundAtTstampForWord FIRST or else this comment will trigger word recomment logic and points for itself
+                        // This comment will be saved at the bottom of refreshTopComments BUT ONLY if this comment is deemed a top comment (see reducePendingTopComments). For this reason, because we just altered the comment object, and don't know yet if it's going to become a topComment, we must save now too.
+                        self.redisClient.set(`comment:${comment.id}`, commentModel.minimizeForDb(comment), () => {
+                            resolve(); // We can resolve this wordSavePromise without waiting for registerWordToCommentsIndex (which has a forced 5 second delay)
+                            wordModel.registerWordToCommentsIndex(this2dGram.word, comment, self.redisClient);
+                        });
+                    });
+                })); // end wordRefSavePromises.push
             }
 
             // add new word object to redis (or merge if exists)
             const newWordObject = wordModel.createWordObject({
                 type: '2dGram',
-                value: wordObjValue,
-                rawWords: allRawWords,
-                hasSymbols: allHasSymbols
+                value: this2dGram.tokens,
+                rawWords: this2dGram.rawWords,
+                hasSymbols: this2dGram.hasSymbols
             });
-            // We are not going to wait on this throttled redis action before calling our cback. We want to return asap as to not tie up this process.
-            self.redisClient.throttle.get(newWordAbsKey, (existingWordObj) => {
-                let saveWordObj = newWordObject;
-                if (existingWordObj) {
-                    saveWordObj = wordModel.merge(existingWordObj, newWordObject);
-                }
-                self.redisClient.throttle.set(newWordAbsKey, saveWordObj);
-            });
+            wordSavePromises.push(new Promise( (resolve, reject) => {
+                self.redisClient.get(newWordAbsKey, (existingWordObj) => {
+                    let saveWordObj = newWordObject;
+                    if (existingWordObj) {
+                        saveWordObj = wordModel.merge(existingWordObj, newWordObject);
+                    }
+                    self.redisClient.set(newWordAbsKey, saveWordObj, () => {
+                        resolve();
+                    });
+                });
+            })); // end wordSavePromises.push
+
+            all2dGramStrings.push(this2dGram.word);
         }); //end all2dGrams.forEach(
 
-        if (cback) cback(all2dGramStrings);
+        Promise.all(wordRefSavePromises).then(() => {
+            Promise.all(wordSavePromises).then(() => {
+                if (cback) cback(all2dGramStrings);
+            });
+        });
     }
 
     addSymbolsDataToComment(comment, cback) { //alters comment in-place
         const self = this;
         comment.symbols = comment.symbols || [];
-        const symbolKeysFromWordRefs = comment.words.map(wordRef => wordRef.hasSymbols);
+        const symbolKeysFromWordRefs = Object.values(comment.words).map(wordRef => wordRef.hasSymbols);
         const allSymbolKeys = [...new Set(symbolKeysFromWordRefs.flat())]; // remove dups
         // console.log(`Populating comment:${comment.id} with full symbol objects:`, allSymbolKeys);
         if (!allSymbolKeys || allSymbolKeys.length === 0) {
@@ -951,8 +976,7 @@ class TopCommentsStats {
         // 2. HashHype also enforces a rule that no comment should have earned points on every single word combination possible. It was found that when this happens,
         // it was usually because a single user posted an identical comment more than once, was a single word comment with no additional context, or was a comment by bots
         // that posted the same canned comments under different usernames.
-
-        const allTriGramsInComment = comment.words.filter(wordRef => wordRef.type === 'trigram'); // the quickest way to do this is only look at the trigrams. If they all got pointed, the whole comment got pointed.
+        const allTriGramsInComment = Object.values(comment.words).filter(wordRef => wordRef.type === 'trigram'); // the quickest way to do this is only look at the trigrams. If they all got pointed, the whole comment got pointed.
         // We will only enforce this rule on comments that have at least 3 trigrams (5 tokens). We don't want to be too agressive in removing short comments that validly earn points on all words.
         // i.e: "I love GME" may just be something that many unique users are saying at the same time, not a fishy copy/paste duplicate comment or a canned bot.
         if (allTriGramsInComment.length >= 3) {
@@ -1003,7 +1027,7 @@ class TopCommentsStats {
             // 1. First we immediately delete any throttled redis get/set commands for this key. This is somewhat invasive because all registered cbacks for getting this key will be abandoned.
             //    However, this is an all-or-nothing decision: if an object which this process manipulates was altered outside this process, then this process can't continue any pending logic on a locally cached version of that object.
             self.redisClient.throttle.clearPendingGet(changedKey);
-            self.redisClient.throttle.clearPendingSet(changedKey);
+            // self.redisClient.throttle.clearPendingSet(changedKey);
             // 2. If this is a user just marked not relevant, loop through this.topComments and delete any existing comments by that user.
             if (changedKey.indexOf('user:') !== -1) {
                 const notRelevantUser = changedKey.replace('user:', '');
@@ -1048,7 +1072,7 @@ class TopCommentsStats {
         // first delete any throttled redis set/get commands for this comment.
         const commentRedisKey = `comment:${removeCommentId}`;
         self.redisClient.throttle.clearPendingGet(commentRedisKey);
-        self.redisClient.throttle.clearPendingSet(commentRedisKey);
+        // self.redisClient.throttle.clearPendingSet(commentRedisKey);
 
         // Then delete the instance of this object stored directly on stats:topComments
         const revisedTopComments = {comments: []};
@@ -1089,7 +1113,7 @@ class TopCommentsStats {
             associatedWords: undefined
         }, argOpts);
         if (opts.comment && !opts.associatedWords) {
-            opts.associatedWords = opts.comment.words.map(thisWordRef => thisWordRef.word);
+            opts.associatedWords = Object.keys(opts.comment.words);
         }
         if (opts.comment && !opts.commentId) {
             opts.commentId = opts.comment.id;

@@ -20,7 +20,7 @@ const naturalWordTokenizer = new natural.WordTokenizer(); // is object (naturalW
 const naturalNGrams = natural.NGrams; // is object (naturalNGrams.ngrams(string or array)) - Can runs through a tokenizer when passed a string.
 naturalNGrams.setTokenizer(naturalWordTokenizer);
 const naturalStemmer = natural.PorterStemmer; // is object (naturalStemmer.stem(string))
-const naturalWordTokenizerPreserveContractions = new natural.RegexpTokenizer({pattern: /[^A-Za-zА-Яа-я0-9_'’]/}); // a slightly modified natural WordTokenizer which adds "'" to non-split chars. https://regexr.com/69idj  https://github.com/NaturalNode/natural/blob/master/lib/natural/tokenizers/regexp_tokenizer.js#L86
+const naturalWordTokenizerPreserveContractions = new natural.RegexpTokenizer({pattern: /[^A-Za-zА-Яа-я0-9_'’]/}); // IF MODIFYING TO A GLOBAL REPLACE. a slightly modified natural WordTokenizer which adds "'" to non-split chars. https://regexr.com/69idj  https://github.com/NaturalNode/natural/blob/master/lib/natural/tokenizers/regexp_tokenizer.js#L86
 const naturalNormalizer = natural.normalize; // is funcion (naturalNormalizer(array or string))
 
 const nodeHtmlParser = parse; // because their naming sucks
@@ -539,7 +539,7 @@ class ExtractWordsFromComments {
                 hasSymbols: symbolsInWord,
                 index: indexesOfWordInComment
             });
-            commentData.words.push(wordRef);
+            commentData.words[sequenceKey] = wordRef;
 
             wordSavePromises.push(new Promise( (resolve, reject) => {
                 const redisWordKey = wordModel.generateWordObjectKey(newWordObject);
@@ -553,14 +553,9 @@ class ExtractWordsFromComments {
                     self.redisClient.set(redisWordKey, saveWordObject);
 
                     // Save this word to it's WordToCommentsIndex (creating one if it does not yet exist)
-                    wordModel.registerWordToCommentsIndex(redisWordKey.replace('word:', ''), commentData, self.redisClient, (addedCommentToIndex) => { // this needs to be done before the rpush because of topCommentsStats logic
-                        if (!addedCommentToIndex) { // for some reason the comment id was not added to the wordToCommentsIndex. Do not proceed to add word tstamp.
-                            resolve();
-                            return;
-                        }
-                        wordModel.addFoundAtTstampForWord(redisWordKey, commentData, self.redisClient, () => {
-                            resolve(); // finally, we can resolve this wordSavePromise
-                        });
+                    wordModel.addFoundAtTstampForWord(sequenceKey, commentData, self.redisClient, () => { // must do addFoundAtTstampForWord FIRST or else this comment will trigger word recomment logic and points for itself
+                        resolve(); // We can resolve this wordSavePromise without waiting for registerWordToCommentsIndex (which has a forced 5 second delay)
+                        wordModel.registerWordToCommentsIndex(redisWordKey.replace('word:', ''), commentData, self.redisClient);
                     });
                 }); // end self.redisClient.get(redisWordKey
             })); // end wordSavePromises.push

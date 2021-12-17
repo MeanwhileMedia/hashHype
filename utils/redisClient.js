@@ -19,7 +19,6 @@ class RedisClient {
         this.redisDbConfigs = this.getRedisDbConfigs();
         this.initAllClients(() => {
             self.attachThrottleFuncs();
-            self.throttle.initSetBatchInterval();
             self.throttle.initGetBatchInterval();
             self.throttle.initLrangeBatchInterval();
             self.throttle.initClearCachedGetObjectsInterval();
@@ -494,7 +493,6 @@ class RedisClient {
         if (!dbName) return;
         self.clients[dbName].db.set(normalizedArgs.key, JSON.stringify(normalizedArgs.saveData), (err) => {
             if (err) console.warn(err);
-            self.throttle.clearPendingSet(normalizedArgs.key); // Some of our logic will bypass throttling so any pending throttled sets need to be cleared now.
             if (normalizedArgs.cback) normalizedArgs.cback();
         });
     }
@@ -797,7 +795,6 @@ class RedisClient {
         // ONLY non-throttled redisClient functions will follow redisConfig.storeNamespaces patterns. EVERYTHING run
         // through these functions is run against the "single" db.
         this.throttle = {
-            setIntervalTime: 2000, // stagger these so our intervals don't all hit simultaneously
             maxSetBatchSize: 100, // total number of callbacks that would need to be registed to all set keys to trigger the redis request
             getIntervalTime: 900,
             maxGetBatchSize: 200,
@@ -805,55 +802,10 @@ class RedisClient {
             maxLrangeBatchSize: 500,
 
             ////////
-            // SET (batched)
-            pendingSetBatch: {}, // {key: object (not yet stringified)}
-            pendingSetBatchCount: 0,
-            set: (key, object, cback) => { // ONLY pass objects the throttled set, not stringified JSON
-                if(!self.throttle.pendingSetBatch[key]) {
-                    self.throttle.pendingSetBatchCount++;
-                    self.throttle.pendingSetBatch[key] = object;
-                } else {
-                    // we already have a pending set for this key. try to merge the objects if possible.
-                    const objectClass = self.throttle.pendingSetBatch[key].class || null;
-                    if (objectModels[objectClass] && objectModels[objectClass].merge) {
-                        self.throttle.pendingSetBatch[key] = objectModels[objectClass].merge(self.throttle.pendingSetBatch[key], object);
-                    } else { // no merge option, overwrite the pending set
-                        self.throttle.pendingSetBatch[key] = object;
-                    }
-                }
-                if (self.throttle.pendingSetBatchCount === self.throttle.maxSetBatchSize) self.throttle.setBatch();
-                if (cback) cback(); // currently not waiting for mset cback - let code proceed as if set happened immediately
-            },
-            setBatchInterval: null,
-            initSetBatchInterval: () => {
-                if (self.throttle.setBatchInterval) return;
-                self.throttle.setBatchInterval = setInterval(() => {
-                    self.throttle.setBatch();
-                }, self.throttle.setIntervalTime);
-            },
-            setBatch: () => {
-                self.throttle.pendingSetBatchCount = 0;
-                const msetArgs = [];
-                for (const [key, value] of Object.entries(self.throttle.pendingSetBatch)) {
-                    msetArgs.push(key, JSON.stringify(value));
-                }
-                if (msetArgs.length === 0) return;
-                console.log(`Now running batched mset for ${msetArgs.length/2} keys...`);
-                self.mset(msetArgs);
-                self.throttle.pendingSetBatch = {};
-            },
-
-            ////////
             // GET (batched)
             pendingGetBatch: {}, // {key: [cback, cback, etc]}
             pendingGetBatchCount: 0,
             get: (key, cback) => { // ALWAYS returns a parsed JSON object (unlike standard redis get)
-                if (self.throttle.pendingSetBatch[key]) {
-                    // Looks like we are holding a local copy of this key (it's set was throttled)
-                    // Return this local copy because we will assume it is more up-to-date than what's in redis.
-                    if (cback) cback(self.throttle.pendingSetBatch[key]);
-                    return;
-                }
                 if(!self.throttle.pendingGetBatch[key]) self.throttle.pendingGetBatchCount++;
                 self.throttle.pendingGetBatch[key] = self.throttle.pendingGetBatch[key] || [];
                 self.throttle.pendingGetBatch[key].push(cback);
@@ -1022,9 +974,6 @@ class RedisClient {
             clearPendingGet: (redisKey) => {
                 if (self.throttle.pendingGetBatch[redisKey]) delete self.throttle.pendingGetBatch[redisKey];
             },
-            clearPendingSet: (redisKey) => {
-                if (self.throttle.pendingSetBatch[redisKey]) delete self.throttle.pendingSetBatch[redisKey];
-            }
 
         };
     } //end attachThrottleFuncs
