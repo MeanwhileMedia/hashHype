@@ -549,14 +549,22 @@ class TopCommentsStats {
                             // console.warn(`Missing pointsRecords for ${thisWordStr} or ${thisShortWordStr} (${timeBucketKey}) on comment:${thisComment.id} comment.pointsRecords:`, thisComment.pointsRecords);
                             continue;
                         }
+                        const shortWord = thisComment.words[thisShortWordStr];
+
+                        // hashHype rule - we don't make single word symbols take a hit for being part of longer sequences. They get to keep all of their points.
+                        // Not only does this ensure that a comment is properly represented by it's top symbol, but it will save on cpu cycles as we return early.
+                        if (shortWord.type === 'word' && shortWord.hasSymbols.length > 0) continue;
+
                         // console.warn(`Detected overlapping words ${thisWordStr} and ${thisShortWordStr} in comment:${thisComment.id}`);
                         thisComment.pointsRecords[timeBucketKey][thisWordStr].forEach((thisLongWordFoundAtTstamp) => {
-                            if (thisComment.pointsRecords[timeBucketKey][thisShortWordStr].indexOf(thisLongWordFoundAtTstamp)) {
-                                // console.warn(`Detected that overlapping words ${thisWordStr} and ${thisShortWordStr} in comment:${thisComment.id} both earned points from the same re-comment.`);
+                            if (thisComment.pointsRecords[timeBucketKey][thisShortWordStr].indexOf(thisLongWordFoundAtTstamp) !== -1) {
+                                //console.warn(`Detected that overlapping words ${thisWordStr} and ${thisShortWordStr} in comment:${thisComment.id} both earned points from the same re-comment.`);
                                 const shortWord = thisComment.words[thisShortWordStr];
-                                // console.warn(`Deducting ${shortWord.pointVal} from ${thisComment.points[timeBucketKey][thisShortWordStr]} points (${timeBucketKey}) for comment:${thisComment.id} for word:${thisShortWordStr}`);
-                                const correctedPointCount = Math.max(0, thisComment.points[timeBucketKey][thisShortWordStr] - shortWord.pointVal)
-                                thisComment.points[timeBucketKey][thisShortWordStr] = correctedPointCount;
+                                //console.warn(`Deducting ${shortWord.pointVal} from ${thisComment.points[timeBucketKey][thisShortWordStr]} points (${timeBucketKey}) for comment:${thisComment.id} for word:${thisShortWordStr}`);
+
+                                const deductPoints = shortWord.pointVal;
+                                thisComment.points[timeBucketKey][thisShortWordStr] = Math.max(0, thisComment.points[timeBucketKey][thisShortWordStr] - deductPoints)
+                                thisComment.totalPoints[timeBucketKey] = thisComment.totalPoints[timeBucketKey] - deductPoints;
                             }
                         });
                     } // end Object.entries(thisComment.points[timeBucketKey])) {

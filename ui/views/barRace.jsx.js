@@ -97,7 +97,13 @@ class BarRace extends React.Component {
         const barElRefs = [];
         if (!self.reducedTopComments.length) return barEls;
 
-        self.rankOnePoints = Math.max(self.reducedTopComments[0].totalPoints['1Hr'], this.rankOnePoints);
+        const newRankOnePoints = self.reducedTopComments[0].totalPoints['1Hr'];
+        if (self.rankOnePoints && newRankOnePoints / self.rankOnePoints < .8) {
+            self.rankOnePoints = newRankOnePoints;
+        } else {
+            self.rankOnePoints = Math.max(newRankOnePoints, self.rankOnePoints);
+        }
+
         self.reducedTopComments.forEach((thisTopComment) => { // reducedTopComment is already sorted descending
             const thisBarElRef = React.createRef();
             barEls.push(
@@ -136,7 +142,8 @@ class BarRace extends React.Component {
         const updatedBarEls = [];
         const orphanBarEls = [];
         const orphanTopComments = [];
-        self.rankOnePoints = Math.max(self.reducedTopComments[0].totalPoints['1Hr'], this.rankOnePoints);
+
+        self.rankOnePoints = Math.max(self.reducedTopComments[0].totalPoints['1Hr'], self.rankOnePoints);
 
         self.reducedTopComments.forEach((thisTopComment) => { // reducedTopComment is already sorted descending
             let matchedExistingBarEl = self.barElRefs.find(thisBarRef => {
