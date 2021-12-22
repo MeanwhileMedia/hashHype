@@ -27,7 +27,7 @@ class BarRaceBar extends React.Component {
 
         let symbolText = '';
         let hasTopSymbol = null;
-        const hasTopSymbolKey = this.state.topComment.topSymbolHigh['1Hr'].key || this.state.topComment.topSymbolLow['1Hr'].key || null;
+        const hasTopSymbolKey = this.state.topComment.topSymbolHigh['1Hr'] || this.state.topComment.topSymbolLow['1Hr'] || null;
         if (hasTopSymbolKey) hasTopSymbol = this.state.topComment.symbols.find(thisSymbol => thisSymbol.redisKey === hasTopSymbolKey);
         if (hasTopSymbol) {
             this.state.topComment.renderedSymbol = hasTopSymbol; // save on comment object for easy access later and in other classes

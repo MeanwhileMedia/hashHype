@@ -177,10 +177,14 @@ class SpinWheel extends React.Component {
         const degreeAndOffsetRecord = []; //[{matrix: 1, offset: 235}, {matrix: 2, offset: 242}, etc]
         const wheelEl = document.querySelector('.spinWheel');
         const wheelElClone = wheelEl.cloneNode(true);
+        wheelElClone.style.pointerEvents = 'none';
         wheelElClone.style.opacity = 0;
         wheelEl.parentNode.appendChild(wheelElClone);
         const topCommentTextEl = wheelElClone.querySelector(`[data-trend-name="${destTopComment.id}"] .wheel_part_anchor`);
-        if (!topCommentTextEl) return;
+        if (!topCommentTextEl) {
+            wheelElClone.remove();
+            return;
+        }
         for (let deg = 0; deg <= 360; deg++) {
             self.setCurrentWheelRotation(`rotate(${deg}deg)`, 'none', wheelElClone);
             const boundingClientRect = topCommentTextEl.getBoundingClientRect();
@@ -225,7 +229,7 @@ class SpinWheel extends React.Component {
             let reducedTopComments = [];
             const reducedTopCommentsBySymbol = {}; // {GME: [comment3, comment1], APPL: [comment32], etc..} - used for picking the higher scoring symbol comment when showTopCommentSymbolsOnlyOnce == true
             hierarchyData.children.forEach((thisTopComment) => {
-                const hasTopSymbolKey = thisTopComment.topSymbolHigh['1Hr'].key || thisTopComment.topSymbolLow['1Hr'].key || null;
+                const hasTopSymbolKey = thisTopComment.topSymbolHigh['1Hr'] || thisTopComment.topSymbolLow['1Hr'] || null;
                 if (hasTopSymbolKey) {
                     const hasTopSymbol = thisTopComment.symbols.find(thisSymbol => thisSymbol.redisKey === hasTopSymbolKey);
                     if (hasTopSymbol && thisView.state.showTopCommentSymbolTypes.indexOf(hasTopSymbol.type) !== -1) {

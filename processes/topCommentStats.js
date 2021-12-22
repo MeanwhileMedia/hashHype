@@ -315,7 +315,6 @@ class TopCommentsStats {
                             return;
                         }
                         finalPossibleTopComments.push(comment);
-                        self.initCommentTopSymbols(comment); // alters comment in place - assigns comment.topSymbols
                     });
 
                     self.groupPendingTopCommentsByTopSymbols(finalPossibleTopComments); // assigns all finalPossibleTopComments to self.pendingTopComments
@@ -323,14 +322,22 @@ class TopCommentsStats {
 
                     // Now take a final pass at self.pendingTopComments and transfer to self.topComments to be saved to redis. We will also do any necc. cleanup/additions to each topComment to prep for rendering.
                     const allTopCommentCleanupPromises = [];
-                    const allUniqueTopComments = self.reducePendingTopComments(); // returns an array of all comments which landed in any self.topComments timebucket. No dups.
-                    allUniqueTopComments.forEach((thisTopComment) => {
+                    const allChangedComments = self.reducePendingTopComments(); // returns a unique array of all comments which were updated during this round of refreshTopComments (even if they didn't land in the final selection for self.topComments.comments)
+
+                    // Every single changed comment should now be saved to redis...
+                    allChangedComments.forEach((thisChangedComment) => {
                         allTopCommentCleanupPromises.push(new Promise( (resolve, reject) => {
-                            // Save the comment: the comment has new point and topSymbols props. We also want it's saveCount prop to be updated and subjected to db preserve logic. Remember that we cannot use throttled redis commands to utilize dynamic DB functionality.
-                            self.redisClient.set(`comment:${thisTopComment.id}`, commentModel.minimizeForDb(thisTopComment), () => {
-                                self.addSymbolsDataToComment(thisTopComment, () => { // To properly render this comment in the topCommentStats UI, we need to populate it's comment.symbols array.
-                                    resolve();
-                                });
+                            // Save the comment: the comment has new point props. We also want it's saveCount prop to be updated and subjected to db preserve logic. Remember that we cannot use throttled redis commands to utilize dynamic DB functionality.
+                            self.redisClient.set(`comment:${thisChangedComment.id}`, commentModel.minimizeForDb(thisChangedComment), () => {
+                                resolve();
+                            });
+                        }));
+                    });
+                    // BUT only the final comments which were filtered and landed in self.topComments.comments need to also fetch their full symbol objects
+                    self.topComments.comments.forEach((thisTopComment) => {
+                        allTopCommentCleanupPromises.push(new Promise( (resolve, reject) => {
+                            self.addSymbolsDataToComment(thisTopComment, () => { // To properly render this comment in the topCommentStats UI, we need to populate it's comment.symbols array.
+                                resolve();
                             });
                         }));
                     });
@@ -410,16 +417,19 @@ class TopCommentsStats {
 
     timeBucketWordPointsForComment(comment, wordRef, points, allCommentsWithThisWord, cback) { // alters comment in-place (updates comment.points)
         const self = this;
+        if (!points) { // no need to proceed with our lrange if this word won't apply any new points to the comment anyhow.
+            if (cback) cback();
+            return;
+        }
 
         //////////
         // Get every single timestamp for when this word was in any comment, then sort sort them into timebuckets and total the points
         const foundAtListKey = `word:${wordRef.word}:foundAt`;
-        self.redisClient.throttle.lrange(foundAtListKey, 0, -1, (foundAtLrangeRes) => {
-            if (!foundAtLrangeRes || !foundAtLrangeRes.length) {
+        self.redisClient.throttle.lrange(foundAtListKey, 0, -1, (allFoundAtTstamps) => {
+            if (!allFoundAtTstamps || !allFoundAtTstamps.length) {
                 if (cback) cback();
                 return;
             }
-            const allFoundAtTstamps = [...foundAtLrangeRes]; // We copy because we edit this array in place. The original foundAtLrangeRes object may be passed to multiple throttled lrange cbacks.
             // console.log(`Now running timeBucketWordPointsForComment for word: ${wordRef.word} and comment: ${comment.id}`)
 
             // Converts an ordered array of word foundAt tstamps into time bucketed points. Where "foo_bar" is word:  {1hr: {foo_bar: 234}, 12hr: etc...}
@@ -427,136 +437,55 @@ class TopCommentsStats {
             const msInHr = 3600000;
             const msIn12Hr = 43200000;
             const msIn24Hr = 86400000;
-            const thisWordPoints = {
-                '1Hr': {},
-                '12Hr': {},
-                '24Hr': {}
-            };
+            const thisWordPoints = self.newTimeBucketObject();
+            const thisWordPointsRecord = self.newTimeBucketObject();
             const now = Date.now();
-            allFoundAtTstamps.forEach((thisFoundAtTstamp) => { // thisFoundAtTstamp is actually a string, but JS will coerce it to an int during calc (subtract ONLY). https://www.codegrepper.com/code-examples/javascript/js+string+minus+number
+            allFoundAtTstamps.forEach((thisFoundAtTstamp) => {
+                thisFoundAtTstamp = parseInt(thisFoundAtTstamp); // remember that thisFoundAtTstamp is actually a string
+
+                ////////
+                // hashHype rule - a comment can't earn points for containing it's own words.
+                if (comment.foundAt === thisFoundAtTstamp) {
+                    // console.warn(`comment:${comment.id} can't earn points for itself (word:${wordRef.word})`);
+                    return;
+                }
+
+                // Proceed with timbucketing the points earned for this word foundAt occurance
+                const recordPointsForWord = (timebucketKey) => {
+                    thisWordPoints[timebucketKey][wordRef.word] = thisWordPoints[timebucketKey][wordRef.word] || 0;
+                    thisWordPoints[timebucketKey][wordRef.word] = thisWordPoints[timebucketKey][wordRef.word] + points;
+
+                    thisWordPointsRecord[timebucketKey][wordRef.word] = thisWordPointsRecord[timebucketKey][wordRef.word] || [];
+                    thisWordPointsRecord[timebucketKey][wordRef.word].push(thisFoundAtTstamp);
+                }
                 if(now - msInHr < thisFoundAtTstamp) {
-                    thisWordPoints['1Hr'][wordRef.word] = thisWordPoints['1Hr'][wordRef.word] || 0;
-                    thisWordPoints['1Hr'][wordRef.word] = thisWordPoints['1Hr'][wordRef.word] + points;
+                    recordPointsForWord('1Hr');
                 }
                 if(now - msIn12Hr < thisFoundAtTstamp) {
-                    thisWordPoints['12Hr'][wordRef.word] = thisWordPoints['12Hr'][wordRef.word] || 0;
-                    thisWordPoints['12Hr'][wordRef.word] = thisWordPoints['12Hr'][wordRef.word] + points;
+                    recordPointsForWord('12Hr');
                 }
                 if(now - msIn24Hr < thisFoundAtTstamp) {
-                    thisWordPoints['24Hr'][wordRef.word] = thisWordPoints['24Hr'][wordRef.word] || 0;
-                    thisWordPoints['24Hr'][wordRef.word] = thisWordPoints['24Hr'][wordRef.word] + points;
+                    recordPointsForWord('24Hr');
                 }
             });
+
             // Now transfer into comment.points (which will be stored to redis inside comment object)
+            // comment.pointsRecords = comment.pointsRecords || self.newTimeBucketObject();
             for (const [pointsTimeBucketKey, allWordPointCountsForTimeBucket] of Object.entries(comment.points)) {
                 if (typeof thisWordPoints[pointsTimeBucketKey][wordRef.word] === 'undefined') { // we store point records that were calculated to 0
                     delete comment.points[pointsTimeBucketKey][wordRef.word]; // clear out old points
                 } else {
                     comment.points[pointsTimeBucketKey][wordRef.word] = thisWordPoints[pointsTimeBucketKey][wordRef.word];
+
+                    /////////
+                    // hashHype rule - a comment (x) can only earn points for a word at a maximum of once per ms. To enforce this, we store a temporary record called comment.pointsRecords.
+                    // It is utilized later in calcTotalPointsForPendingTopComments. See there for more docs.
+                    comment.pointsRecords[pointsTimeBucketKey][wordRef.word] = thisWordPointsRecord[pointsTimeBucketKey][wordRef.word];
                 }
             };
             if (cback) cback();
         }); // end lrange cback
     }
-
-    initCommentTopSymbols(comment) {
-        const self = this;
-        const allSymbols = this.newTimeBucketObject(); // { '1Hr': {'symbol:key': pointsInt, 'symbol:word:GME': 265, etc}, etc... }
-        Object.values(comment.words).forEach((thisWordRef) => {
-            if (!thisWordRef.hasSymbols || thisWordRef.hasSymbols.length === 0) return;
-            Object.keys(allSymbols).forEach((timeBucketKey) => {
-                const pointsForThisSymbolWord = comment.points[timeBucketKey][thisWordRef.word];
-                if (!pointsForThisSymbolWord) return;
-                thisWordRef.hasSymbols.forEach((thisSymbolKey) => {
-                    allSymbols[timeBucketKey][thisSymbolKey] = allSymbols[timeBucketKey][thisSymbolKey] || 0;
-                    allSymbols[timeBucketKey][thisSymbolKey] = allSymbols[timeBucketKey][thisSymbolKey] + pointsForThisSymbolWord;
-                });
-            });
-        });
-        const allSymbolsSorted = this.newTimeBucketObject('arrays'); // {'1Hr': ['symbol:key', 'symbol:word:GME'] } - where the keys in each array are sorted by the points they could earn for comment
-        for (const [timeBucketKey, pointsBySymbol] of Object.entries(allSymbols)) {
-            const pointsBySymbolArr = Object.entries(allSymbols[timeBucketKey]);
-            pointsBySymbolArr.sort((symbolPointsA, symbolPointsB) => {
-                return symbolPointsB[1] - symbolPointsA[1]; // sorts by points descending
-            });
-            allSymbolsSorted[timeBucketKey] = pointsBySymbolArr.map(symbolPoints => symbolPoints[0]);
-        };
-
-        // At this point, we assign ALL the comment symbols to topSymbols. When it runs through "groupPendingTopCommentByTopSymbols",
-        // the topSymbols object will be reduced to represent only the symbols which earned this comment a place on topComments.
-        // console.log(`comment:${comment.id} pending topSymbols:`, allSymbols);
-        comment.topSymbols = allSymbols;
-        comment.topSymbolsSorted = allSymbolsSorted; // This is a TEMP prop that should not be persisted to redis.
-    }
-
-    assignHighAndLowTopSymbols(comment, timeBucketKey, highSymbolKey, highSymbolRecord) { // returns true if high symbol could be added, false if not
-        const self = this;
-        // The maxSharedHighTopSymbols config is to set how many topComments can share the same comment.topSymbolHigh.key. If we let infinite topComments
-        // have the same high topSymbol, then even when a comment is deemed topComment by an overall high score, it would wrongly try to render it's high topSymbol, and we'd have dup symbols presented.
-        const maxSharedHighTopSymbols = 2;
-        const sumTopSymbolsTotalPoints = () => {
-            const highPoints = comment.topSymbolHigh[timeBucketKey].points || 0;
-            const lowPoints = comment.topSymbolLow[timeBucketKey].points || 0;
-            comment.topSymbolsTotalPoints[timeBucketKey] = highPoints + lowPoints;
-        };
-
-        comment.topSymbolHigh = comment.topSymbolHigh || self.newTimeBucketObject();
-        const pendingTopSymbolHigh = {key: highSymbolKey, points: comment.topSymbols[timeBucketKey][highSymbolKey]};
-
-        // topSymbolLow does not have any compete logic. We allow infinite topComments to share the same topSymbolLow.
-        comment.topSymbolLow = comment.topSymbolLow || self.newTimeBucketObject();
-        if (comment.topSymbolsSorted[timeBucketKey].length >= 2) {
-            const lowSymbolKey = comment.topSymbolsSorted[timeBucketKey][comment.topSymbolsSorted[timeBucketKey].length-1];
-            comment.topSymbolLow[timeBucketKey] = {key: lowSymbolKey, points: comment.topSymbols[timeBucketKey][lowSymbolKey]};
-        }
-
-        if (comment.topSymbolLow[timeBucketKey].key === pendingTopSymbolHigh.key) {
-            sumTopSymbolsTotalPoints();
-            return false;
-        }
-
-        highSymbolRecord[timeBucketKey][highSymbolKey] = highSymbolRecord[timeBucketKey][highSymbolKey] || [];
-        if (highSymbolRecord[timeBucketKey][highSymbolKey].length < maxSharedHighTopSymbols) {
-            highSymbolRecord[timeBucketKey][highSymbolKey].push(comment);
-            comment.topSymbolHigh[timeBucketKey] = pendingTopSymbolHigh;
-            sumTopSymbolsTotalPoints();
-            return true;
-        }
-
-        // there are already 2 comments which have this symbol set as their high symbol. Compare to choose one.
-        let removeVsCommentIndex = null;
-        let prevBeatScore = 0;
-        const commentScore = comment.topSymbols[timeBucketKey][highSymbolKey];
-        highSymbolRecord[timeBucketKey][highSymbolKey].forEach((vsComment, index) => {
-            const vsCommentScore = vsComment.topSymbols[timeBucketKey][highSymbolKey];
-            if(commentScore > vsCommentScore){ // this comment scores higher on this symbol than the vsComment
-                if (prevBeatScore < vsComment.topSymbols[timeBucketKey][highSymbolKey]) {
-                    prevBeatScore = vsCommentScore;
-                    removeVsCommentIndex = index;
-                }
-            }
-        });
-        if (removeVsCommentIndex == null) {
-            sumTopSymbolsTotalPoints();
-            return false;
-        }
-
-        // We have a displacedComment which means this comment high symbol can be set, then we can try to re-place the displacedComment
-        comment.topSymbolHigh[timeBucketKey] = pendingTopSymbolHigh;
-
-        const displacedComment = highSymbolRecord[timeBucketKey][highSymbolKey].splice(removeVsCommentIndex, 1, comment)[0];
-        // console.log(`Displaced comment:${displacedComment.id} can't have a high topSymbol of ${highSymbolKey} because it scored lower than comment:${comment.id}. Updated highSymbolRecord:`, util.inspect(highSymbolRecord[timeBucketKey], {depth: 5, colors: true}));
-        // Try to find a new home for this displacedComment
-        if (displacedComment.topSymbolsSorted[timeBucketKey].length >= 2) { // if it has enough symbols
-            const prevHighSymbolIndex = displacedComment.topSymbolsSorted[timeBucketKey].indexOf(highSymbolKey);
-            const nextHighSymbolKey = displacedComment.topSymbolsSorted[timeBucketKey][prevHighSymbolIndex+1];
-            displacedComment.topSymbolHigh[timeBucketKey] = {};
-            if (nextHighSymbolKey) self.assignHighAndLowTopSymbols(displacedComment, timeBucketKey, nextHighSymbolKey, highSymbolRecord);
-        }
-
-        sumTopSymbolsTotalPoints();
-        return true;
-    } // end assignHighAndLowTopSymbols
 
     groupPendingTopCommentsByTopSymbols(possibleTopComments) {
         const self = this;
@@ -564,66 +493,15 @@ class TopCommentsStats {
         // into symbol buckets so our function can then select just X number of comments for each symbol when transferring this.pendingTopComments to this.topComments
         self.pendingTopComments = {}; // reset for this batch of incoming topComments. Will be boiled down and transferred to this.topComments after this batch is complete.
 
-        const highSymbolRecord = this.newTimeBucketObject(); // {'1Hr': {symbol:stock:GME: [comment2, comment1]}, etc...} This is used when determining highSymbolKey below. We only select 2 comments to represent any given symbol (by having it occupy the higher pointing comment.topSymbols)
-        const commentsByTopSymbol = this.newTimeBucketObject(); // {'1Hr': {'symbol:stock:GME': [(index3)comment4, (index18)comment2, (index434)comment1], 'symbol:stock:YOLO': etc... }, '12Hr': etc...}
         possibleTopComments.forEach((comment) => {
-            comment.topSymbolsTotalPoints = this.newTimeBucketObject('integers');
-            Object.keys(commentsByTopSymbol).forEach((timeBucketKey) => {
-                if (Object.keys(comment.topSymbols[timeBucketKey]).length === 0) {
-                    commentsByTopSymbol[timeBucketKey]['noSymbols'] = commentsByTopSymbol[timeBucketKey]['noSymbols'] || [];
-                    commentsByTopSymbol[timeBucketKey]['noSymbols'].push(comment);
-                    return;
-                }
-                for (const [symbolKey, commentsPointsForSymbol] of Object.entries(comment.topSymbols[timeBucketKey])) {
-                    // Add it to it's spot with all other comments that have this symbol
-                    commentsByTopSymbol[timeBucketKey][symbolKey] = commentsByTopSymbol[timeBucketKey][symbolKey] || [];
-                    commentsByTopSymbol[timeBucketKey][symbolKey].push(comment);
-                };
-
-                // Now we must determine the high and low scoring symbols for this comment. These are the only symbols that will
-                // contribute points later when comment.totalPoints is calculated.
-                comment.topSymbolsSorted[timeBucketKey].some((thisHighSymbolKey) => { // step down descending through topSymbols until one returns true for being assigned, or none do.
-                    comment.topSymbolHigh[timeBucketKey] = {}; // reset now before recalculating
-                    comment.topSymbolLow[timeBucketKey] = {};
-                    return self.assignHighAndLowTopSymbols(comment, timeBucketKey, thisHighSymbolKey, highSymbolRecord);
-                });
-                // console.log(`topSymbolHigh (${comment.topSymbolHigh[timeBucketKey].key}) and topSymbolLow (${comment.topSymbolLow[timeBucketKey].key}) were determined for comment:${comment.id}. topSymbolsTotalPoints (${timeBucketKey}): ${comment.topSymbolsTotalPoints[timeBucketKey]}`, comment.topSymbols[timeBucketKey]);
-            }); // end Object.keys(commentsByTopSymbol).forEach(
-        }); // end possibleTopComments.forEach(
-        // console.log(`topSymbolHigh and topSymbolLow were assigned to all pending topComments:`, util.inspect(highSymbolRecord, {depth: 5, colors: true}));
-
-        Object.keys(commentsByTopSymbol).forEach((timeBucketKey) => {
-            const commentIdsInThisTimeBucket = [];
-            for (const [symbolKey, commentsForSymbol] of Object.entries(commentsByTopSymbol[timeBucketKey])) {
-                self.pendingTopComments[symbolKey] = self.pendingTopComments[symbolKey] || [];
-                // If this commentsForSymbol array is for the faux symbol "noSymbols", then we will keep them all and continue loop. They will be selectively removed later after totalPoints are calculated.
-                if (symbolKey === 'noSymbols') {
-                    self.pendingTopComments[symbolKey] = self.pendingTopComments[symbolKey].concat(commentsForSymbol);
-                    continue;
-                }
-                // We must sort the commentsForSymbol for this timeBucket (because next we will shift and pop to determine the high and low scoring comments for this symbol)
-                commentsForSymbol.sort((commentA, commentB) => {
-                    return commentB.topSymbolsTotalPoints[timeBucketKey] - commentA.topSymbolsTotalPoints[timeBucketKey];
-                });
-                // console.log(`All pending topComments for symbol ${symbolKey}:`, util.inspect(commentsForSymbol, {depth: 4, colors: true}));
-                commentsForSymbol.some((thisCommentForSymbol) => {
-                    if (commentIdsInThisTimeBucket.indexOf(thisCommentForSymbol.id) === -1) {
-                        commentIdsInThisTimeBucket.push(thisCommentForSymbol.id);
-                        self.pendingTopComments[symbolKey].push(thisCommentForSymbol);
-                        return true; // break some loop. We have added our top scorer.
-                    }
-                });
-                commentsForSymbol.reverse().some((thisCommentForSymbol) => {
-                    if (commentIdsInThisTimeBucket.indexOf(thisCommentForSymbol.id) === -1) {
-                        commentIdsInThisTimeBucket.push(thisCommentForSymbol.id);
-                        self.pendingTopComments[symbolKey].push(thisCommentForSymbol);
-                        return true; // break some loop. We have added our bottom scorer.
-                    }
-                });
-                // console.log(`Kept pending topComments for symbol ${symbolKey}:`, util.inspect(self.pendingTopComments[timeBucketKey][symbolKey], {depth: 4, colors: true}));
-            };
+            if (!comment.topSymbolHigh['1Hr']) {
+                self.pendingTopComments['noSymbols'] = self.pendingTopComments['noSymbols'] || [];
+                self.pendingTopComments['noSymbols'].push(comment);
+                return;
+            }
+            self.pendingTopComments[comment.topSymbolHigh['1Hr']] = self.pendingTopComments[comment.topSymbolHigh['1Hr']] || [];
+            self.pendingTopComments[comment.topSymbolHigh['1Hr']].push(comment);
         });
-        // console.log(`Pending topComments by topSymbols:`, util.inspect(self.pendingTopComments, {depth: 4, colors: true}));
     } // end groupPendingTopCommentsByTopSymbols
 
     calcTotalPointsForPendingTopComments(pendingTopComments, newlyPointedWordsByComment) { // newlyPointedWordsByComment is a copy of self.pendingCommentIdsToWords {commentId1: [wordString1, wordString2], commentId2: [wordString3, wordString6], etc...}
@@ -631,33 +509,63 @@ class TopCommentsStats {
         // Sum total points for this comment into timebuckets
         pendingTopComments.forEach((thisComment) => {
 
-            // 1. We now look at all the words which have been pointed this round for this comment. If there is overlap, then we must deduct points from the shorter word sequences.
-            // I.e. trigram "must_!!_go_!!_GME" and "go_!!_GME" both earned - then we deduct points earned for "go_!!_GME"
-            // The same logic applies to 2dGrams. This ensures that points don't get counted twice when a long word sequence is re-commented.
-            // We only need to look at the comment's 1 hour timebucket because this logic is only applicable to the current batch of new word points (every 5 seconds). This is a real-time adjustment.
-            // for (const [thisPointedWordString, pointCount] of Object.entries(thisComment.points[timeBucketKey])) {
-            if (newlyPointedWordsByComment[thisComment.id]) {
-                newlyPointedWordsByComment[thisComment.id].forEach((longWordString) => {
-                    newlyPointedWordsByComment[thisComment.id].forEach((shortWordString) => {
-                        if (!thisComment.points['1Hr'][shortWordString]) return;
-                        if (longWordString === shortWordString || longWordString.indexOf(shortWordString) === -1) return;
-                        // console.warn(`Detected overlapping points for words ${longWordString} and ${shortWordString} in comment:${thisComment.id}`);
-                        const shortWord = thisComment.words[shortWordString];
-                        const shortWordPointDeduction = self.getWordPointCount(thisComment, shortWord);
-                        // console.warn(`Deducting ${shortWordPointDeduction} from ${thisComment.points['1Hr'][shortWord.word]} points for word ${shortWord.word}`);
-                        thisComment.points['1Hr'][shortWordString] = Math.max(0, thisComment.points['1Hr'][shortWordString] - shortWordPointDeduction);
-                    });
-                });
-            } // end 1
-
-            // 2. We are now ready to sum the totalPoints.
             for (const [timeBucketKey, prevPoints] of Object.entries(thisComment.totalPoints)) {
                 thisComment.totalPoints[timeBucketKey] = 0;
                 for (const [thisWordStr, pointsForThisWord] of Object.entries(thisComment.points[timeBucketKey])) {
-                    if (!pointsForThisWord) return;
-                    thisComment.totalPoints[timeBucketKey] = thisComment.totalPoints[timeBucketKey] + pointsForThisWord;
+                    if (!pointsForThisWord) continue;
+
+                    //////////
+                    // 1. hashHype rule - We also enforce a rule that no comment can earn points for more than 2 symbols (topSymbolHigh and topSymbolLow).
+                    const thisWordRef = thisComment.words[thisWordStr];
+                    if (thisWordRef.hasSymbols && thisWordRef.hasSymbols.length > 0) {
+                        let deductSymbolPoints = 0;
+                        thisWordRef.hasSymbols.forEach((thisSymbolKey) => {
+                            if ( (thisComment.topSymbolHigh[timeBucketKey] && thisSymbolKey !== thisComment.topSymbolHigh[timeBucketKey]) &&
+                                 (thisComment.topSymbolLow[timeBucketKey] && thisSymbolKey !== thisComment.topSymbolLow[timeBucketKey]) ) {
+                                const invalidSymbolWordStr = thisSymbolKey.split(':').slice(2).join(':');
+                                if (thisComment.points[timeBucketKey][invalidSymbolWordStr]) {
+                                    // console.warn(`Found invalid pointed symbol in comment:${thisComment.id} in word:${thisWordStr} that was neither topSymbolHigh nor topSymbolLow.`);
+                                    deductSymbolPoints = deductSymbolPoints + thisComment.points[timeBucketKey][invalidSymbolWordStr];
+                                }
+                            }
+                        });
+                        if (deductSymbolPoints > 0) {
+                            const correctedPointCount = Math.max(0, thisComment.points[timeBucketKey][thisWordStr] - deductSymbolPoints)
+                            if (deductSymbolPoints !== thisComment.points[timeBucketKey][thisWordStr]) console.warn(`Deducting ${deductSymbolPoints} from ${thisComment.points[timeBucketKey][thisWordStr]} points (${timeBucketKey}) for comment:${thisComment.id} for word:${thisWordStr}`);
+                            thisComment.points[timeBucketKey][thisWordStr] = correctedPointCount;
+                        }
+                    }
+
+                    /////////
+                    // 2. hashHype rule - a comment (x) can only earn points for a word at a maximum of once per ms. This ensures that when another user re-comments (y) word combo
+                    // "go_!!_moon_!!_GME" and creates foundAt tstamps for "go_!!_moon_!!_GME", "moon_!!_GME" and "GME", comment x only earns once (for the longest shared sequence).
+                    // To enforce this, we store a temporary record called comment.pointsRecords. Here we look at every pointed word, detect shared substrings, and reduce down those
+                    // shared substrings by their foundAt tstamp. When shared substrings come from the same comment (y), they all have the same foundAt tstamp.
+                    for (const [thisShortWordStr, pointsForThisWord] of Object.entries(thisComment.points[timeBucketKey])) {
+                        if (!pointsForThisWord) continue; // didn't earn points anyway. no need to continue overlap check logic
+                        if (thisShortWordStr.length >= thisWordStr.length) continue; // can't be an inner shortWordStr if it's not of shorter length
+                        if (thisWordStr.indexOf(thisShortWordStr) === -1) continue; // thisShortWordStr is not a substring
+                        if (!thisComment.pointsRecords[timeBucketKey][thisWordStr] || !thisComment.pointsRecords[timeBucketKey][thisShortWordStr]) {
+                            // console.warn(`Missing pointsRecords for ${thisWordStr} or ${thisShortWordStr} (${timeBucketKey}) on comment:${thisComment.id} comment.pointsRecords:`, thisComment.pointsRecords);
+                            continue;
+                        }
+                        // console.warn(`Detected overlapping words ${thisWordStr} and ${thisShortWordStr} in comment:${thisComment.id}`);
+                        thisComment.pointsRecords[timeBucketKey][thisWordStr].forEach((thisLongWordFoundAtTstamp) => {
+                            if (thisComment.pointsRecords[timeBucketKey][thisShortWordStr].indexOf(thisLongWordFoundAtTstamp)) {
+                                // console.warn(`Detected that overlapping words ${thisWordStr} and ${thisShortWordStr} in comment:${thisComment.id} both earned points from the same re-comment.`);
+                                const shortWord = thisComment.words[thisShortWordStr];
+                                // console.warn(`Deducting ${shortWord.pointVal} from ${thisComment.points[timeBucketKey][thisShortWordStr]} points (${timeBucketKey}) for comment:${thisComment.id} for word:${thisShortWordStr}`);
+                                const correctedPointCount = Math.max(0, thisComment.points[timeBucketKey][thisShortWordStr] - shortWord.pointVal)
+                                thisComment.points[timeBucketKey][thisShortWordStr] = correctedPointCount;
+                            }
+                        });
+                    } // end Object.entries(thisComment.points[timeBucketKey])) {
+
+                    /////////
+                    // 3. We are now ready to sum the totalPoints.
+                    thisComment.totalPoints[timeBucketKey] = thisComment.totalPoints[timeBucketKey] + thisComment.points[timeBucketKey][thisWordStr];
                 }
-            }; // end 2
+            }; // end for (const [timeBucketKey, prevPoints] of Object.entries(thisComment.totalPoints)) {
 
         }); // end comments.forEach((thisComment) => {
 
@@ -666,37 +574,54 @@ class TopCommentsStats {
     reducePendingTopComments() {
         const self = this;
         const topCommentsClone = self.newTopCommentsEntity();
-        const allUniqueTopComments = []; // this is our return value. A flattened and de-duped collection of all comments that made it into any topComments timebucket.
-        const allUniqueTopCommentsIds = [];
 
+        const allChangedTopComments = []; // this is our return value. A flattened and de-duped collection of all comments which were updated during this round of refreshTopComments (even if they didn't land in the final selection for self.topComments.comments)
+        const allChangedTopCommentsIds = [];
+
+        const finalTopComments = []; // sorted by points ascending. This is the trimmed final collection which will be set to self.topComments.comments. This will likely not include all of the comments in allChangedTopComments.
         const finalTopCommentIds = [];
-        const finalTopComments = []; // sorted by points ascending
+
+        // 1. Move all (unique) comments from self.pendingTopComments into flattened array allChangedTopComments. At the same time, only take 1 comment per symbol (the one with highest score) for finalTopComments array.
         for (const [thisSymbolKey, pendingTopCommentsForThisSymbol] of Object.entries(self.pendingTopComments)) {
+            let highestScoredCommentForSymbol = null;
             pendingTopCommentsForThisSymbol.forEach((thisComment) => {
-                if (finalTopCommentIds.indexOf(thisComment.id) !== -1) return;
-                finalTopCommentIds.push(thisComment.id);
-                finalTopComments.push(thisComment);
-                if (allUniqueTopCommentsIds.indexOf(thisComment.id) === -1) {
-                    // console.log(`comment:${thisComment.id} will be stored to ${self.topCommentsStatsKey}: ${thisComment.body}`);
-                    allUniqueTopCommentsIds.push(thisComment.id);
-                    allUniqueTopComments.push(thisComment);
+                if (allChangedTopCommentsIds.indexOf(thisComment.id) === -1) {
+                    // console.log(`comment:${thisComment.id} has changed during topComments refresh and will be saved to redis.`);
+                    allChangedTopCommentsIds.push(thisComment.id);
+                    allChangedTopComments.push(thisComment);
+                }
+                if (thisSymbolKey === 'noSymbols' && finalTopCommentIds.indexOf(thisComment.id) === -1) {
+                    // console.log(`Will add comment:${highestScoredCommentForSymbol.id} (no symbols) to our final selection of topCommentStats.comments.`)
+                    finalTopCommentIds.push(thisComment.id);
+                    finalTopComments.push(thisComment);
+                    return;
+                }
+                if (highestScoredCommentForSymbol === null || thisComment.totalPoints['1Hr'] > highestScoredCommentForSymbol.totalPoints['1Hr']) {
+                    highestScoredCommentForSymbol = thisComment;
                 }
             });
+            if (highestScoredCommentForSymbol && finalTopCommentIds.indexOf(highestScoredCommentForSymbol.id) === -1) {
+                // console.log(`Will add the highest scoring comment:${highestScoredCommentForSymbol.id} for ${thisSymbolKey} to our final selection of topCommentStats.comments.`)
+                finalTopCommentIds.push(highestScoredCommentForSymbol.id);
+                finalTopComments.push(highestScoredCommentForSymbol);
+            }
         }
-        // Last thing is to sort this final set of topComments descending (totalPoints)
+
+        // 2. Next thing is to sort this final set of topComments descending (totalPoints)
         finalTopComments.sort((commentA, commentB) => {
             return commentB.totalPoints['1Hr'] - commentA.totalPoints['1Hr'];
         });
-        // And trim off the lowest scoring comments (until we have the minimum required comments with symbols)
+
+        // 3. And trim off the lowest scoring comments (until we have the minimum required comments with symbols)
         let topCommentsWithSymbolsCount = 0;
         finalTopComments.some((thisTopComment) => {
             topCommentsClone.comments.push(thisTopComment);
-            if (thisTopComment.topSymbolHigh['1Hr'].key || thisTopComment.topSymbolLow['1Hr'].key) ++topCommentsWithSymbolsCount;
+            if (thisTopComment.topSymbolHigh['1Hr']) ++topCommentsWithSymbolsCount;
             if (topCommentsWithSymbolsCount >= self.minTopCommentsWithSymbols || topCommentsClone.comments.length >= self.maxTopComments) return true; // we have all we need break loop
         });
 
         self.topComments.comments = topCommentsClone.comments;
-        return allUniqueTopComments;
+        return allChangedTopComments;
     }
 
     extractNew2dGramsFromTopComment(newlyPointedWordsForComment, comment, cback) { //alters comment in-place. cback returns an array of all 2dGrams currently in comment.
@@ -884,15 +809,12 @@ class TopCommentsStats {
                     index: [this2dGram.index], // remember that wordRefs use an array for index
                     distance: this2dGram.distance
                 });
-                comment.words[this2dGram.word] = newWordRefObject;
+                comment.words[this2dGram.word] = newWordRefObject; // This comment will be saved at the bottom of refreshTopComments
                 wordRefSavePromises.push(new Promise( (resolve, reject) => {
-                    // Save this word to it's WordToCommentsIndex (creating one if it does not yet exist)
-                    wordModel.addFoundAtTstampForWord(this2dGram.word, comment, self.redisClient, () => { // must do addFoundAtTstampForWord FIRST or else this comment will trigger word recomment logic and points for itself
-                        // This comment will be saved at the bottom of refreshTopComments BUT ONLY if this comment is deemed a top comment (see reducePendingTopComments). For this reason, because we just altered the comment object, and don't know yet if it's going to become a topComment, we must save now too.
-                        self.redisClient.set(`comment:${comment.id}`, commentModel.minimizeForDb(comment), () => {
-                            resolve(); // We can resolve this wordSavePromise without waiting for registerWordToCommentsIndex (which has a forced 5 second delay)
-                            wordModel.registerWordToCommentsIndex(this2dGram.word, comment, self.redisClient);
-                        });
+                    // Add a foundAt tstamp for this word and save this comment to it's WordToCommentsIndex (creating one if it does not yet exist)
+                    wordModel.addFoundAtTstampForWord(this2dGram.word, comment, self.redisClient, () => { // this must be done BEFORE registerWordToCommentsIndex or the foundAt tstamp will be cancelled as dup word by same user.
+                        resolve(); // We can resolve this wordSavePromise without waiting for registerWordToCommentsIndex
+                        wordModel.registerWordToCommentsIndex(this2dGram.word, comment, self.redisClient);
                     });
                 })); // end wordRefSavePromises.push
             }
@@ -930,9 +852,12 @@ class TopCommentsStats {
         const self = this;
         comment.symbols = comment.symbols || [];
         const symbolKeysFromWordRefs = Object.values(comment.words).map(wordRef => wordRef.hasSymbols);
-        const allSymbolKeys = [...new Set(symbolKeysFromWordRefs.flat())]; // remove dups
+        const allSymbolKeys = []; // remove dups
+        if (comment.topSymbolHigh['1Hr']) allSymbolKeys.push(comment.topSymbolHigh['1Hr']);
+        if (comment.topSymbolLow['1Hr']) allSymbolKeys.push(comment.topSymbolLow['1Hr']);
+
         // console.log(`Populating comment:${comment.id} with full symbol objects:`, allSymbolKeys);
-        if (!allSymbolKeys || allSymbolKeys.length === 0) {
+        if (allSymbolKeys.length === 0) {
             // console.log(`A topComment has no symbols: ${comment.body}`);
             if (cback) cback();
             return;
@@ -1228,7 +1153,6 @@ class TopCommentsStats {
                 body: thisTopComment.body,
                 points: thisTopComment.points,
                 totalPoints: thisTopComment.totalPoints,
-                topSymbols: thisTopComment.topSymbols
             };
             summTopComments.push(thisSumm);
         })

@@ -68,11 +68,13 @@ const commentFormatter = {
             });
             // 3. Take our firstIndex and lastIndex to wrap that portion of comment.body in our style wrapper el.
             const spanned2dGramStr = bodySecondHalf.slice(firstIndex, lastIndex + lastIndexWord.length);
-            console.log('2dGram', thisPointedWordRef.word);
-            console.log('spanned 2dGram', spanned2dGramStr);
 
             let underlineOpacity = 0;
-            if (typeof thisPointedWordRef.distance === 'number') underlineOpacity = 0.5-(thisPointedWordRef.distance / spanned2dGramStr.length); //280 for twitter msg length. same as fetchRedditComments.maxCommentLength. *4 to shorten the field of min-max underline opacity
+            if (typeof thisPointedWordRef.distance === 'number') {
+                underlineOpacity = 0.6-(thisPointedWordRef.distance / spanned2dGramStr.length);
+                if (underlineOpacity > 0) underlineOpacity = Math.max(underlineOpacity, .15); // if we don't set a min opacity we lose the viz in some cases
+            }
+
             const leftBracketEl = `<span style="display: inline-block; height: 10px; margin-bottom: -16px; border-left: 4px solid rgba(255, 149, 151, ${underlineOpacity});"></span>`;
             const rightBracketEl = `<span style="display: inline-block; height: 10px; margin-bottom: -16px; border-right: 4px solid rgba(255, 149, 151, ${underlineOpacity});"></span>`;
             formattedBody = formattedBody +
@@ -107,11 +109,11 @@ const commentFormatter = {
     getRenderableSymbolName: (comment) => {
         if (!comment || !comment.topSymbolHigh) return '';
         let topSymbolName = '';
-        if (comment.topSymbolHigh['1Hr'].key) {
+        if (comment.topSymbolHigh['1Hr']) {
             let wordTopSymbolObj;
             comment.symbols.forEach((thisSymbol) => {
                 const thisSymbolKey = `symbol:${thisSymbol.type}:${thisSymbol.symbol}`;
-                if (thisSymbolKey === comment.topSymbolHigh['1Hr'].key) wordTopSymbolObj = thisSymbol;
+                if (thisSymbolKey === comment.topSymbolHigh['1Hr']) wordTopSymbolObj = thisSymbol;
             });
             if (wordTopSymbolObj && wordTopSymbolObj.type !== 'emoji') {
                 topSymbolName = wordTopSymbolObj.name;

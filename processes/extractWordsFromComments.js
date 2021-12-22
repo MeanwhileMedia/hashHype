@@ -69,7 +69,9 @@ class ExtractWordsFromComments {
                     self.preserveSymbolsInCommentBody(comment, () => {
                         self.setStemmedCommentBody(comment, () => {
                             self.extractWordSequences(comment, () => {
-                                self.redisClient.set(`comment:${comment.id}`, commentModel.minimizeForDb(comment));
+                                self.setHighAndLowSymbols(comment, () => {
+                                    self.redisClient.set(`comment:${comment.id}`, commentModel.minimizeForDb(comment));
+                                });
                             });
                         });
                     });
@@ -552,9 +554,9 @@ class ExtractWordsFromComments {
                     // Save the word object to redis
                     self.redisClient.set(redisWordKey, saveWordObject);
 
-                    // Save this word to it's WordToCommentsIndex (creating one if it does not yet exist)
-                    wordModel.addFoundAtTstampForWord(sequenceKey, commentData, self.redisClient, () => { // must do addFoundAtTstampForWord FIRST or else this comment will trigger word recomment logic and points for itself
-                        resolve(); // We can resolve this wordSavePromise without waiting for registerWordToCommentsIndex (which has a forced 5 second delay)
+                    // Add a foundAt tstamp for this word and save this comment to it's WordToCommentsIndex (creating one if it does not yet exist)
+                    wordModel.addFoundAtTstampForWord(sequenceKey, commentData, self.redisClient, () => { // this must be done BEFORE registerWordToCommentsIndex or the foundAt tstamp will be cancelled as dup word by same user.
+                        resolve(); // We can resolve this wordSavePromise without waiting for registerWordToCommentsIndex
                         wordModel.registerWordToCommentsIndex(redisWordKey.replace('word:', ''), commentData, self.redisClient);
                     });
                 }); // end self.redisClient.get(redisWordKey
@@ -565,6 +567,76 @@ class ExtractWordsFromComments {
             if(cback) cback();
         });
     } //end extractWordSequences
+
+    setHighAndLowSymbols(comment, cback) {
+        const self = this;
+        // In hashHype a single comment can only every earn points for a max of 2 symbols. We let those 2 symbols be the most common, and least common symbols found in this comment.
+        // The high and low symbols are set when the comment is made, and they don't change after that. This is to preserve the context in which the comment was originally
+        // made, and it also makes for a less volatile topComment set (where a top symbols value keeps jumping rank in our viz because a comments symbol keeps flip-flopping).
+        const checkedSymbols = []; // a record of which symbols have already been counted so we don't sum the same symbol foundAts more than once.
+        const symbolsFoundAtCounts = {}; // {'1hr': {foo: 234, GME: 9123}, '12hr': etc...}
+        const symbolsFoundAtCountPromises = [];
+        for (let [wordStr, thisWordRef] of Object.entries(comment.words)) {
+            thisWordRef.hasSymbols.forEach((thisSymbolKey) => {
+                if (checkedSymbols.indexOf(thisSymbolKey) !== -1) return;
+                checkedSymbols.push(thisSymbolKey);
+
+                const thisSymbolWordStr = thisSymbolKey.split(':').slice(2).join(':');
+                const foundAtListKey = `word:${thisSymbolWordStr}:foundAt`;
+                symbolsFoundAtCountPromises.push(new Promise( (resolve, reject) => {
+                    self.redisClient.lrange(foundAtListKey, 0, -1, (allFoundAtTstamps) => {
+                        if (!allFoundAtTstamps || !allFoundAtTstamps.length) {
+                            resolve();
+                            return;
+                        }
+                        for (let [timeBucketKey, topSymbolObj] of Object.entries(comment.topSymbolHigh)) {
+                            symbolsFoundAtCounts[timeBucketKey] = symbolsFoundAtCounts[timeBucketKey] || {};
+
+                            const now = Date.now();
+                            let maxAge = 3600000; // 1 hr
+                            if (timeBucketKey === '12Hr') maxAge = 43200000;
+                            if (timeBucketKey === '24Hr') maxAge = 86400000;
+
+                            allFoundAtTstamps.forEach((thisFoundAtTstamp) => { // remember that thisFoundAtTstamp is actually a string
+                                thisFoundAtTstamp = parseInt(thisFoundAtTstamp);
+                                if (comment.foundAt === thisFoundAtTstamp) return; // comment can't earn points for itself (word:${wordRef.word})`);
+                                if(now - maxAge < thisFoundAtTstamp) {
+                                    symbolsFoundAtCounts[timeBucketKey][thisSymbolKey] = symbolsFoundAtCounts[timeBucketKey][thisSymbolKey] || 0;
+                                    symbolsFoundAtCounts[timeBucketKey][thisSymbolKey] = symbolsFoundAtCounts[timeBucketKey][thisSymbolKey] + 1;
+                                }
+                            });
+                        };
+                        resolve();
+                    }); // end self.redisClient.lrange
+                })); // end symbolsFoundAtCountPromises.push
+            }); // end thisWordRef.hasSymbols.forEach
+        }; // end for (let [wordStr, thisWordRef] of Object.entries(comment.words)
+
+        Promise.all(symbolsFoundAtCountPromises).then(() => {
+            // We now have our timebucketed symbolsFoundAtCounts. Loop through and determine high and low symbol for each bucket.
+            for (let [timeBucketKey, thisBucketSymbolsFoundAtCounts] of Object.entries(symbolsFoundAtCounts)) {
+                let highSymbol = {symbolKey: '', count: null};
+                let lowSymbol = {symbolKey: '', count: null};
+                for (let [symbolKey, foundAtCount] of Object.entries(thisBucketSymbolsFoundAtCounts)) {
+                    if (highSymbol.count === null || highSymbol.count < foundAtCount) {
+                        highSymbol = {symbolKey: symbolKey, count: foundAtCount};
+                    }
+                    if (lowSymbol.count === null || lowSymbol.count > foundAtCount) {
+                        lowSymbol = {symbolKey: symbolKey, count: foundAtCount};
+                    }
+                }
+                if (lowSymbol.symbolKey === highSymbol.symbolKey) lowSymbol = {symbolKey: '', count: null};
+                if (highSymbol.count !== null) {
+                    comment.topSymbolHigh[timeBucketKey] = highSymbol.symbolKey
+                }
+                if (lowSymbol.count !== null) {
+                    comment.topSymbolLow[timeBucketKey] = lowSymbol.symbolKey
+                }
+            };
+
+            if(cback) cback();
+        }); // end Promise.all(symbolsFoundAtCountPromises).then
+    }
 
     syncTrainingNotRelevant() {
         // This function gets training:notRelevant from redis (used to ignore word combos found in comments), and adds

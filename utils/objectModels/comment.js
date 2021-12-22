@@ -17,35 +17,30 @@ const commentObjModel = {
             words: props.words || {}, // object with wordRef objects for vals { 'word_!!_1': wordRef1, 'other_!!_word_!!_GME': wordRef2, etc}
             wordAssocs: props.wordAssocs || {}, // {':happy_face:': {assoc: 'http://imgUrl.jpg', type: 'img'}, etc..} - When parsing raw comments, this offers a way to preserve a word association within comment.body to an image, url, etc greater context. When the raw comment is later processed in "extractWordsFromComments" - this data should be transferred to the individual word/symbol redis object, and this property can be deleted from comment object.
             wordsFor2dGram: props.wordsFor2dGram || [], // a record of which words (previously pointed above 0) are valid words to be used in forming 2dGrams for this comment. See topCommentStats.extractNew2dGramsFromTopComment
-            points: {
+            points: props.points || {
                 '1Hr': {}, // {foo_bar: 342, other_word: etc...}
                 '12Hr': {},
                 '24Hr': {},
             },
-            totalPoints: { // summed totals from the above points attr.
+            pointsRecords: props.pointsRecords || {
+                '1Hr': {}, // {foo_bar: [tstamp1, tstamp20], other_word: etc...} this prop is used in topCommentStats during calcTotalPointsForPendingTopComments
+                '12Hr': {},
+                '24Hr': {},
+            },
+            totalPoints: props.totalPoints || { // summed totals from the above points attr.
                 '1Hr': 0,
                 '12Hr': 0,
                 '24Hr': 0,
             },
-            topSymbols: {
-                '1Hr': [], // array of symbol redis keys which topCommentStats has deemed to be the most important symbols on this comment.
-                '12Hr': [],
-                '24Hr': [],
+            topSymbolHigh: props.topSymbolHigh || {
+                '1Hr': null, // string. a symbol redis key
+                '12Hr': null,
+                '24Hr': null,
             },
-            topSymbolHigh: {
-                '1Hr': {}, // {key: 'symbol:stock:GME', points: 536}
-                '12Hr': {},
-                '24Hr': {},
-            },
-            topSymbolLow: {
-                '1Hr': {}, // {key: 'symbol:stock:TSLA', points: 42}
-                '12Hr': {},
-                '24Hr': {},
-            },
-            topSymbolsTotalPoints: {
-                '1Hr': 0, // The sum of topSymbolHigh.points and topSymbolLow.points earned for this comment.
-                '12Hr': 0,
-                '24Hr': 0,
+            topSymbolLow: props.topSymbolLow || {
+                '1Hr': null, // string. a symbol redis key
+                '12Hr': null,
+                '24Hr': null,
             },
         }
 
@@ -61,7 +56,6 @@ const commentObjModel = {
 
         delete commentClone.pendingSymbols; // a temporary prop for extractWOrdsFromComments.preserveSymbolsInCommentBody
         delete commentClone.symbols; // a temporary prop for topCommentStats. is an array of full symbol objects used for rendering into UI.
-        delete commentClone.topSymbolsSorted; // a temporary prop for topCommentStats. is an array of full symbol objects used for rendering into UI.
 
         return commentClone;
     }
