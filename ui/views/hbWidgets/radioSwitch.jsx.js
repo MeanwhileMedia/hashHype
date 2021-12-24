@@ -44,8 +44,8 @@ class RadioSwitch extends React.Component {
         this.state.options.forEach((radioOption) => {
             const isChecked = radioOption.checked || false;
             radioOptions.push(
-                <span className="hbWidgets radioSwitch" onClick={(e) => self.clickedRadioOption.call(self, e)}>
-                    <span className="radioSwitch-button magicScale">
+                <span className="hbWidgets radioSwitch magicScale" onClick={(e) => self.clickedRadioOption.call(self, e)}>
+                    <span className="radioSwitch-button">
                         <input type="radio" id={radioOption.label} name="radio-group" checked={isChecked} />
                         <label for={radioOption.label}> {radioOption.label}</label>
                     </span>

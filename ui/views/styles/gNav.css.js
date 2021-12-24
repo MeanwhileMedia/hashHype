@@ -2,6 +2,11 @@ const styles = {
 
     generate(view) {
 
+        let gNavBackgroundColor = '#fff';
+        if (view.state.customStyleClasses.indexOf('GNav_theme__light') !== -1) {
+            gNavBackgroundColor = 'transparent';
+        }
+
         const css = {
             GNav: {
                 'display': 'flex',
@@ -14,6 +19,7 @@ const styles = {
                 'width': '100vw',
                 'box-sizing': 'border-box',
                 'border-bottom': '1px solid rgb(0 0 0 / 5%)',
+                'background-color': gNavBackgroundColor
             },
             GNav_left: {
                 'display': 'flex',
@@ -47,7 +53,8 @@ const styles = {
                 'position': 'fixed',
                 'right': '0',
                 'bottom': '0',
-                'margin': '1rem'
+                'margin': '1rem',
+                'margin-right': '2rem'
             },
             GNav_bottom_right_ctrls: {
 

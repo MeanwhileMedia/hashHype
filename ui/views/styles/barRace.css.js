@@ -4,8 +4,6 @@ const styles = {
 
         const css = {
             topCommentStats_barRace: {
-                'flex-direction': 'row',
-                'display': 'flex'
             },
 
             topCommentStats_barRace_bars: {
@@ -14,10 +12,13 @@ const styles = {
             },
 
             topCommentStats_barRace_activeCommentInfo: {
+                'box-sizing': 'border-box',
                 'width': '50%',
                 'text-align': 'right',
-                'padding-left': '5rem',
-                'padding-right': '2rem'
+                'padding-left': '4rem',
+                'padding-right': '3rem',
+                'position': 'fixed',
+                'right': '0',
             },
             topCommentStats_barRace_activeCommentInfo_symbolTitle: {
                 'margin-bottom': '4rem',

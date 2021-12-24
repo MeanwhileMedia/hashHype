@@ -23,6 +23,8 @@ class BarRace extends React.Component {
 
         this.barEls = []; // We maintain the same child react components across state changes so that we can animate their style changes (rather than re-instantiation a new child (bar) component during every rerender of this parent)
         this.barElRefs = []; // so this parent can set state to it's children
+
+        utils.registerWindowResizeEvent('checkBarElsForTextSpace', this.checkBarElsForTextSpace.bind(this));
     }
 
     componentDidMount() {
@@ -97,12 +99,7 @@ class BarRace extends React.Component {
         const barElRefs = [];
         if (!self.reducedTopComments.length) return barEls;
 
-        const newRankOnePoints = self.reducedTopComments[0].totalPoints['1Hr'];
-        if (self.rankOnePoints && newRankOnePoints / self.rankOnePoints < .8) {
-            self.rankOnePoints = newRankOnePoints;
-        } else {
-            self.rankOnePoints = Math.max(newRankOnePoints, self.rankOnePoints);
-        }
+        self.getRankOnePointScale();
 
         self.reducedTopComments.forEach((thisTopComment) => { // reducedTopComment is already sorted descending
             const thisBarElRef = React.createRef();
@@ -143,9 +140,9 @@ class BarRace extends React.Component {
         const orphanBarEls = [];
         const orphanTopComments = [];
 
-        self.rankOnePoints = Math.max(self.reducedTopComments[0].totalPoints['1Hr'], self.rankOnePoints);
+        self.getRankOnePointScale();
 
-        self.reducedTopComments.forEach((thisTopComment) => { // reducedTopComment is already sorted descending
+        self.reducedTopComments.forEach((thisTopComment) => { // reducedTopComment is already sorted ascending
             let matchedExistingBarEl = self.barElRefs.find(thisBarRef => {
                 if (!thisBarRef.current.state.topComment) return false;
                 return thisBarRef.current.state.topComment.id === thisTopComment.id;
@@ -172,6 +169,57 @@ class BarRace extends React.Component {
                 updatedBarEls.push(thisBarElRef);
             }
         });
+
+        self.checkBarElsForTextSpace();
+    }
+
+    checkBarElsForTextSpace() {
+        const self = this;
+        self.sortBarElRefs();
+        // This function checks every bar el and determines if the bar isn't wide enough to fit symbol text. If so, text will be place just to the right of the bar.
+        let foundShortBar = false; // If a single bar is found to be short, then all lower bars will also put text outside (for uniformity)
+        self.barElRefs.forEach((thisBarElRef) => { // self.barElRefs are already sorted ascending
+            if (foundShortBar) {
+                thisBarElRef.current.setState({renderTextOutside: true});
+                return;
+            }
+
+            const barState = thisBarElRef.current.state;
+            if (!barState.topComment || !barState.topComment.rank) return;
+            const barEl = document.querySelector(`.topCommentStats_barRace_bar__${barState.topComment.rank}`);
+            const textWrapperEl = document.querySelector(`.topCommentStats_barRace_bar__${barState.topComment.rank} .topCommentStats_barRace_bar_label_text`);
+            if (!barEl || !textWrapperEl) return;
+
+            if (textWrapperEl.getBoundingClientRect().width + utils.curMagicScreenMeasure*3 > barEl.getBoundingClientRect().width) {
+                // bar is to small, move text and change color
+                foundShortBar = true;
+                thisBarElRef.current.setState({renderTextOutside: true});
+                return;
+            }
+            thisBarElRef.current.setState({renderTextOutside: false});
+        });
+    }
+
+    sortBarElRefs() {
+        const self = this;
+        self.barElRefs.sort((barRefA, barRefB) => {
+            let barARank = self.barElRefs.length + 1;
+            let barBRank = self.barElRefs.length + 1;
+            if (barRefA.current.state.topComment) barARank = barRefA.current.state.topComment.rank;
+            if (barRefB.current.state.topComment) barBRank = barRefB.current.state.topComment.rank;
+            return barARank - barBRank;
+        });
+    }
+
+    getRankOnePointScale() {
+        const self = this;
+        const minSpaceUsageForRankOneBar = 0.9; // min percent of parent container the bar must fill. We let it fluctuate within this margin to allow for a more stable chart that isn't constantly scaling based on rank one point changes.
+        const newRankOnePoints = self.reducedTopComments[0].totalPoints['1Hr'];
+        if (self.rankOnePoints && newRankOnePoints / self.rankOnePoints <= minSpaceUsageForRankOneBar) {
+            self.rankOnePoints = newRankOnePoints;
+        } else {
+            self.rankOnePoints = Math.max(newRankOnePoints, self.rankOnePoints);
+        }
     }
 
     restoreActiveCommentSelection() {

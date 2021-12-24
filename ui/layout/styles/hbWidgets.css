@@ -134,8 +134,8 @@
     -ms-user-select: none;
     user-select: none;
     position: relative;
-    padding-left: max(3rem, 30px);
-    margin-right: 1.5rem;
+    padding-left: 2.4rem;
+    margin-right: 2rem;
     cursor: pointer;
 }
 .hbWidgets.radioSwitch [type="radio"]:checked,

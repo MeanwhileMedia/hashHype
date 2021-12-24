@@ -544,16 +544,17 @@ class TopCommentsStats {
                     for (const [thisShortWordStr, pointsForThisWord] of Object.entries(thisComment.points[timeBucketKey])) {
                         if (!pointsForThisWord) continue; // didn't earn points anyway. no need to continue overlap check logic
                         if (thisShortWordStr.length >= thisWordStr.length) continue; // can't be an inner shortWordStr if it's not of shorter length
+
+                        // hashHype rule - we don't make single word symbols take a hit for being part of longer sequences. They get to keep all of their points.
+                        // Not only does this ensure that a comment is properly represented by it's top symbol, but it will save on cpu cycles as we return early.
+                        const shortWord = thisComment.words[thisShortWordStr];
+                        if (shortWord.type === 'word' && shortWord.hasSymbols.length > 0) continue;
+
                         if (thisWordStr.indexOf(thisShortWordStr) === -1) continue; // thisShortWordStr is not a substring
                         if (!thisComment.pointsRecords[timeBucketKey][thisWordStr] || !thisComment.pointsRecords[timeBucketKey][thisShortWordStr]) {
                             // console.warn(`Missing pointsRecords for ${thisWordStr} or ${thisShortWordStr} (${timeBucketKey}) on comment:${thisComment.id} comment.pointsRecords:`, thisComment.pointsRecords);
                             continue;
                         }
-                        const shortWord = thisComment.words[thisShortWordStr];
-
-                        // hashHype rule - we don't make single word symbols take a hit for being part of longer sequences. They get to keep all of their points.
-                        // Not only does this ensure that a comment is properly represented by it's top symbol, but it will save on cpu cycles as we return early.
-                        if (shortWord.type === 'word' && shortWord.hasSymbols.length > 0) continue;
 
                         // console.warn(`Detected overlapping words ${thisWordStr} and ${thisShortWordStr} in comment:${thisComment.id}`);
                         thisComment.pointsRecords[timeBucketKey][thisWordStr].forEach((thisLongWordFoundAtTstamp) => {
