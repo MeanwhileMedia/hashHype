@@ -272,7 +272,12 @@ class TopCommentsStats {
                             if (commentIndex !== -1) pendingWordsToTopComments[thisWord][commentIndex] = comment;
                         });
 
-                        resolve(comment);
+                        // Last, restore auxiliary data to this comment object (like comment.pointsRecords, which is used below in pointing logic auxiliary data is later
+                        // stripped from comment before saving comment, or sending to client.
+                        commentModel.restoreAuxiliaryData(comment, self.redisClient, () => {
+                            resolve(comment);
+                        });
+
                     }); // end self.redisClient.throttle.get(`comment
                 })); // end allCommentGetPromises.push
             }; // end this.pendingCommentIdsToWords for loop
@@ -328,15 +333,17 @@ class TopCommentsStats {
                     allChangedComments.forEach((thisChangedComment) => {
                         allTopCommentCleanupPromises.push(new Promise( (resolve, reject) => {
                             // Save the comment: the comment has new point props. We also want it's saveCount prop to be updated and subjected to db preserve logic. Remember that we cannot use throttled redis commands to utilize dynamic DB functionality.
-                            self.redisClient.set(`comment:${thisChangedComment.id}`, commentModel.minimizeForDb(thisChangedComment), () => {
+                            commentModel.saveCommentObject(thisChangedComment, self.redisClient, () => {
                                 resolve();
                             });
                         }));
                     });
                     // BUT only the final comments which were filtered and landed in self.topComments.comments need to also fetch their full symbol objects
-                    self.topComments.comments.forEach((thisTopComment) => {
+                    self.topComments.comments.forEach((thisTopComment, thisTopCommentIndex) => {
                         allTopCommentCleanupPromises.push(new Promise( (resolve, reject) => {
-                            self.addSymbolsDataToComment(thisTopComment, () => { // To properly render this comment in the topCommentStats UI, we need to populate it's comment.symbols array.
+                            const minimizedTopComment = commentModel.minimizeForDb(thisTopComment); // strip out all the data that we don't need for FE rendering of topCommentStats.
+                            self.topComments.comments[thisTopCommentIndex] = minimizedTopComment;
+                            self.addSymbolsDataToComment(minimizedTopComment, () => { // To properly render this comment in the topCommentStats UI, we need to populate it's comment.symbols array.
                                 resolve();
                             });
                         }));
@@ -515,7 +522,23 @@ class TopCommentsStats {
                     if (!pointsForThisWord) continue;
 
                     //////////
-                    // 1. hashHype rule - We also enforce a rule that no comment can earn points for more than 2 symbols (topSymbolHigh and topSymbolLow).
+                    // 1. hashHype rule - A word sequence can't earn points if it's length is greater than 70% the length of the entire comment body. This blocks comments from
+                    // earning tons of 2dGram points when many users are quoting the same phrase but not adding anything original to it. We only apply this rule to long comments (greater than
+                    // minCommentLengthForMaxWordLengthRule) because there are so many short comments that have key phrases which are understandably most that short comment body.
+                    // I.e: "you know you are a redneck when GME" does not deserve to launch GME to rank 1 comment.
+                    const minCommentLengthForMaxWordLengthRule = 70;
+                    const maxWordSeqLength = 0.6; // a percentage of the length of comment.stemmedBody
+                    if (thisComment.stemmedBody.length >= minCommentLengthForMaxWordLengthRule) {
+                        const wordStringSpaced = thisWordStr.replaceAll('_!!_', ' ');
+                        if (wordStringSpaced.length / thisComment.stemmedBody.length > 0.7) {
+                            console.warn(`Word sequence was too long. Deducting ${thisComment.points[timeBucketKey][thisWordStr]} points for ${thisWordStr}. The word sequence was ${wordStringSpaced.length / thisComment.stemmedBody.length * 100}% of the entire body comment:${thisComment.id}`);
+                            thisComment.points[timeBucketKey][thisWordStr] = 0;
+                            continue;
+                        }
+                    }
+
+                    //////////
+                    // 2. hashHype rule - We also enforce a rule that no comment can earn points for more than 2 symbols (topSymbolHigh and topSymbolLow).
                     const thisWordRef = thisComment.words[thisWordStr];
                     if (thisWordRef.hasSymbols && thisWordRef.hasSymbols.length > 0) {
                         let deductSymbolPoints = 0;
@@ -531,13 +554,13 @@ class TopCommentsStats {
                         });
                         if (deductSymbolPoints > 0) {
                             const correctedPointCount = Math.max(0, thisComment.points[timeBucketKey][thisWordStr] - deductSymbolPoints)
-                            if (deductSymbolPoints !== thisComment.points[timeBucketKey][thisWordStr]) console.warn(`Deducting ${deductSymbolPoints} from ${thisComment.points[timeBucketKey][thisWordStr]} points (${timeBucketKey}) for comment:${thisComment.id} for word:${thisWordStr}`);
+                            // if (deductSymbolPoints !== thisComment.points[timeBucketKey][thisWordStr]) console.warn(`Deducting ${deductSymbolPoints} from ${thisComment.points[timeBucketKey][thisWordStr]} points (${timeBucketKey}) for comment:${thisComment.id} for word:${thisWordStr}`);
                             thisComment.points[timeBucketKey][thisWordStr] = correctedPointCount;
                         }
                     }
 
                     /////////
-                    // 2. hashHype rule - a comment (x) can only earn points for a word at a maximum of once per ms. This ensures that when another user re-comments (y) word combo
+                    // 3. hashHype rule - a comment (x) can only earn points for a word at a maximum of once per ms. This ensures that when another user re-comments (y) word combo
                     // "go_!!_moon_!!_GME" and creates foundAt tstamps for "go_!!_moon_!!_GME", "moon_!!_GME" and "GME", comment x only earns once (for the longest shared sequence).
                     // To enforce this, we store a temporary record called comment.pointsRecords. Here we look at every pointed word, detect shared substrings, and reduce down those
                     // shared substrings by their foundAt tstamp. When shared substrings come from the same comment (y), they all have the same foundAt tstamp.
@@ -795,8 +818,9 @@ class TopCommentsStats {
         } // end function extract2dGramParts
 
         const minTokenClusterLengthFor2dGram = 4;
+        const maxTokenClusterLengthFor2dGram = totalTokenCount;
         let all2dGrams = [];
-        for (let thisN = minTokenClusterLengthFor2dGram; thisN <= totalTokenCount; thisN++) {
+        for (let thisN = minTokenClusterLengthFor2dGram; thisN <= maxTokenClusterLengthFor2dGram; thisN++) {
             all2dGrams = all2dGrams.concat(extract2dGramParts(thisN));
         }
         // console.log('all2dGrams', all2dGrams);
@@ -861,9 +885,7 @@ class TopCommentsStats {
         const self = this;
         comment.symbols = comment.symbols || [];
         const symbolKeysFromWordRefs = Object.values(comment.words).map(wordRef => wordRef.hasSymbols);
-        const allSymbolKeys = []; // remove dups
-        if (comment.topSymbolHigh['1Hr']) allSymbolKeys.push(comment.topSymbolHigh['1Hr']);
-        if (comment.topSymbolLow['1Hr']) allSymbolKeys.push(comment.topSymbolLow['1Hr']);
+        const allSymbolKeys = [...new Set(symbolKeysFromWordRefs.flat())];
 
         // console.log(`Populating comment:${comment.id} with full symbol objects:`, allSymbolKeys);
         if (allSymbolKeys.length === 0) {

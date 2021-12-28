@@ -144,7 +144,7 @@ class Reddit {
         // 1. Discard if comment is too long
         if (rawComment.body.length > this.maxCommentLength) {
             shouldDiscard = true;
-            console.warn(`Comment discarded because its body char count exceeded the max (${rawComment.body.length}/${this.maxCommentLength}): ${rawComment.body}`);
+            // console.warn(`Comment discarded because its body char count exceeded the max (${rawComment.body.length}/${this.maxCommentLength}): ${rawComment.body}`);
             return shouldDiscard;
         }
 

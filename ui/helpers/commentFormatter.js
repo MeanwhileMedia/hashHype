@@ -3,6 +3,8 @@ const commentFormatter = {
 
     formatCommentBody: (comment) => { // returns HTML string
         if (!comment || !comment.body) return '';
+        const tokenBoundaries = `[^A-Za-zА-Яа-я0-9_'’]`; // IF MODIFYING DO A GLOBAL REPLACE. This is set to the same tokenizer used in extractWordsFromComments
+
         let formattedBody = `<div style="position: relative"><span style="display: inline-block; width: 100%;">${comment.body}</span>`;
 
         // 1. We will bold any word sequences which earned points for this comment (NOT word sequence clusers (2dGrams) - they get their own visual treatment below).
@@ -28,7 +30,6 @@ const commentFormatter = {
             if (isOverlapWord) return;
             alreadyBoldedWords.push(thisRawWordSeqStr);
 
-            const tokenBoundaries = `[^A-Za-zА-Яа-я0-9_'’]`; // IF MODIFYING DO A GLOBAL REPLACE. This is set to the same tokenizer used in extractWordsFromComments
             const wordTokenizerRegex = new RegExp(`(${tokenBoundaries}|^)${thisRawWordSeqStr}(${tokenBoundaries}|$)`, 'gm'); // https://regexr.com/6bhjs
             formattedBody = formattedBody +
                 '<span style="position: absolute; top: 0; left: 0; width: 100%; color: rgba(0,0,0,0); z-index: -1;">' +
@@ -41,33 +42,41 @@ const commentFormatter = {
             if (!pointsForWord) continue;
             const thisPointedWordRef = comment.words[wordStr];
             if (thisPointedWordRef.type !== '2dGram') continue;
-            const startAtIndex = thisPointedWordRef.index[0];
-            if (typeof startAtIndex !== 'number') continue;
+            // const startAtIndex = thisPointedWordRef.index[0];
+            // if (typeof startAtIndex !== 'number') continue;
             // Attempt to determine the maximum set of characters within comment body that can represent this 2dGram, then underline all those chars. To do this,
             // 1. Isolate the portion of the string that we know will not include any of this 2dGram using the wordRef.index
-            const bodyFirstHalf = comment.body.slice(0, startAtIndex);
-            const bodySecondHalf = comment.body.slice(startAtIndex);
+            // const bodyFirstHalf = comment.body.slice(0, startAtIndex);
+            // const bodySecondHalf = comment.body.slice(startAtIndex); // now we only need to search bodySecondHalf for words to augment
+            const commentBody = comment.body;
+
             // 2. Condense/reduce all of the rawWords, then find the indexes of the single tokens which occurs first, and last.
             const reducedRawWords = [...new Set(thisPointedWordRef.rawWords.join(' ').split(' '))];
+            let maxPossibleLength = reducedRawWords.join(' ').length; // estimate a max length to help round out edges in our matching logic (like finding the wrong "not" when the correct occurance is inside "can't").
+            if (typeof thisPointedWordRef.distance === 'number') maxPossibleLength = maxPossibleLength + thisPointedWordRef.distance;
             let firstIndex = null;
             let lastIndex = null;
             let lastIndexWord = null;
             const tokenIndexes = {}; // {token1: [2, 5], token2: [3], etc}
             reducedRawWords.forEach((thisRawWord) => {
-                const foundAtIndexes = [...bodySecondHalf.matchAll(new RegExp(thisRawWord, 'g'))].map(a => a.index).sort((a, b) => a - b);
+                const foundAtIndexes = [...commentBody.matchAll(new RegExp(`(${tokenBoundaries}|^)${thisRawWord}(${tokenBoundaries}|$)`, 'g'))].map(a => {
+                    let index = a.index + 1;
+                    if (a.index === 0) index = a.index;
+                    return index;
+                }).sort((a, b) => a - b);
                 tokenIndexes[thisRawWord] = foundAtIndexes;
                 const lowestFoundAtIndex = tokenIndexes[thisRawWord][0];
-                if (firstIndex == null || lowestFoundAtIndex < firstIndex) firstIndex = lowestFoundAtIndex;
+                if (firstIndex === null || lowestFoundAtIndex < firstIndex) firstIndex = lowestFoundAtIndex;
             });
             reducedRawWords.forEach((thisRawWord) => {
                 const lowestFoundAtIndex = tokenIndexes[thisRawWord][0]; // we always use the first occurance, even when searching for lastIndex. This is to keep the 2dGram illust as close to index as possible.
-                if (lastIndex == null || lowestFoundAtIndex > lastIndex) {
+                if (lastIndex === null || (lowestFoundAtIndex > lastIndex && lowestFoundAtIndex - firstIndex <= maxPossibleLength)) {
                     lastIndex = lowestFoundAtIndex;
                     lastIndexWord = thisRawWord;
                 }
             });
             // 3. Take our firstIndex and lastIndex to wrap that portion of comment.body in our style wrapper el.
-            const spanned2dGramStr = bodySecondHalf.slice(firstIndex, lastIndex + lastIndexWord.length);
+            const spanned2dGramStr = commentBody.slice(firstIndex, lastIndex + lastIndexWord.length);
 
             let underlineOpacity = 0;
             if (typeof thisPointedWordRef.distance === 'number') {
@@ -75,11 +84,11 @@ const commentFormatter = {
                 if (underlineOpacity > 0) underlineOpacity = Math.max(underlineOpacity, .15); // if we don't set a min opacity we lose the viz in some cases
             }
 
-            const leftBracketEl = `<span style="display: inline-block; height: 10px; margin-bottom: -16px; border-left: 4px solid rgba(255, 149, 151, ${underlineOpacity});"></span>`;
-            const rightBracketEl = `<span style="display: inline-block; height: 10px; margin-bottom: -16px; border-right: 4px solid rgba(255, 149, 151, ${underlineOpacity});"></span>`;
+            const leftBracketEl = `<span style="display: inline-block; height: 12px; margin-bottom: -1.22rem; margin-left: -4px; border-left: 4px solid rgba(255, 149, 151, ${underlineOpacity});"></span>`;
+            const rightBracketEl = `<span style="display: inline-block; height: 12px; margin-bottom: -1.22rem; margin-right: -4px; border-right: 4px solid rgba(255, 149, 151, ${underlineOpacity});"></span>`;
             formattedBody = formattedBody +
                 '<span style="position: absolute; top: 0; left: 0; width: 100%; color: rgba(0,0,0,0); z-index: -1;">' +
-                bodyFirstHalf + bodySecondHalf.replace(spanned2dGramStr, `<span style="padding-bottom: 6px; border-bottom: 4px solid rgba(255, 149, 151, ${underlineOpacity}); position: relative;">${leftBracketEl}${spanned2dGramStr}${rightBracketEl}</span>`) +
+                commentBody.replace(spanned2dGramStr, `<span style="padding-bottom: 6px; border-bottom: 4px solid rgba(255, 149, 151, ${underlineOpacity}); position: relative;">${leftBracketEl}${spanned2dGramStr}${rightBracketEl}</span>`) +
                 '</span>';
         };
 

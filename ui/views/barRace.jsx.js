@@ -186,11 +186,11 @@ class BarRace extends React.Component {
 
             const barState = thisBarElRef.current.state;
             if (!barState.topComment || !barState.topComment.rank) return;
-            const barEl = document.querySelector(`.topCommentStats_barRace_bar__${barState.topComment.rank}`);
+            const barLabelEl = document.querySelector(`.topCommentStats_barRace_bar__${barState.topComment.rank} .topCommentStats_barRace_bar_label`);
             const textWrapperEl = document.querySelector(`.topCommentStats_barRace_bar__${barState.topComment.rank} .topCommentStats_barRace_bar_label_text`);
-            if (!barEl || !textWrapperEl) return;
+            if (!barLabelEl || !textWrapperEl) return;
 
-            if (textWrapperEl.getBoundingClientRect().width + utils.curMagicScreenMeasure*3 > barEl.getBoundingClientRect().width) {
+            if (textWrapperEl.getBoundingClientRect().width + utils.curMagicScreenMeasure*3 > barLabelEl.getBoundingClientRect().width) {
                 // bar is to small, move text and change color
                 foundShortBar = true;
                 thisBarElRef.current.setState({renderTextOutside: true});

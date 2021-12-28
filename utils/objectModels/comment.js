@@ -16,14 +16,8 @@ const commentObjModel = {
             foundAt: props.foundAt || Date.now(), // when the comment registered to hashHype
             words: props.words || {}, // object with wordRef objects for vals { 'word_!!_1': wordRef1, 'other_!!_word_!!_GME': wordRef2, etc}
             wordAssocs: props.wordAssocs || {}, // {':happy_face:': {assoc: 'http://imgUrl.jpg', type: 'img'}, etc..} - When parsing raw comments, this offers a way to preserve a word association within comment.body to an image, url, etc greater context. When the raw comment is later processed in "extractWordsFromComments" - this data should be transferred to the individual word/symbol redis object, and this property can be deleted from comment object.
-            wordsFor2dGram: props.wordsFor2dGram || [], // a record of which words (previously pointed above 0) are valid words to be used in forming 2dGrams for this comment. See topCommentStats.extractNew2dGramsFromTopComment
             points: props.points || {
                 '1Hr': {}, // {foo_bar: 342, other_word: etc...}
-                '12Hr': {},
-                '24Hr': {},
-            },
-            pointsRecords: props.pointsRecords || {
-                '1Hr': {}, // {foo_bar: [tstamp1, tstamp20], other_word: etc...} this prop is used in topCommentStats during calcTotalPointsForPendingTopComments
                 '12Hr': {},
                 '24Hr': {},
             },
@@ -42,9 +36,83 @@ const commentObjModel = {
                 '12Hr': null,
                 '24Hr': null,
             },
+            // see createAuxiliaryDataDefaults for additional properties that will be available to comment objects when required (via restoreAuxiliaryData)
         }
 
         return commentObj;
+    },
+    createAuxiliaryDataDefaults: function(commentObj) {
+        // Below items are stored in redis separate from the comment object ("auxiliary" data). This function sets defauly values before attempting to recover from redis.
+        const auxiliaryDataDefaults = {
+            wordsFor2dGram: [], // ['GME', 'foo_!!_bar', etc.] - this is a record of all words which have already been accounted for when forming new 2dGrams. Used by topCommentStats extractNew2dGramsFromTopComment
+            pointsRecords: { // Persisted to redis as it's own object at comment:id:pointsRecords
+                '1Hr': {}, // {foo_bar: [tstamp1, tstamp20], other_word: etc...} this prop is used in topCommentStats during calcTotalPointsForPendingTopComments
+                '12Hr': {},
+                '24Hr': {},
+            },
+        }
+
+        return Object.assign(commentObj, auxiliaryDataDefaults);
+    },
+
+    restoreAuxiliaryData: function(commentObj, redisClient, cback) {
+        commentObjModel.createAuxiliaryDataDefaults(commentObj);
+        commentObjModel.getPointsRecords(commentObj, redisClient, () => {
+            commentObjModel.getWordsFor2dGram(commentObj, redisClient, () => {
+                if (cback) cback(commentObj);
+            });
+        });
+    },
+    saveAuxiliaryData: function(commentObj, redisClient, cback) {
+        commentObjModel.savePointsRecords(commentObj, redisClient, () => {
+            commentObjModel.saveWordsFor2dGram(commentObj, redisClient, () => {
+                if (cback) cback(commentObj);
+            });
+        });
+    },
+
+    getPointsRecords: function(commentObj, redisClient, cback){
+        redisClient.get(`comment:${commentObj.id}:pointsRecords`, (commentPointsRecords) => {
+            if (commentPointsRecords) commentObj.pointsRecords = commentPointsRecords;
+            if (cback) cback(commentObj);
+        });
+    },
+    savePointsRecords: function(commentObj, redisClient, cback){
+        if (!commentObj.pointsRecords) {
+            // console.warn(`Can't save pointsRecords because it does not exist on live comment:${commentObj.id}`);
+            if (cback) cback(commentObj);
+            return;
+        }
+        if (Object.values(commentObj.pointsRecords).map(thisTimeBucket => Object.keys(thisTimeBucket)).flat().length === 0) {
+            // console.warn(`Won't save pointsRecords because it is empty on live comment:${commentObj.id}`);
+            if (cback) cback(commentObj);
+            return;
+        }
+        redisClient.set(`comment:${commentObj.id}:pointsRecords`, commentObj.pointsRecords, () => {
+            if (cback) cback(commentObj);
+        });
+    },
+
+    getWordsFor2dGram: function(commentObj, redisClient, cback){
+        redisClient.get(`comment:${commentObj.id}:wordsFor2dGram`, (commentWordsFor2dGram) => {
+            if (commentWordsFor2dGram) commentObj.wordsFor2dGram = commentWordsFor2dGram;
+            if (cback) cback(commentObj);
+        });
+    },
+    saveWordsFor2dGram: function(commentObj, redisClient, cback){
+        if (!commentObj.wordsFor2dGram) {
+            // console.warn(`Can't save wordsFor2dGram because it does not exist on live comment:${commentObj.id}`);
+            if (cback) cback(commentObj);
+            return;
+        }
+        if (commentObj.wordsFor2dGram.length === 0) {
+            // console.warn(`Won't save wordsFor2dGram because it is empty on live comment:${commentObj.id}`);
+            if (cback) cback(commentObj);
+            return;
+        }
+        redisClient.set(`comment:${commentObj.id}:wordsFor2dGram`, commentObj.wordsFor2dGram, () => {
+            if (cback) cback(commentObj);
+        });
     },
 
     minimizeForDb: function(commentObj){
@@ -56,9 +124,21 @@ const commentObjModel = {
 
         delete commentClone.pendingSymbols; // a temporary prop for extractWOrdsFromComments.preserveSymbolsInCommentBody
         delete commentClone.symbols; // a temporary prop for topCommentStats. is an array of full symbol objects used for rendering into UI.
+        delete commentClone.pointsRecords; // aux data. a temp prop for topCommentStats pointing logic. Persisted to redis as it's own object at comment:id:pointsRecords
+        delete commentClone.wordsFor2dGram; // aux data. a temp record of all words which have already been accounted for when forming new 2dGrams. Used by topCommentStats extractNew2dGramsFromTopComment
+        delete commentClone.wordAssocs;
 
         return commentClone;
-    }
+    },
+
+    saveCommentObject: function(commentObj, redisClient, cback) {
+        commentObjModel.saveAuxiliaryData(commentObj, redisClient, () => {
+            const minimizedCommentObj = commentObjModel.minimizeForDb(commentObj);
+            redisClient.set(`comment:${commentObj.id}`, minimizedCommentObj, () => {
+                if (cback) cback(commentObj);
+            });
+        });
+    },
 
 }; // end commentObjModel
 

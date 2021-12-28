@@ -189,7 +189,7 @@ const wordObjModel = {
             // 1. Clean up the wordToCommentsIndex sorted set first
             redisClient.zremrangebyscore(thisSortedSetKey, 0, maxAge, (itemsRemovedCount) => {
                 if (itemsRemovedCount === 0) return;
-                console.log(`Removed ${itemsRemovedCount} items from redis sorted list: ${thisSortedSetKey}`);
+                // console.warn(`Removed ${itemsRemovedCount} items from redis sorted list: ${thisSortedSetKey}`);
             });
         });
     },
@@ -207,7 +207,7 @@ const wordObjModel = {
                 });
                 if (trimStart === 0) return;
                 redisClient.ltrim(thisListKey, trimStart, -1);
-                console.log(`Trimmed ${trimStart} items from redis list: ${thisListKey}`);
+                // console.warn(`Trimmed ${trimStart} items from redis list: ${thisListKey}`);
             });
         });
     }

@@ -70,7 +70,7 @@ class ExtractWordsFromComments {
                         self.setStemmedCommentBody(comment, () => {
                             self.extractWordSequences(comment, () => {
                                 self.setHighAndLowSymbols(comment, () => {
-                                    self.redisClient.set(`comment:${comment.id}`, commentModel.minimizeForDb(comment));
+                                    commentModel.saveCommentObject(comment, self.redisClient);
                                 });
                             });
                         });

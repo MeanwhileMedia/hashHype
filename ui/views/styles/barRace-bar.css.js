@@ -14,7 +14,7 @@ const styles = {
         if (view.state.renderTextOutside) {
             if (view.barTextElRef.current) {
                 textWrapperEl_right = ((view.barTextElRef.current.getBoundingClientRect().width + utils.curMagicScreenMeasure*1.5) * -1)+'px';
-                textWrapperEl_color = 'rgb(0, 0, 0)';
+                textWrapperEl_color = 'rgba(0, 0, 0, 0.7)';
             }
         }
 
@@ -30,17 +30,17 @@ const styles = {
             topCommentStats_barRace_bar__active: {
                 'border': '4px solid rgba(255, 255, 255, .6)',
                 'border-left': '0',
-                'border-right': '1rem solid rgba(255, 255, 255, .6)',
+                'border-right': '1.2rem solid rgba(255, 255, 255, .6)',
+                'transition': 'border .2s ease, margin-top .2s ease',
                 'margin-top': '-4px',
             },
             topCommentStats_barRace_bar_label: {
                 'font-size': '3.5rem',
                 'text-align': 'right',
                 'height': '100%',
-                'box-sizing': 'border-box',
             },
             topCommentStats_barRace_bar__active_label: {
-                'transition': 'border .2s ease',
+                // 'transition': 'border .2s ease',
                 'border-right': '0.24rem solid rgb(255, 255, 255)',
             },
 
