@@ -520,6 +520,7 @@ class TopCommentsStats {
                 thisComment.totalPoints[timeBucketKey] = 0;
                 for (const [thisWordStr, pointsForThisWord] of Object.entries(thisComment.points[timeBucketKey])) {
                     if (!pointsForThisWord) continue;
+                    const thisWordRef = thisComment.words[thisWordStr];
 
                     //////////
                     // 1. hashHype rule - A word sequence can't earn points if it's length is greater than 70% the length of the entire comment body. This blocks comments from
@@ -530,8 +531,11 @@ class TopCommentsStats {
                     const maxWordSeqLength = 0.6; // a percentage of the length of comment.stemmedBody
                     if (thisComment.stemmedBody.length >= minCommentLengthForMaxWordLengthRule) {
                         const wordStringSpaced = thisWordStr.replaceAll('_!!_', ' ');
-                        if (wordStringSpaced.length / thisComment.stemmedBody.length > 0.7) {
-                            console.warn(`Word sequence was too long. Deducting ${thisComment.points[timeBucketKey][thisWordStr]} points for ${thisWordStr}. The word sequence was ${wordStringSpaced.length / thisComment.stemmedBody.length * 100}% of the entire body comment:${thisComment.id}`);
+                        let wordStringLength = wordStringSpaced.length;
+                        if (typeof thisWordRef.distance === 'number') wordStringLength = wordStringLength + thisWordRef.distance;
+                        const wordStringPercOfBody = wordStringLength / thisComment.stemmedBody.length;
+                        if (wordStringPercOfBody > 0.7) {
+                            // console.warn(`Word sequence was too long. Deducting ${thisComment.points[timeBucketKey][thisWordStr]} points for ${thisWordStr}. The word sequence spanned ${wordStringPercOfBody * 100}% of the entire body comment:${thisComment.id}`);
                             thisComment.points[timeBucketKey][thisWordStr] = 0;
                             continue;
                         }
@@ -539,7 +543,6 @@ class TopCommentsStats {
 
                     //////////
                     // 2. hashHype rule - We also enforce a rule that no comment can earn points for more than 2 symbols (topSymbolHigh and topSymbolLow).
-                    const thisWordRef = thisComment.words[thisWordStr];
                     if (thisWordRef.hasSymbols && thisWordRef.hasSymbols.length > 0) {
                         let deductSymbolPoints = 0;
                         thisWordRef.hasSymbols.forEach((thisSymbolKey) => {
@@ -578,6 +581,11 @@ class TopCommentsStats {
                             // console.warn(`Missing pointsRecords for ${thisWordStr} or ${thisShortWordStr} (${timeBucketKey}) on comment:${thisComment.id} comment.pointsRecords:`, thisComment.pointsRecords);
                             continue;
                         }
+
+                        // JWW stopping -
+                        // 1. what about 2dGrams "ha been go up" and "been go up all" which can both score together because technically neither is a substring of the other? Do we work this
+                        // into point deduction logic or extractNew2dGramsFromTopComment. Eliminate 2dGrams with index+distance overlap?
+                        // 2. words continue to dominate points for topComments (2dGrams don't surface as often as expected). Should we consider a rule for max words? a high/low scenario like for symbols?
 
                         // console.warn(`Detected overlapping words ${thisWordStr} and ${thisShortWordStr} in comment:${thisComment.id}`);
                         thisComment.pointsRecords[timeBucketKey][thisWordStr].forEach((thisLongWordFoundAtTstamp) => {
@@ -834,12 +842,23 @@ class TopCommentsStats {
             // add wordRef to comment
             if (!comment.words[this2dGram.word]) { // first check if already exists
                 // console.log(`comment:${comment.id} earned a new 2dGram: ${this2dGram.word}`)
+
+                // Now we must also establish rawIndex for this 2dGram using the combined rawWords
+                let rawIndex = null;
+                this2dGram.rawWords.forEach((thisRawWordSeq) => {
+                    const thisRawIndex = comment.body.indexOf(thisRawWordSeq);
+                    if (thisRawIndex === -1) return;
+                    // For 2dGrams, we will only ever have 1 index and rawIndex. For rawIndex, we are going to take the index of the first rawWord occurance.
+                    if (rawIndex === null || rawIndex > thisRawIndex) rawIndex = thisRawIndex;
+                });
+
                 const newWordRefObject = wordModel.createWordRefObject({
                     type: '2dGram',
                     word: this2dGram.word,
                     rawWords: this2dGram.rawWords,
                     hasSymbols: this2dGram.hasSymbols,
                     index: [this2dGram.index], // remember that wordRefs use an array for index
+                    rawIndex: [rawIndex],
                     distance: this2dGram.distance
                 });
                 comment.words[this2dGram.word] = newWordRefObject; // This comment will be saved at the bottom of refreshTopComments

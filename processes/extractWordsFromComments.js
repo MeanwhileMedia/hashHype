@@ -1,3 +1,4 @@
+import util from 'util';
 import natural from 'natural';
 import {parse} from 'node-html-parser';
 import urlRegex from 'url-regex';
@@ -16,12 +17,16 @@ events.EventEmitter.defaultMaxListeners = Infinity;
 
 const argv = yargs(process.argv.slice(2)).argv;
 
+
 const naturalWordTokenizer = new natural.WordTokenizer(); // is object (naturalWordTokenizer.tokenize(string)
-const naturalNGrams = natural.NGrams; // is object (naturalNGrams.ngrams(string or array)) - Can runs through a tokenizer when passed a string.
-naturalNGrams.setTokenizer(naturalWordTokenizer);
-const naturalStemmer = natural.PorterStemmer; // is object (naturalStemmer.stem(string))
 const naturalWordTokenizerPreserveContractions = new natural.RegexpTokenizer({pattern: /[^A-Za-zА-Яа-я0-9_'’]/}); // IF MODIFYING TO A GLOBAL REPLACE. a slightly modified natural WordTokenizer which adds "'" to non-split chars. https://regexr.com/69idj  https://github.com/NaturalNode/natural/blob/master/lib/natural/tokenizers/regexp_tokenizer.js#L86
+
+const naturalNGrams = natural.NGrams; // is object (naturalNGrams.ngrams(string or array)) - Can runs through a tokenizer when passed a string.
+naturalNGrams.setTokenizer(naturalWordTokenizerPreserveContractions);
+
+const naturalStemmer = natural.PorterStemmer; // is object (naturalStemmer.stem(string))
 const naturalNormalizer = natural.normalize; // is funcion (naturalNormalizer(array or string))
+
 
 const nodeHtmlParser = parse; // because their naming sucks
 
@@ -94,13 +99,12 @@ class ExtractWordsFromComments {
             console.warn(`Could not html parse comment.originalBody in comment:${comment.id}`, comment.originalBody, e);
             return; // we can't keep this comment if it fails our parsing routing. No cback called.
         }
-        comment.body = sanitizedBody;
+        comment.body = sanitizedBody.replaceAll("’", "'"); // we only need one type of apostrophe
         // console.log(`Comment body: ${comment.body}`);
 
         ///////////////
-        // 2. Now we will normalize by expanding contractions so it doesn't trip up our word tokenizer.
+        // 2. Now we will normalize by expanding contractions and any other steps necc to make different word variations as uniform as possible
         comment.normalizedBody = `${comment.body}`;
-        comment.normalizedBody = comment.normalizedBody.replaceAll("’", "'"); // naturalNormalizer only expands contractions which use '
         let bodyTokens = naturalWordTokenizerPreserveContractions.tokenize(comment.normalizedBody);
         const normalizedBodyTokens = [];
         bodyTokens.forEach((thisToken) => {
@@ -127,7 +131,7 @@ class ExtractWordsFromComments {
 
         bodyTokens.forEach((thisToken) => {
             const thisStemmedToken = self.stemToken(thisToken);
-            if (thisStemmedToken) stemmedBodyTokens.push(naturalStemmer.stem(thisToken));
+            if (thisStemmedToken) stemmedBodyTokens.push(thisStemmedToken);
         });
         comment.stemmedBody = stemmedBodyTokens.join(' ');
         // console.log(`Comment stemmedBody body: ${comment.stemmedBody}`);
@@ -439,8 +443,8 @@ class ExtractWordsFromComments {
         //         stemmed: ['jim', 'cramer'] // same bigram after stemmed too
         //     },
         //     { // we currently only save singleWordSymbols/bigrams/trigrams to redis, but since a tokenized sequence is often shortened after stemming, our token sequences will include all the way up to 6 tokens.
-        //         tokenized: ['First', 'in', 'his', 'bowls'],
-        //         stemmed: ['first', 'bowl']
+        //         tokenized: ['First', 'in', 'his', 'bowls', "isn't"], // contractions are preserved so they can be searched for against comment body later (like in UI point illustration rendering)
+        //         stemmed: ['first', 'bowl', 'not'] // contractions are normalized during stemming
         //     },
         //     {
         //         tokenized: ['a', 'first', 'in', 'bowling'],
@@ -453,26 +457,33 @@ class ExtractWordsFromComments {
         const maxNgram = 3; // We only save word sequences to redis up to 3 words max (stemmed)
         const tokensToStems = [];
         [1,2,3,4,5,6].forEach((thisN) => {
-            const theseTokenSets = naturalNGrams.ngrams(commentData.normalizedBody, thisN);
+            const theseTokenSets = naturalNGrams.ngrams(commentData.body, thisN); // naturalNGrams.ngrams has tokenized BUILT IN and preserves contractions. We run nGrams against commentData.body because contractions have already been expanded in comment.normalizedBody
             theseTokenSets.forEach((thisTokenSet) => {
-                // const tokensStemmed = naturalStemmer.tokenizeAndStem(thisTokenSet.join(' '));
                 const tokensStemmed = [];
                 thisTokenSet.forEach((thisToken) => {
-                    const thisStemmedToken = self.stemToken(thisToken);
-                    if (thisStemmedToken) tokensStemmed.push(thisStemmedToken);
+                    let thisNormalizedToken = [thisToken]; // naturalNormalizer returns an array.
+                    if (Number.isNaN(parseInt(thisToken))) { // don't try to expand contractions when toekn can be interpreted as a number (i.e. "it was in the 100's")
+                        thisNormalizedToken = naturalNormalizer(thisToken);  // naturalNormalizer returns an array. JWW stopping - this doesn't work on "y'all"
+                    }
+
+                    thisNormalizedToken.forEach((thisNormalizedTokenPart) => {
+                        const thisStemmedToken = self.stemToken(thisNormalizedTokenPart);
+                        if (thisStemmedToken) tokensStemmed.push(thisStemmedToken);
+                    });
                 });
 
                 if (!tokensStemmed.length) return;
                 tokensToStems.push({
                     tokenized: thisTokenSet,
-                    stemmed: tokensStemmed
+                    stemmed: tokensStemmed,
                 });
             })
         });
+        // if (commentData.body.indexOf("'") !== -1) console.log(commentData.body,  util.inspect(tokensToStems, {depth: 5, colors: true}))
 
         // Now transform the above object into the following:
         // {
-        //     'first_bowl': ['First in his bowl', 'First is the bowl and', 'A First is in bowling', ..etc],
+        //     'first_bowl': ['First in his bowl', "First is the bowl and isn't", 'A First is in bowling', ..etc],
         //     etc...
         // }
         // This reduces down all the token sequences into uniform stem keys (these stem keys (sequenceKey) are used when setting/getting word: objects to redis)
@@ -483,8 +494,10 @@ class ExtractWordsFromComments {
             reducedTokensToStems[sequenceKey] = reducedTokensToStems[sequenceKey] || [];
             reducedTokensToStems[sequenceKey].push(thisTokenToStem.tokenized.join(' '));
         });
-        //////////////////
+        if (commentData.normalizedBody.indexOf("'") !== -1) console.log(commentData.body,  util.inspect(reducedTokensToStems, {depth: 5, colors: true}))
 
+
+        ///////////////
         // Now that we reduced comment body to token sequences, loop through and restore symbols (from symbolUIDs), pass through isDiscardWord, and save all to redis as new words objects with accompanying wordToComments and foundAt indexes
         const pendingSymbolUids = Object.keys(commentData.pendingSymbols);
         const wordSavePromises = [];
@@ -521,12 +534,20 @@ class ExtractWordsFromComments {
             // Check if this word should be discard from relevancy training or by other rules.
             if ( self.isDiscardWord(sequenceKey, wordType, symbolsInWord, stemSequence) ) continue;
 
-            // Determine the index(es) of this word sequence within comment body. This is saved in our wordRef object, attached to the comment.
-            const indexesOfWordInComment = [];
+            // Determine the index(es) of this word within comment.stemmedBody. This is saved in our wordRef object, attached to the comment. Used in forming 2dGrams later.
+            let indexesOfWordInStemmedBody = [];
             let searchForWordStr = stemSequence.join(' ');
             const matches = commentData.stemmedBody.matchAll(new RegExp(searchForWordStr,'g'));
-            for (const match of matches) indexesOfWordInComment.push(match.index);
+            for (const match of matches) indexesOfWordInStemmedBody.push(match.index);
+            // ALSO determine the index(es) of each raw word seq associated with this word within comment.body. These indexes are used to search for a word within comment.body later (like when applying point viz to readable comment body in UI)
+            let indexesOfWordInRawBody = [];
+            allRawTokenSequences.forEach((thisRawTokensSeq) => {
+                const matches = commentData.body.matchAll(new RegExp(thisRawTokensSeq,'g'));
+                for (const match of matches) indexesOfWordInRawBody.push(match.index);
+            });
+            indexesOfWordInRawBody = [...new Set(indexesOfWordInRawBody)]; // remove dups
 
+            // Create the word and wordRef objects
             const newWordObject = wordModel.createWordObject({
                 type: wordType,
                 value: stemSequence, // sequence array - NOT stringified
@@ -539,7 +560,8 @@ class ExtractWordsFromComments {
                 rawWords: allRawTokenSequences,
                 type: wordType,
                 hasSymbols: symbolsInWord,
-                index: indexesOfWordInComment
+                index: indexesOfWordInStemmedBody,
+                rawIndex: indexesOfWordInRawBody
             });
             commentData.words[sequenceKey] = wordRef;
 

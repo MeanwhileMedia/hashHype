@@ -46,8 +46,9 @@ const wordObjModel = {
             type: props.type, // 'word', 'bigram', 'trigram', '2dGram'
             rawWords: props.rawWords || [], // when rawWords is stored on a wordRef - it is an array of ONLY the unstemmed word sequence strings (space delimeted) which are found in THIS comment.
             hasSymbols: props.hasSymbols || [], // array of symbol object keys ['symbol:stock:gme', etc]
-            index: props.index || [], // array of integer indexes which identify this words location(s) within the comment.body
-            distance: distance, // a measure of how far apart each word is within this multi word sequence within this comment (2dGrams only, null otherwise)
+            index: props.index || [], // array of integer indexes which identify this word (props.word) location(s) within the comment.stemmedBody - used for generating 2dGrams
+            rawIndex: props.rawIndex || [], // array of integer indexes which identify this words (props.rawWords) location(s) within the comment.body - used for pointing viz
+            distance: distance, // a summed measure of how far apart each word is within this multi word sequence within comment.stemmedBody (2dGrams only, null otherwise)
             pointVal: pointVal, // the result from topCommentStats.getWordPointCount. Stored/cached on the wordRef object.
         };
 

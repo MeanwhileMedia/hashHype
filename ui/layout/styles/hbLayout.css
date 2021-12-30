@@ -17,6 +17,10 @@ body {
     font-weight: 400;
 }
 
+#main {
+    overflow-x: hidden;
+}
+
 h2, .heading2 {
     font-size: min(4rem, 8vw);
     margin: 0px;

@@ -126,7 +126,7 @@ class Reddit {
         const self = this;
         console.log(`Now storing ${commentObjects.length} comments to redis...`);
         commentObjects.forEach((comment) => {
-            self.redisClient.set(`rawComment:${comment.id}`, commentModel.minimizeForDb(comment));
+            self.redisClient.set(`rawComment:${comment.id}`, comment);
         });
     }
 

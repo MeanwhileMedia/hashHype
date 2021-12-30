@@ -12,6 +12,7 @@ import article from '/node_modules/@material-icons/article.svg';
 import pie_chart from '/node_modules/@material-icons/pie_chart.svg';
 import leaderboard from '/node_modules/@material-icons/leaderboard.svg';
 import place from '/node_modules/@material-icons/place.svg';
+import info from '/node_modules/@material-icons/info.svg';
 
 class Icon extends React.Component {
     constructor(props) {
@@ -33,7 +34,8 @@ class Icon extends React.Component {
             article,
             pie_chart,
             leaderboard,
-            place
+            place,
+            info
         };
     }
 

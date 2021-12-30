@@ -9,7 +9,15 @@ const styles = {
                 'border-radius': '1rem',
                 'padding': '2rem',
                 'margin': '2rem auto',
-                'margin-top': '0'
+                'margin-top': '0',
+                'overflow': 'hidden',
+                'transition': 'height .2s ease, padding .2s ease, margin .2s ease'
+            },
+            msgBox__hidden: {
+                'transition': 'none',
+                'height': '0',
+                'padding': '0',
+                'margin': '0'
             },
             msgBox_title: {
                 'margin-bottom': '0.5rem'

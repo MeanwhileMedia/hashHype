@@ -23,11 +23,6 @@ const styles = {
                 'word-break': 'break-word',
                 'text-align': 'right',
             },
-            newsColumns_right_body: {
-                'overflow-y': 'auto',
-                'max-height': '50vh',
-                'padding-bottom': '0.5rem'
-            },
             newsColumns_right_author: {
                 'font-weight': '400',
                 'font-style': 'italic',

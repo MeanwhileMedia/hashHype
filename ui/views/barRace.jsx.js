@@ -2,6 +2,7 @@ import React from '/node_modules/react';
 import Radium from '/node_modules/radium';
 import Icon from './hbWidgets/icon.jsx.js'
 import BarRaceBar from './barRace-bar.jsx.js'
+import TopCommentBodyAndPoints from './topCommentBodyAndPoints.jsx.js'
 import commentFormatter from '../helpers/commentFormatter.js'
 import utils from '../helpers/utils.js'
 
@@ -15,7 +16,8 @@ class BarRace extends React.Component {
             showOnlyTopCommentsWithSymbols: true, // don't display an comments on our wheel unless they are associated with at least one symbol
             showTopCommentSymbolsOnlyOnce: true, // our server will send a max of 2 comments to represent any single symbol. Set this true and we will only render the higher scoring one. Will only apply when showOnlyTopCommentsWithSymbols == true.
             showTopCommentSymbolTypes: ['stock'], // can be set to one or more of strings equaling a symbol.type
-            topCommentsLastUpdated: this.props.topCommentsLastUpdated || Date.now()
+            topCommentsLastUpdated: this.props.topCommentsLastUpdated || Date.now(),
+            expandPointsInfo: false // to pass along to TopCommentBodyAndPoints (the points explainer)
         };
 
         this.reducedTopComments = []; // the comments after passing through above state filters
@@ -42,6 +44,7 @@ class BarRace extends React.Component {
         }
         this.restoreActiveCommentSelection();
         if (this.state.topCommentsLastUpdated !== this.props.topCommentsLastUpdated) this.setState({topCommentsLastUpdated: this.props.topCommentsLastUpdated});
+        if (this.props.focusedTopComment && prevProps.focusedTopComment && this.props.focusedTopComment.id !== prevProps.focusedTopComment.id) this.setState({expandPointsInfo: false}); // comment was changed, collapse the points info msgBox
     }
 
     reduceTopComments() {
@@ -261,22 +264,34 @@ class BarRace extends React.Component {
         const css = styles.generate(self);
 
         const topSymbolName = commentFormatter.getRenderableSymbolName(self.props.focusedTopComment);
-        const formattedBody = commentFormatter.formatCommentBody(self.props.focusedTopComment);
+
         return (
             <div className="topCommentStats_barRace_activeComment" style={css.topCommentStats_barRace_activeCommentInfo}>
                 <h6><span style={{'opacity': '0.25'}}>Rank:</span> {commentFormatter.getNumberOrdinal(self.props.focusedTopComment.rank)}</h6>
                 <h2 style={css.topCommentStats_barRace_activeCommentInfo_symbolTitle} dangerouslySetInnerHTML={{ __html: topSymbolName }}></h2>
                 <h6 style={{'opacity': '0.25'}}>Top Comment:</h6>
-                <h5 style={css.topCommentStats_barRace_activeCommentInfo_bodyText} dangerouslySetInnerHTML={{ __html: formattedBody }}></h5>
+                <TopCommentBodyAndPoints
+                    topComment={self.props.focusedTopComment}
+                    expandPointsInfo={self.state.expandPointsInfo}
+                />
                 <span style={css.topCommentStats_barRace_activeCommentInfo_author}>@{self.props.focusedTopComment.author.name || ''}</span>
-                <div style={css.topCommentStats_barRace_activeCommentInfo_actionBtn}>
-                    <button className="button__sev1 button__light" onClick={self.props.gNav.showSetTrendActionModal.bind(self.props.gNav)}>
-                        <Icon iconName="data_saver_on" height="100%" />
-                        Action
-                    </button>
+                <div style={css.topCommentStats_barRace_activeCommentInfo_btns}>
+                    <span style={css.topCommentStats_barRace_activeCommentInfo_infoBtn} onClick={self.togglePointsInfo.bind(self)}>
+                        <Icon iconName="info" height="100%" />
+                    </span>
+                    <span style={css.topCommentStats_barRace_activeCommentInfo_actionBtn}>
+                        <button className="button__sev1 button__light" onClick={self.props.gNav.showSetTrendActionModal.bind(self.props.gNav)}>
+                            <Icon iconName="data_saver_on" height="100%" />
+                            Action
+                        </button>
+                    </span>
                 </div>
             </div>
         )
+    }
+
+    togglePointsInfo() {
+        this.setState({expandPointsInfo: !this.state.expandPointsInfo})
     }
 
     render() {

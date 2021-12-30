@@ -1,4 +1,5 @@
 import React from '/node_modules/react';
+import TopCommentBodyAndPoints from './topCommentBodyAndPoints.jsx.js'
 import commentFormatter from '../helpers/commentFormatter.js'
 import styles from './styles/spinWheel-newsColumns.css.js';
 
@@ -26,12 +27,9 @@ class SpinWheelNewsColumns extends React.Component {
             );
         }
 
-        const formattedCommentBody = commentFormatter.formatCommentBody(thisView.props.focusedTopComment);
         const showComment = (
             <>
-                <h5>
-                    <span style={css.newsColumns_right_body} dangerouslySetInnerHTML={{ __html: formattedCommentBody }} />
-                </h5>
+                <TopCommentBodyAndPoints topComment={thisView.props.focusedTopComment}/>
                 {topSymbolName &&
                     <span style={css.newsColumns_right_author}>@{thisView.props.focusedTopComment.author.name || ''}</span>
                 }
