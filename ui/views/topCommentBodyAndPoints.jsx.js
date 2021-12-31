@@ -1,6 +1,8 @@
 import React from '/node_modules/react';
 import Radium from '/node_modules/radium';
 import MsgBox from './msgBox.jsx.js'
+import Icon from './hbWidgets/icon.jsx.js'
+
 import utils from '../helpers/utils.js'
 import commentFormatter from '../helpers/commentFormatter.js'
 
@@ -9,7 +11,14 @@ import styles from './styles/topCommentBodyAndPoints.css.js';
 class TopCommentBodyAndPoints extends React.Component {
     constructor(props) {
         super(props);
+
+        this.state = {
+            activePointsInfoWordIndex: -1 // set to -1 and the pointsInfo el will show summary text. Otherwise it shows info for the wordRef at this index in this.pointedWordRefs
+        };
+        this.pointedWordRefs = [];
+
         this.tokenBoundaries = `[^A-Za-zА-Яа-я0-9_'’]`; // IF MODIFYING DO A GLOBAL REPLACE. This is set to the same tokenizer used in extractWordsFromComments
+        this.uid = 1; // just an incremented uid used associate dom elements with wordRefs
     }
 
     highlightCommentBody() { // Adds underlines and other illustration to show why a comment body has value/points.
@@ -20,7 +29,7 @@ class TopCommentBodyAndPoints extends React.Component {
 
         const highlightedCommentBody = (
             <div style={css.topCommentBodyAndPoints_bodyLayers}>
-                <span style={css.topCommentBodyAndPoints_bodyLayer__primary}>{self.renderEmojisInBody(comment.body)}</span>
+                <span className="topCommentBodyAndPoints_bodyLayer topCommentBodyAndPoints_bodyLayer__primary" style={css.topCommentBodyAndPoints_bodyLayer__primary}>{self.renderEmojisInBody(comment.body)}</span>
                 {self.getHighlightedPointWordEls()}
                 {self.getHighlighted2dGramEls()}
             </div>
@@ -36,38 +45,39 @@ class TopCommentBodyAndPoints extends React.Component {
         if (!comment || !comment.body) return null;
         const css = styles.generate(self);
 
-        let boldTheseWordSeqs = [];
-        for (let [wordStr, pointsForWord] of Object.entries(comment.points['1Hr'])) {
-            if (!pointsForWord) continue;
-            const thisPointedWordRef = comment.words[wordStr];
-            // if (thisPointedWordRef.type !== '2dGram') boldTheseWordSeqs = boldTheseWordSeqs.concat(thisPointedWordRef.rawWords);
-            boldTheseWordSeqs = boldTheseWordSeqs.concat(thisPointedWordRef.rawWords);
-        };
-        boldTheseWordSeqs.sort((a,b) => b.length - a.length); // sort large to small to assist our overlap logic below
+        self.getOrderedPointedWordRefs();
 
         const highlightedPointWordEls = [];
         const alreadyBoldedWords = [];
-        boldTheseWordSeqs.forEach((thisRawWordSeqStr) => {
+        self.pointedWordRefs.forEach((thisPointedWordRef) => {
+            const sortedRawWords = [...thisPointedWordRef.rawWords].sort((a,b) => b.length - a.length); // sort large to small to assist our overlap logic below
+            const alreadyBoldedWords = [];
+            sortedRawWords.forEach((thisRawWordSeqStr) => {
+                let isOverlapWord = false;
+                alreadyBoldedWords.some((thisAlreadyBoldedWord) => {
+                    if (thisAlreadyBoldedWord.indexOf(thisRawWordSeqStr) !== -1) {
+                        isOverlapWord = true;
+                        return true; // break loop
+                    }
+                });
+                if (isOverlapWord) return;
 
-            if (alreadyBoldedWords.indexOf(thisRawWordSeqStr) !== -1) return;
-            let isOverlapWord = false;
-            alreadyBoldedWords.some((thisAlreadyBoldedWord) => {
-                if (thisAlreadyBoldedWord.indexOf(thisRawWordSeqStr) !== -1) {
-                    isOverlapWord = true;
-                    return true; //break loop
+                const wordTokenizerRegex = new RegExp(`(${self.tokenBoundaries}|^)${thisRawWordSeqStr}(${self.tokenBoundaries}|$)`, 'gm'); // https://regexr.com/6bhjs
+                let thisCommentBody = comment.body.replaceAll(wordTokenizerRegex, `$1<span class="font__heavy__noExpand" style="border-bottom: 4px solid rgba(0,0,0,0.1);">${thisRawWordSeqStr}</span>$2`)
+                if (thisCommentBody === comment.body) {
+                    console.warn(`Could not find ${thisRawWordSeqStr} in comment body: ${comment.body}`); // JWW stopping - found that when thisRawWordSeqStr 'foo bar' is actually 'foo\nbar' in body, then we have no match.
+                    return; // apparently no replacement was made
                 }
+                alreadyBoldedWords.push(thisRawWordSeqStr);
+
+                thisCommentBody = self.renderEmojisInBody(thisCommentBody); // JWW stopping - emojis are rendering B+W in just this element???
+
+                highlightedPointWordEls.push((
+                    <span className={`topCommentBodyAndPoints_bodyLayer ${thisPointedWordRef.bodyElUid}`} style={css.topCommentBodyAndPoints_bodyLayer} dangerouslySetInnerHTML={{__html: thisCommentBody}}>
+                    </span>
+                ));
+
             });
-            if (isOverlapWord) return;
-            alreadyBoldedWords.push(thisRawWordSeqStr);
-
-            const wordTokenizerRegex = new RegExp(`(${self.tokenBoundaries}|^)${thisRawWordSeqStr}(${self.tokenBoundaries}|$)`, 'gm'); // https://regexr.com/6bhjs
-            let thisCommentBody = comment.body.replaceAll(wordTokenizerRegex, `$1<span class="font__heavy__noExpand" style="border-bottom: 4px solid rgba(0,0,0,0.1);">${thisRawWordSeqStr}</span>$2`)
-            thisCommentBody = self.renderEmojisInBody(thisCommentBody);
-
-            highlightedPointWordEls.push((
-                <span style={css.topCommentBodyAndPoints_bodyLayer} dangerouslySetInnerHTML={{__html: thisCommentBody}}>
-                </span>
-            ));
         });
 
         return highlightedPointWordEls;
@@ -161,9 +171,11 @@ class TopCommentBodyAndPoints extends React.Component {
             thisCommentBody = self.renderEmojisInBody(thisCommentBody);
 
             highlighted2dGramEls.push((
-                <span style={css.topCommentBodyAndPoints_bodyLayer} dangerouslySetInnerHTML={{__html: thisCommentBody}}>
+                <span className={`topCommentBodyAndPoints_bodyLayer ${thisPointedWordRef.bodyElUid}`} style={css.topCommentBodyAndPoints_bodyLayer} dangerouslySetInnerHTML={{__html: thisCommentBody}}>
                 </span>
             ));
+
+            thisPointedWordRef.spanned2dGramStr = spanned2dGramStr; // save for later (points info msgbox)
         };
 
         return highlighted2dGramEls;
@@ -184,6 +196,153 @@ class TopCommentBodyAndPoints extends React.Component {
         return commentBodyClone;
     }
 
+    getPointsInfoEl() {
+        const self = this;
+        const comment = this.props.topComment;
+        if (!comment || !comment.body) return null;
+        const css = styles.generate(self);
+
+        let pointsInfoElIsHidden = true;
+        if (self.props.expandPointsInfo) {
+            pointsInfoElIsHidden = false;
+        } else {
+            self.resetPointsInfo();
+        }
+
+        let thisPointedWordRef = null;;
+        self.getOrderedPointedWordRefs();
+
+        let pointedWordCount = 0;
+        let totalOtherUserCount = 0; // how many other users (total) commented the pointed words in this comment.
+        for (const [pointedWordStr, points] of Object.entries(self.props.topComment.points['1Hr'])) {
+            if (!points) continue;
+            ++pointedWordCount;
+            totalOtherUserCount = totalOtherUserCount + (points/self.props.topComment.words[pointedWordStr].pointVal);
+        }
+
+        let thisPointsExplanation = null;
+        if (self.state.activePointsInfoWordIndex === -1) {
+            thisPointsExplanation = (
+                <p style={css.topCommentBodyAndPoints_pointsInfo_body}>This comment is ranked
+                    {' '}<b>{commentFormatter.getNumberOrdinal(self.props.topComment.rank)}</b>
+                    {' '}because it contains
+                    {' '}<b>{pointedWordCount}</b>
+                    {' '}<span style={{'border-bottom': '4px solid rgba(0,0,0,0.1)'}}>phrases</span>
+                    {' '}which were recently commented by
+                    {' '}<b>{totalOtherUserCount}</b>
+                    {' '}other users.
+                </p>
+            );
+        } else {
+            thisPointedWordRef = self.pointedWordRefs[self.state.activePointsInfoWordIndex];
+
+            let underlineColor = 'rgba(0,0,0,0.1)';
+
+            let thisPhraseType = 'phrase';
+            if (thisPointedWordRef.type === '2dGram') {
+                thisPhraseType = 'word sequence';
+                underlineColor = 'rgba(255, 149, 151, 0.4)';
+            }
+            if (thisPointedWordRef.hasSymbols.length && thisPointedWordRef.word.split('_!!_').length === 1) {
+                const thisSymbol = self.props.topComment.symbols.find((symb) => symb.redisKey === thisPointedWordRef.hasSymbols[0])
+                thisPhraseType = `${thisSymbol.type} symbol`;
+            }
+
+            let shortestRawWord = null;
+            thisPointedWordRef.rawWords.forEach((thisRawWord) => {
+                if (shortestRawWord === null || thisRawWord.length < shortestRawWord.length) shortestRawWord = thisRawWord;
+            })
+            if (thisPointedWordRef.spanned2dGramStr) {
+                shortestRawWord = thisPointedWordRef.spanned2dGramStr;
+                const spannedWordsNotPointed = [];
+                shortestRawWord.split(new RegExp(self.tokenBoundaries)).forEach((thisToken) => {
+                    let isUnpointedToken = true;
+                    thisPointedWordRef.rawWords.some((thisRawWord) => {
+                        if (thisRawWord.indexOf(thisToken) !== -1) {
+                            isUnpointedToken = false;
+                            return true; // break loop
+                        }
+                    });
+                    if (isUnpointedToken) shortestRawWord = shortestRawWord.replace(thisToken, '[...]');
+                });
+                shortestRawWord = shortestRawWord.replaceAll(new RegExp(/\[\.\.\.[^A-Za-zА-Яа-я0-9]+]/, 'g'), '[...]'); // In case we have multiple non-pointed spanned words in sequence, use only one '[...]' https://regexr.com/6chcs
+            }
+
+            thisPointsExplanation = (
+                <p style={css.topCommentBodyAndPoints_pointsInfo_body}>The {thisPhraseType}
+                    {' '}"<span style={{'border-bottom': `4px solid ${underlineColor}`}}><b>{self.renderEmojisInBody(shortestRawWord)}</b></span>"
+                    {' '}was recently commented by
+                    {' '}<b>{self.props.topComment.points['1Hr'][thisPointedWordRef.word] / thisPointedWordRef.pointVal}</b>
+                    {' '}other users. It's the
+                    {' '}<b>{commentFormatter.getNumberOrdinal(self.state.activePointsInfoWordIndex+1)}</b>
+                    {' '}most important phrase in this comment.
+                </p>
+            );
+        }
+
+        if (thisPointedWordRef) {
+            document.querySelectorAll('.topCommentBodyAndPoints_bodyLayer').forEach(el => el.style.opacity = '0');
+            document.querySelectorAll(`.${thisPointedWordRef.bodyElUid}`).forEach(el => el.style.opacity = '1');
+            document.querySelectorAll('.topCommentBodyAndPoints_bodyLayer__primary').forEach(el => el.style.opacity = '0.4');
+        }
+
+        const pointsInfoEl = (
+            <div style={css.topCommentBodyAndPoints_pointsInfo}>
+                <MsgBox body={thisPointsExplanation} hidden={pointsInfoElIsHidden} isCarousel={true} onCarouselClick={self.onPointsInfoCarouselClick.bind(self)}/>
+            </div>
+        );
+
+        return pointsInfoEl;
+    }
+
+    onPointsInfoCarouselClick(direction, e) {
+        const self = this;
+        const comment = this.props.topComment;
+        if (!comment || !comment.body) return;
+
+        self.getOrderedPointedWordRefs();
+
+        let newActivePointsInfoWordIndex;
+        if (direction === 'back') {
+            newActivePointsInfoWordIndex = self.state.activePointsInfoWordIndex - 1;
+            if (newActivePointsInfoWordIndex < -1) newActivePointsInfoWordIndex = self.pointedWordRefs.length-1;
+        } else {
+            newActivePointsInfoWordIndex = self.state.activePointsInfoWordIndex + 1;
+            if (newActivePointsInfoWordIndex > self.pointedWordRefs.length-1) {
+                newActivePointsInfoWordIndex = -1;
+                self.resetPointsInfo();
+            }
+        }
+        this.setState({activePointsInfoWordIndex: newActivePointsInfoWordIndex})
+    }
+
+    resetPointsInfo() {
+        document.querySelectorAll('.topCommentBodyAndPoints_bodyLayer').forEach(el => el.style.opacity = '1');
+        if (this.state.activePointsInfoWordIndex !== -1) {
+            this.setState({activePointsInfoWordIndex: -1}); // reset to start anytime the infoEl is re-hidden
+        }
+    }
+
+    getOrderedPointedWordRefs() {
+        const self = this;
+        self.pointedWordRefs = [];
+        for (const [pointedWordStr, points] of Object.entries(self.props.topComment.points['1Hr'])) {
+            if (points) {
+                const thisPointedWordRef = self.props.topComment.words[pointedWordStr];
+                thisPointedWordRef.bodyElUid = thisPointedWordRef.bodyElUid || `topCommentBodyAndPoints_bodyLayer__${++self.uid}`; // save for later (points info msgbox)
+                self.pointedWordRefs.push(thisPointedWordRef);
+            }
+        }
+        self.pointedWordRefs.sort((a, b) => {
+            const aTotalPoints = self.props.topComment.points['1Hr'][a.word] || 0;
+            const bTotalPoints = self.props.topComment.points['1Hr'][b.word] || 0;
+            if (aTotalPoints > bTotalPoints) return -1;
+            if (aTotalPoints < bTotalPoints) return 1;
+            return 0;
+        });
+        if (!self.pointedWordRefs[self.state.activePointsInfoWordIndex]) self.resetPointsInfo();
+    }
+
     render() {
         const self = this;
         if (!this.props.topComment) return null;
@@ -191,19 +350,7 @@ class TopCommentBodyAndPoints extends React.Component {
         const css = styles.generate(self);
 
         const commentBodyEl = self.highlightCommentBody();
-
-        let pointsInfoElIsHidden = true;
-        if (this.props.expandPointsInfo) {
-            pointsInfoElIsHidden = false;
-        }
-        const thisPointsExplanation = (
-            <div>Foo Bar</div>
-        );
-        const pointsInfoEl = (
-            <div style={css.topCommentBodyAndPoints_pointsInfo}>
-                <MsgBox body={thisPointsExplanation} hidden={pointsInfoElIsHidden} />
-            </div>
-        );
+        const pointsInfoEl = self.getPointsInfoEl();
 
         return (
             <div className="topCommentBodyAndPoints" style={css.topCommentBodyAndPoints}>

@@ -30,7 +30,12 @@ const styles = {
 
             topCommentBodyAndPoints_pointsInfo: {
                 'margin-top': '2rem'
+            },
+
+            topCommentBodyAndPoints_pointsInfo_body: {
+                'line-height': '156%'
             }
+
         };
 
         return css;

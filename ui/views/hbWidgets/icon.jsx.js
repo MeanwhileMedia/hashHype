@@ -13,6 +13,7 @@ import pie_chart from '/node_modules/@material-icons/pie_chart.svg';
 import leaderboard from '/node_modules/@material-icons/leaderboard.svg';
 import place from '/node_modules/@material-icons/place.svg';
 import info from '/node_modules/@material-icons/info.svg';
+import arrow_drop_down_circle from '/node_modules/@material-icons/arrow_drop_down_circle.svg';
 
 class Icon extends React.Component {
     constructor(props) {
@@ -35,7 +36,8 @@ class Icon extends React.Component {
             pie_chart,
             leaderboard,
             place,
-            info
+            info,
+            arrow_drop_down_circle
         };
     }
 

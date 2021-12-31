@@ -11,7 +11,8 @@ const styles = {
                 'margin': '2rem auto',
                 'margin-top': '0',
                 'overflow': 'hidden',
-                'transition': 'height .2s ease, padding .2s ease, margin .2s ease'
+                'transition': 'height .2s ease, padding .2s ease, margin .2s ease',
+                'position': 'relative'
             },
             msgBox__hidden: {
                 'transition': 'none',
@@ -29,6 +30,22 @@ const styles = {
             msgBox_body: {
 
             },
+            msgBox_arrow: {
+                'position': 'absolute',
+                'top': '50%',
+                'margin-top': '-1rem',
+                'opacity': '0.4'
+            },
+            msgBox_arrow__left: {
+                'left': '0',
+                'margin-left': '1rem',
+                'transform': 'rotate(90deg)'
+            },
+            msgBox_arrow__right: {
+                'right': '0',
+                'margin-right': '1rem',
+                'transform': 'rotate(-90deg)'
+            }
         };
 
         if (view.props.getAttn) {
@@ -40,6 +57,11 @@ const styles = {
             }, 'pulse');
             css.msgBox.animation = `x .2s ease .2s 3`;
             css.msgBox.animationName = attnPulse;
+        }
+
+        if (view.props.isCarousel) {
+            css.msgBox['padding'] = '2rem 4rem';
+            css.msgBox['text-align'] = 'center';
         }
 
         return css;

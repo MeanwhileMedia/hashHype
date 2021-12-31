@@ -546,8 +546,7 @@ class TopCommentsStats {
                     if (thisWordRef.hasSymbols && thisWordRef.hasSymbols.length > 0) {
                         let deductSymbolPoints = 0;
                         thisWordRef.hasSymbols.forEach((thisSymbolKey) => {
-                            if ( (thisComment.topSymbolHigh[timeBucketKey] && thisSymbolKey !== thisComment.topSymbolHigh[timeBucketKey]) &&
-                                 (thisComment.topSymbolLow[timeBucketKey] && thisSymbolKey !== thisComment.topSymbolLow[timeBucketKey]) ) {
+                            if ( thisSymbolKey !== thisComment.topSymbolHigh[timeBucketKey] && thisSymbolKey !== thisComment.topSymbolLow[timeBucketKey] ) {
                                 const invalidSymbolWordStr = thisSymbolKey.split(':').slice(2).join(':');
                                 if (thisComment.points[timeBucketKey][invalidSymbolWordStr]) {
                                     // console.warn(`Found invalid pointed symbol in comment:${thisComment.id} in word:${thisWordStr} that was neither topSymbolHigh nor topSymbolLow.`);

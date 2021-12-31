@@ -59,6 +59,7 @@ const uiServer = {
         '/node_modules/@material-icons/leaderboard.svg': '/node_modules/@material-icons/svg/svg/leaderboard/baseline.svg',
         '/node_modules/@material-icons/place.svg': '/node_modules/@material-icons/svg/svg/place/baseline.svg',
         '/node_modules/@material-icons/info.svg': '/node_modules/@material-icons/svg/svg/info/baseline.svg',
+        '/node_modules/@material-icons/arrow_drop_down_circle.svg': '/node_modules/@material-icons/svg/svg/arrow_drop_down_circle/baseline.svg',
     },
 
     // In defining our koa middleware (below), we expose specific directories to public requests.

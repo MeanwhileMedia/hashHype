@@ -494,7 +494,7 @@ class ExtractWordsFromComments {
             reducedTokensToStems[sequenceKey] = reducedTokensToStems[sequenceKey] || [];
             reducedTokensToStems[sequenceKey].push(thisTokenToStem.tokenized.join(' '));
         });
-        if (commentData.normalizedBody.indexOf("'") !== -1) console.log(commentData.body,  util.inspect(reducedTokensToStems, {depth: 5, colors: true}))
+        // if (commentData.normalizedBody.indexOf("'") !== -1) console.log(commentData.body,  util.inspect(reducedTokensToStems, {depth: 5, colors: true}))
 
 
         ///////////////
