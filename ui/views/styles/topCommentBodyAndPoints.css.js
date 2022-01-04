@@ -34,7 +34,15 @@ const styles = {
 
             topCommentBodyAndPoints_pointsInfo_body: {
                 'line-height': '156%'
-            }
+            },
+
+            topCommentBodyAndPoints_author: {
+                'font-weight': '400',
+                'font-style': 'italic',
+                'margin-top': '1rem',
+                'display': 'inline-block',
+                'font-size': '1.4rem'
+            },
 
         };
 

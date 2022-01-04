@@ -32,14 +32,6 @@ const styles = {
             topCommentStats_barRace_activeCommentInfo_bodyText: {
                 'line-height': '168%'
             },
-            topCommentStats_barRace_activeCommentInfo_author: {
-                'font-weight': '400',
-                'font-style': 'italic',
-                'margin-top': '2rem',
-                'padding-top': '0.5rem',
-                'display': 'inline-block',
-                'font-size': '1.4rem'
-            },
             topCommentStats_barRace_activeCommentInfo_btns: {
                 'display': 'flex',
                 'flex-direction': 'row-reverse',

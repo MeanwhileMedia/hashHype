@@ -812,6 +812,37 @@ class TopCommentsStats {
                     }
                 }
 
+                // HashHype rule - a 2dGram can't have the same token twice in a row. I.e: "I love GME go moon :smile_emoji: :smile_emoji: :smile_emoji: Let's go!"
+                // Now we will loop through thisTokenSet and condense any sequence of the same word into just one occurance: "I love GME go moon :smile_emoji: Let's go!"
+                const dupWordSeqs = []; // array of objects [{word: ":smile_emoji:", dupIndexes: [5, 6, 7]}, etc...] - where 5, 6, 7 are the indexes of the tokens in thisTokenSet
+                let prevToken = null;
+                let curDupSequence = [];
+                thisTokenSet.forEach((thisToken, thisTokenIndex) => {
+                    if (thisToken !== prevToken && prevToken !== null) {
+                        if (curDupSequence.length > 1) {
+                            dupWordSeqs.push({
+                                word: thisTokenSet[curDupSequence[0]],
+                                dupIndexes: curDupSequence
+                            });
+                        }
+                        curDupSequence = [];
+                        prevToken = thisToken;
+                        return;
+                    }
+                    curDupSequence.push(thisTokenIndex);
+                    prevToken = thisToken;
+                });
+                if (dupWordSeqs.length) {
+                    dupWordSeqs.forEach((thisDupWordSeq) => {
+                        console.warn(`Found a dup word sequence within a 2dGram:`, thisTokenSet);
+                        thisDupWordSeq.dupIndexes.forEach((thisDupIndex) => {
+                            if (thisDupIndex !== 0) thisTokenSet[thisDupIndex] = null;
+                        })
+                    });
+                    thisTokenSet = thisTokenSet.filter(Boolean);
+                    console.warn(`Corrected 2dGram:`, thisTokenSet);
+                }
+
                 all2dGramParts.push({
                     word: thisTokenSet.join('_!!_'), // at this point we will also convert the tokens array into a word string ('_!!_' delimeted) that can be used below in creating the wordRef object
                     tokens: thisTokenSet,
@@ -837,6 +868,14 @@ class TopCommentsStats {
         const wordRefSavePromises = [];
         const wordSavePromises = [];
         all2dGrams.forEach((this2dGram) => {
+            // HashHype rule - 2dGrams with a distance of 0 are invalid. The point of a 2dGram is to frame an unpointed portion of a comment between 2 or more pointed portions.
+            // If a 2dGram is back-to-back pointed words, then we simply allow those words to earn their points individually (a smaller sum). This also helps eliminate the potential
+            // for inflated points when a user is simply quoting another user (whether that quote is sincere, or an attempt to game points).
+            if (this2dGram.distance === 0) {
+                console.warn(`Discarding 2dGram on comment:${comment.id} with a distance of 0: ${this2dGram.word}`);
+                return;
+            }
+
             const newWordAbsKey = wordModel.generateWordObjectKey(this2dGram.word);
             // add wordRef to comment
             if (!comment.words[this2dGram.word]) { // first check if already exists

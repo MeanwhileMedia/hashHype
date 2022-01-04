@@ -23,14 +23,6 @@ const styles = {
                 'word-break': 'break-word',
                 'text-align': 'right',
             },
-            newsColumns_right_author: {
-                'font-weight': '400',
-                'font-style': 'italic',
-                'margin-top': '2rem',
-                'padding-top': '0.5rem',
-                'display': 'inline-block',
-                'font-size': '1.4rem'
-            },
             newsAttribution: {
                 'margin-top': '1.4rem',
                 'text-decoration': 'none',

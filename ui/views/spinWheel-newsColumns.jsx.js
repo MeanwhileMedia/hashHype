@@ -30,9 +30,6 @@ class SpinWheelNewsColumns extends React.Component {
         const showComment = (
             <>
                 <TopCommentBodyAndPoints topComment={thisView.props.focusedTopComment}/>
-                {topSymbolName &&
-                    <span style={css.newsColumns_right_author}>@{thisView.props.focusedTopComment.author.name || ''}</span>
-                }
             </>
         );
 

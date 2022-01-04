@@ -11,7 +11,7 @@ const styles = {
                 'margin': '2rem auto',
                 'margin-top': '0',
                 'overflow': 'hidden',
-                'transition': 'height .2s ease, padding .2s ease, margin .2s ease',
+                'transition': 'height .2s ease, padding-top .2s ease, padding-bottom .2s ease, margin-bottom .2s ease',
                 'position': 'relative'
             },
             msgBox__hidden: {

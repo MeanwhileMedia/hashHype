@@ -17,7 +17,6 @@ class BarRace extends React.Component {
             showTopCommentSymbolsOnlyOnce: true, // our server will send a max of 2 comments to represent any single symbol. Set this true and we will only render the higher scoring one. Will only apply when showOnlyTopCommentsWithSymbols == true.
             showTopCommentSymbolTypes: ['stock'], // can be set to one or more of strings equaling a symbol.type
             topCommentsLastUpdated: this.props.topCommentsLastUpdated || Date.now(),
-            expandPointsInfo: false // to pass along to TopCommentBodyAndPoints (the points explainer)
         };
 
         this.reducedTopComments = []; // the comments after passing through above state filters
@@ -25,6 +24,8 @@ class BarRace extends React.Component {
 
         this.barEls = []; // We maintain the same child react components across state changes so that we can animate their style changes (rather than re-instantiation a new child (bar) component during every rerender of this parent)
         this.barElRefs = []; // so this parent can set state to it's children
+
+        this.topCommentBodyAndPointsRef = React.createRef(); // so can toggle the points explainer msgBox
 
         utils.registerWindowResizeEvent('checkBarElsForTextSpace', this.checkBarElsForTextSpace.bind(this));
     }
@@ -44,7 +45,6 @@ class BarRace extends React.Component {
         }
         this.restoreActiveCommentSelection();
         if (this.state.topCommentsLastUpdated !== this.props.topCommentsLastUpdated) this.setState({topCommentsLastUpdated: this.props.topCommentsLastUpdated});
-        if (this.props.focusedTopComment && prevProps.focusedTopComment && this.props.focusedTopComment.id !== prevProps.focusedTopComment.id) this.setState({expandPointsInfo: false}); // comment was changed, collapse the points info msgBox
     }
 
     reduceTopComments() {
@@ -271,10 +271,9 @@ class BarRace extends React.Component {
                 <h2 style={css.topCommentStats_barRace_activeCommentInfo_symbolTitle} dangerouslySetInnerHTML={{ __html: topSymbolName }}></h2>
                 <h6 style={{'opacity': '0.25'}}>Top Comment:</h6>
                 <TopCommentBodyAndPoints
+                    ref={this.topCommentBodyAndPointsRef}
                     topComment={self.props.focusedTopComment}
-                    expandPointsInfo={self.state.expandPointsInfo}
                 />
-                <span style={css.topCommentStats_barRace_activeCommentInfo_author}>@{self.props.focusedTopComment.author.name || ''}</span>
                 <div style={css.topCommentStats_barRace_activeCommentInfo_btns}>
                     <span style={css.topCommentStats_barRace_activeCommentInfo_infoBtn} onClick={self.togglePointsInfo.bind(self)}>
                         <Icon iconName="info" height="100%" />
@@ -291,7 +290,7 @@ class BarRace extends React.Component {
     }
 
     togglePointsInfo() {
-        this.setState({expandPointsInfo: !this.state.expandPointsInfo})
+        this.topCommentBodyAndPointsRef.current.togglePointsInfo();
     }
 
     render() {

@@ -6,7 +6,7 @@ const commentFormatter = {
         const thisSymbolAssoc = emojiSymbol.assocs[0];
         let thisSymbolAssocHtml = '';
         if (thisSymbolAssoc.type === 'unicode') {
-            thisSymbolAssocHtml = thisSymbolAssoc.assoc;
+            thisSymbolAssocHtml = `<span class="emoji">${thisSymbolAssoc.assoc}</span>`;
         }
         if (thisSymbolAssoc.type === 'image') {
             thisSymbolAssocHtml = `<span class="emoji emoji__32"><span style="background-image: url('${thisSymbolAssoc.assoc}')"></span></span>`;

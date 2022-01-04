@@ -72,7 +72,7 @@ class SpinWheelPart extends React.Component {
         self.props.data.renderedSymbol = topSymbol; // save for easy access by other classes
 
         let symbolText = topSymbol.symbol;
-        const emojiSymbolHtml = self.getEmojiAssocHtml(topSymbol);
+        const emojiSymbolHtml = commentFormatter.getEmojiAssocHtml(topSymbol);
         if (emojiSymbolHtml) symbolText = emojiSymbolHtml;
 
         symbolStatsEl = (
@@ -92,19 +92,6 @@ class SpinWheelPart extends React.Component {
             </div>
         );
         return symbolStatsEl;
-    }
-
-    getEmojiAssocHtml(emojiSymbol) {
-        if (emojiSymbol.type !== 'emoji' || !emojiSymbol.assocs[0]) return; // For now, we always render the first assoc in the array. We don't currently have a use case for an emoji having more than one assoc
-        const thisSymbolAssoc = emojiSymbol.assocs[0];
-        let thisSymbolAssocHtml = '';
-        if (thisSymbolAssoc.type === 'unicode') {
-            thisSymbolAssocHtml = thisSymbolAssoc.assoc;
-        }
-        if (thisSymbolAssoc.type === 'image') {
-            thisSymbolAssocHtml = `<span class="emoji emoji__48"><span style="background-image: url('${thisSymbolAssoc.assoc}')"></span></span>`;
-        }
-        return thisSymbolAssocHtml;
     }
 
     applyPostRenderStyleTransitions() {
