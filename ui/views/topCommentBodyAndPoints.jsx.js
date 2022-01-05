@@ -146,8 +146,9 @@ class TopCommentBodyAndPoints extends React.Component {
                 });
                 if (isOverlapWord) return;
 
-                const wordTokenizerRegex = new RegExp(`(${self.tokenBoundaries}|^)${thisRawWordSeqStr}(${self.tokenBoundaries}|$)`, 'gm'); // https://regexr.com/6bhjs
-                let thisCommentBody = comment.body.replaceAll(wordTokenizerRegex, `$1<span class="topCommentBodyAndPoints_bodyLayer_word font__heavy__noExpand" style="border-bottom: 4px solid rgba(0,0,0,0.1);">${thisRawWordSeqStr}</span>$2`)
+                const findWordWithBoundariesNotSpaces = self.replaceSpacesWithTokenBoundariesInRegexString(thisRawWordSeqStr);
+                const wordTokenizerRegex = new RegExp(`(${self.tokenBoundaries}|^)(${findWordWithBoundariesNotSpaces})(${self.tokenBoundaries}|$)`, 'gm'); // https://regexr.com/6cmqg
+                let thisCommentBody = comment.body.replaceAll(wordTokenizerRegex, `$1<span class="topCommentBodyAndPoints_bodyLayer_word font__heavy__noExpand" style="border-bottom: 4px solid rgba(0,0,0,0.1);">$2</span>$3`)
                 if (thisCommentBody === comment.body) {
                     console.warn(`Could not find ${thisRawWordSeqStr} in comment body: ${comment.body}`); // JWW stopping - found that when thisRawWordSeqStr 'foo bar' is actually 'foo\nbar' in body, then we have no match.
                     return; // apparently no replacement was made
@@ -261,11 +262,11 @@ class TopCommentBodyAndPoints extends React.Component {
 
             const leftBracketEl = `<span style="display: inline-block; height: 12px; margin-bottom: -1.22rem; margin-left: -4px; border-left: 4px solid rgba(255, 149, 151, ${underlineOpacity});"></span>`;
             const rightBracketEl = `<span style="display: inline-block; height: 12px; margin-bottom: -1.22rem; margin-right: -4px; border-right: 4px solid rgba(255, 149, 151, ${underlineOpacity});"></span>`;
-            let thisCommentBody = bodyFirstHalf + bodySecondHalf.replace(spanned2dGramStr, `<span style="padding-bottom: 6px; border-bottom: 4px solid rgba(255, 149, 151, ${underlineOpacity}); position: relative;">${leftBracketEl}${spanned2dGramStr}${rightBracketEl}</span>`);
+            let thisCommentBody = bodyFirstHalf + bodySecondHalf.replace(spanned2dGramStr, `<span class="topCommentBodyAndPoints_bodyLayer_word" style="padding-bottom: 6px; border-bottom: 4px solid rgba(255, 149, 151, ${underlineOpacity}); position: relative;">${leftBracketEl}${spanned2dGramStr}${rightBracketEl}</span>`);
             thisCommentBody = self.renderEmojisInBody(thisCommentBody);
 
             highlighted2dGramEls.push((
-                <span className={`topCommentBodyAndPoints_bodyLayer topCommentBodyAndPoints_bodyLayer__${thisPointedWordRef.bodyElUid}`} style={css.topCommentBodyAndPoints_bodyLayer} dangerouslySetInnerHTML={{__html: thisCommentBody}}>
+                <span className={`topCommentBodyAndPoints_bodyLayer topCommentBodyAndPoints_bodyLayer__${thisPointedWordRef.bodyElUid}`} bodyLayerUid={thisPointedWordRef.bodyElUid} style={css.topCommentBodyAndPoints_bodyLayer} dangerouslySetInnerHTML={{__html: thisCommentBody}}>
                 </span>
             ));
 
@@ -306,6 +307,15 @@ class TopCommentBodyAndPoints extends React.Component {
         });
 
         return commentBodyClone;
+    }
+
+    replaceSpacesWithTokenBoundariesInRegexString(regexString) {
+        // Since our tokenizer in extractWordsFromComments removed punctation when extracting raw words, a search later for those rawWords
+        // will be -1 if the rawWords in body are actually seperated by anything other than a space.
+        // I.e: The rawWord is "GME ask", but the comment body is "I love GME. ask anyone."
+        // That's why when we build the regex to find "GME ask", we replace the space with a search for one or more token boundaries.
+        const regexStringBoundariesNotSpaces = regexString.replaceAll(' ', `${this.tokenBoundaries}+`); // https://regexr.com/6cmqg
+        return regexStringBoundariesNotSpaces;
     }
 
     getPointsInfoEl() {

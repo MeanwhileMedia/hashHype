@@ -825,7 +825,7 @@ class TopCommentsStats {
                                 dupIndexes: curDupSequence
                             });
                         }
-                        curDupSequence = [];
+                        curDupSequence = [thisToken];
                         prevToken = thisToken;
                         return;
                     }
@@ -834,7 +834,7 @@ class TopCommentsStats {
                 });
                 if (dupWordSeqs.length) {
                     dupWordSeqs.forEach((thisDupWordSeq) => {
-                        console.warn(`Found a dup word sequence within a 2dGram:`, thisTokenSet);
+                        console.warn(`Found a dup word sequence within a 2dGram on comment:${comment.id}`, thisTokenSet);
                         thisDupWordSeq.dupIndexes.forEach((thisDupIndex) => {
                             if (thisDupIndex !== 0) thisTokenSet[thisDupIndex] = null;
                         })
@@ -872,7 +872,7 @@ class TopCommentsStats {
             // If a 2dGram is back-to-back pointed words, then we simply allow those words to earn their points individually (a smaller sum). This also helps eliminate the potential
             // for inflated points when a user is simply quoting another user (whether that quote is sincere, or an attempt to game points).
             if (this2dGram.distance === 0) {
-                console.warn(`Discarding 2dGram on comment:${comment.id} with a distance of 0: ${this2dGram.word}`);
+                // console.warn(`Discarding 2dGram on comment:${comment.id} with a distance of 0: ${this2dGram.word}`);
                 return;
             }
 

@@ -75,6 +75,11 @@ const uiServer = {
         { target: '/ui/images/', redirect: '/' },
     ],
 
+    // Below are the only redis object keys that the client is allowed to request to listen for changes on. This blocks a potential OOM crash if a client is tryign to listen to too many or fake keys.
+    availableRedisSubKeyspaces :[
+        'stats:topComments'
+    ],
+
     init() {
         uiServer.initRedisClient( () => {
             uiServer.initKoaServer();
@@ -160,7 +165,7 @@ const uiServer = {
 
                 // Scenario 2
                 const sendPromise = new Promise( (resolve, reject) => {
-                    let thisFauxSocketObj = { // JWW todo - creating a new thisFauxSocketObj for every request is a memory leak
+                    let thisFauxSocketObj = {
                         send: (encodedResponseStr) => {
                             if (thisFauxSocketObj.wasResolved) {
                                 // Because logic below treats this like a socket, it may call this send function more than once (in an attempt to push data to the client). When that occurs,
@@ -311,42 +316,9 @@ const uiServer = {
         } // end if (message.channel === 'viewRequest')
 
         if (message.channel === 'populateView') {
-            const keySpaceSubChannel = `__keyspace@0__:${message.data.absKey}`;
-            const modelChangeEventName = `change:${message.data.absKey}`;
-
-            // Send data right away, then re-send any time it changes.
-            self.redisClient.get(message.data.absKey, (gotObj) => {
-                if (!gotObj) return;
-                const encodedMessage = self.encodeSocketMessage({
-                    channel: modelChangeEventName,
-                    data: gotObj,
-                });
-                if (!encodedMessage) return;
-                socket.send(encodedMessage); // Manually send once right away to populate view
-            });
-
-            self.redisClient.on('message', (channel, action) => {
-                if (action !== 'set' || channel !== keySpaceSubChannel) return;
-
-                const eventUid = keySpaceSubChannel;
-                const now = Date.now();
-                if (!self.changeEventTstamps[eventUid]) self.changeEventTstamps[eventUid] = now;
-                if (self.changeEventTstamps[eventUid] + self.changeEventThrottle > now) return;
-                self.changeEventTstamps[eventUid] = now;
-
-                self.redisClient.get(message.data.absKey, (gotObj) => {
-                    if (!gotObj) return;
-                    const encodedMessage = self.encodeSocketMessage({ // And send again everytime the model changes on server
-                        channel: modelChangeEventName,
-                        data: gotObj,
-                    });
-                    if (!encodedMessage) return;
-                    socket.send(encodedMessage);
-                });
-            });
-            self.redisClient.subscribe(keySpaceSubChannel);
+            self.subscribeSocketToChangesOnRedisKey(message.data.absKey, socket);
             return true;
-        } // end if (message.channel === 'populateView')
+        }
 
         // If this message didn't match any of the above main UI rendering channels, pass it along to the socket
         // response utils which hold logic for more specific channels.
@@ -367,6 +339,61 @@ const uiServer = {
 
         return false;
     }, // end receiveSocketMessage
+
+
+    didInitOnMessagePubSub: false, // we only need to call self.redisClient.on('message') once. Is a catchall for all messages on all subscribed keyspace channels.
+    activeRedisObjKeyspaceSubs: {}, // {redisObjKeyFoo: [socket3, socket1, etc], etc..}
+    subscribeSocketToChangesOnRedisKey(redisObjKey, thisClientSocket) {
+        const self = this;
+        if (self.availableRedisSubKeyspaces.indexOf(redisObjKey) === -1) {
+            console.warn(`Blocked attempted keyspace subscription to illegal redis key ${redisObjKey}`);
+            return;
+        }
+
+        // 1. First subscribe to keyspace events for this specific redisObjKey
+        if (!self.activeRedisObjKeyspaceSubs[redisObjKey]) {
+            console.log(`Subscribing to keyspace changes on new redis object: ${redisObjKey}`);
+            self.redisClient.subscribe(`__keyspace@0__:${redisObjKey}`);
+            // because subscribeSocketToChangesOnRedisKey is only ever called via the "populateView" socket channel,
+            // we really only need save a single fauxSocket object to activeRedisObjKeyspaceSubs[redisObjKey]. This will be the only
+            // vehicle necessary to constantly save data changes to self.cachedServerSocketSends (which is what change:absKey fauxSocket channels access later).
+            self.activeRedisObjKeyspaceSubs[redisObjKey] = [thisClientSocket];
+        }
+
+        // 2. Send data right away, then re-send any time it changes (#3).
+        self.getAndSendRedisDataToSockets(redisObjKey, [thisClientSocket]);
+
+        // 3. Next subscribe to the global "message" event. This cback will receive change messages for ALL redisObjKey which have active keyspace subscriptions
+        if (self.didInitOnMessagePubSub) return;
+        self.didInitOnMessagePubSub = true;
+        self.redisClient.on('message', (channel, action) => {
+            if (action !== 'set') return; // we currently only support emitting changes due to string set commands
+            const changedRedisKey = channel.replace('__keyspace@0__:', '');
+            if (!self.activeRedisObjKeyspaceSubs[changedRedisKey]) return;
+
+            // Throttle how often we will act on this change event. To save on resources.
+            const now = Date.now();
+            if (!self.changeEventTstamps[changedRedisKey]) self.changeEventTstamps[changedRedisKey] = now;
+            if (self.changeEventTstamps[changedRedisKey] + self.changeEventThrottle > now) return;
+            self.changeEventTstamps[changedRedisKey] = now;
+
+            self.getAndSendRedisDataToSockets(changedRedisKey, self.activeRedisObjKeyspaceSubs[changedRedisKey]);
+        });
+    },
+    getAndSendRedisDataToSockets(absKey, sockets) {
+        const self = uiServer;
+        self.redisClient.get(absKey, (gotObj) => {
+            if (!gotObj) return;
+            const encodedMessage = self.encodeSocketMessage({
+                channel: `change:${absKey}`,
+                data: gotObj,
+            });
+            if (!encodedMessage) return;
+            sockets.forEach((thisSocket) => {
+                thisSocket.send(encodedMessage);
+            });
+        });
+    },
 
     encodeSocketMessage(messageObj) {
         if (typeof messageObj !== 'object') {
