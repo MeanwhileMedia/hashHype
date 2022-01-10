@@ -165,11 +165,15 @@ span[contenteditable], div[contenteditable], code[contenteditable] {
 .font__heavy, b {
     font-weight: 800;
 }
-.font__heavy__noExpand {
+.font__heavy__noExpand__black {
     /* this applies a bold-like effect to text but does not alter the charachter spacing or text width/layout */
     color: #000;
     text-shadow: -0.4px 0 0 #000, 0.4px 0 0 #000, 0 -0.4px 0 #000, 0 0.4px 0 #000;
 }
+/* .font__heavy__noExpand__gray {
+    color: #777;
+    text-shadow: -0.4px 0 0 #777, 0.4px 0 0 #777, 0 -0.4px 0 #777, 0 0.4px 0 #777;
+} */
 
 #cf_alert_div {
     /* Hide the notif bar from cloudflare when "always-online" mode kicks in. */

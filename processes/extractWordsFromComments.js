@@ -463,7 +463,7 @@ class ExtractWordsFromComments {
                 thisTokenSet.forEach((thisToken) => {
                     let thisNormalizedToken = [thisToken]; // naturalNormalizer returns an array.
                     if (Number.isNaN(parseInt(thisToken))) { // don't try to expand contractions when toekn can be interpreted as a number (i.e. "it was in the 100's")
-                        thisNormalizedToken = naturalNormalizer(thisToken);  // naturalNormalizer returns an array. JWW stopping - this doesn't work on "y'all"
+                        thisNormalizedToken = naturalNormalizer(thisToken);  // naturalNormalizer returns an array. JWW stopping - this doesn't work on "y'all" - see https://github.com/NaturalNode/natural/issues/635
                     }
 
                     thisNormalizedToken.forEach((thisNormalizedTokenPart) => {

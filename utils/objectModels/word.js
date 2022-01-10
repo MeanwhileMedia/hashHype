@@ -4,7 +4,8 @@ const wordObjModel = {
     // Every 10 minutes, all wordToCommentsIndex and word:foo_bar:foundAt redis objects are cleaned up. Comments and foundAt timestamps
     // which are older than this.trackWordsFor will be removed from redis.
     trackWordsFor: 86400000, // ms (24hrs) How long should we keep tstamps stored to word:foo_bar:foundAt lists
-    wordUseInterval: 3600000, // ms (1hr) How long until a single user can recomment the same word and have it earn points. See addFoundAtTstampForWord
+    wordUseInterval: 3600000*2, // ms (2hr) How long until a single user can recomment the same word and have it earn points. See addFoundAtTstampForWord.
+    // we are using 2hrs for wordUseInterval. If we used 1hr (our realtime timebucket), userA could comment the same word 10 minutes apart, and earn on both uses for 10 minutes (1hr after the first use, before the later use exits our 1hr timebucket)
 
     cleanupWordToCommentsIndexesInterval: null,
     cleanupWordToCommentsIndexesIntervalTime: 6000*10,

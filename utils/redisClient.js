@@ -120,7 +120,7 @@ class RedisClient {
                 if ( new RegExp(storeConf.pattern).test(commandArgs.key) ) {
                     storeConf.dbName = thisDbConfig.dbName;
                     storeToDbs.push(storeConf);
-                    return true; // break some loop
+                    return true; // break some loop. We take use the first matching pattern only
                 }
             });
             // 2. find matching thisDbConfig.preserveNamespaces for this key
@@ -482,6 +482,11 @@ class RedisClient {
 
     set(key, redisObj, cback, dbName) {
         const self = this;
+        if (redisObj.deleted) {
+            console.warn(`Can't save a redis object which was locally flagged as deleted (${key})`);
+            if (cback) cback();
+            return;
+        }
         const normalizedArgs = self.normalizeRedisCommandArgs('set', arguments);
         if (normalizedArgs.saveData) {
             // Our extended set command automatically tracks TOTAL times this key was saved over all time (to assist preserveNamespaces logic)

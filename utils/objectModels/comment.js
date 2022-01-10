@@ -36,6 +36,7 @@ const commentObjModel = {
                 '12Hr': null,
                 '24Hr': null,
             },
+            // deleted: bool // this flag is sometimes used locally but is never saved to redis (it's set to true when a live copy must be blocked from any future saves)
             // see createAuxiliaryDataDefaults for additional properties that will be available to comment objects when required (via restoreAuxiliaryData)
         }
 

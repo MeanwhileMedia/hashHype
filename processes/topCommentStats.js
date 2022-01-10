@@ -2,6 +2,7 @@ import util from 'util';
 import { throttle } from 'throttle-debounce';
 import yargs from 'yargs';
 import natural from 'natural';
+import { std, median } from 'mathjs';
 import RedisClient from '../utils/redisClient.js';
 import commentModel from '../utils/objectModels/comment.js';
 import wordModel from '../utils/objectModels/word.js';
@@ -518,31 +519,13 @@ class TopCommentsStats {
 
             for (const [timeBucketKey, prevPoints] of Object.entries(thisComment.totalPoints)) {
                 thisComment.totalPoints[timeBucketKey] = 0;
+
                 for (const [thisWordStr, pointsForThisWord] of Object.entries(thisComment.points[timeBucketKey])) {
                     if (!pointsForThisWord) continue;
                     const thisWordRef = thisComment.words[thisWordStr];
 
                     //////////
-                    // 1. hashHype rule - A word sequence can't earn points if it's length is greater than 70% the length of the entire comment body. This blocks comments from
-                    // earning tons of 2dGram points when many users are quoting the same phrase but not adding anything original to it. We only apply this rule to long comments (greater than
-                    // minCommentLengthForMaxWordLengthRule) because there are so many short comments that have key phrases which are understandably most that short comment body.
-                    // I.e: "you know you are a redneck when GME" does not deserve to launch GME to rank 1 comment.
-                    const minCommentLengthForMaxWordLengthRule = 70;
-                    const maxWordSeqLength = 0.6; // a percentage of the length of comment.stemmedBody
-                    if (thisComment.stemmedBody.length >= minCommentLengthForMaxWordLengthRule) {
-                        const wordStringSpaced = thisWordStr.replaceAll('_!!_', ' ');
-                        let wordStringLength = wordStringSpaced.length;
-                        if (typeof thisWordRef.distance === 'number') wordStringLength = wordStringLength + thisWordRef.distance;
-                        const wordStringPercOfBody = wordStringLength / thisComment.stemmedBody.length;
-                        if (wordStringPercOfBody > 0.7) {
-                            // console.warn(`Word sequence was too long. Deducting ${thisComment.points[timeBucketKey][thisWordStr]} points for ${thisWordStr}. The word sequence spanned ${wordStringPercOfBody * 100}% of the entire body comment:${thisComment.id}`);
-                            thisComment.points[timeBucketKey][thisWordStr] = 0;
-                            continue;
-                        }
-                    }
-
-                    //////////
-                    // 2. hashHype rule - We also enforce a rule that no comment can earn points for more than 2 symbols (topSymbolHigh and topSymbolLow).
+                    // 1. hashHype rule - We also enforce a rule that no comment can earn points for more than 2 symbols (topSymbolHigh and topSymbolLow).
                     if (thisWordRef.hasSymbols && thisWordRef.hasSymbols.length > 0) {
                         let deductSymbolPoints = 0;
                         thisWordRef.hasSymbols.forEach((thisSymbolKey) => {
@@ -562,38 +545,36 @@ class TopCommentsStats {
                     }
 
                     /////////
-                    // 3. hashHype rule - a comment (x) can only earn points for a word at a maximum of once per ms. This ensures that when another user re-comments (y) word combo
+                    // 2. hashHype rule 92356 - a comment (x) can only earn points for a word at a maximum of once per ms. This ensures that when another user re-comments (y) word combo
                     // "go_!!_moon_!!_GME" and creates foundAt tstamps for "go_!!_moon_!!_GME", "moon_!!_GME" and "GME", comment x only earns once (for the longest shared sequence).
                     // To enforce this, we store a temporary record called comment.pointsRecords. Here we look at every pointed word, detect shared substrings, and reduce down those
                     // shared substrings by their foundAt tstamp. When shared substrings come from the same comment (y), they all have the same foundAt tstamp.
                     for (const [thisShortWordStr, pointsForThisWord] of Object.entries(thisComment.points[timeBucketKey])) {
                         if (!pointsForThisWord) continue; // didn't earn points anyway. no need to continue overlap check logic
-                        if (thisShortWordStr.length >= thisWordStr.length) continue; // can't be an inner shortWordStr if it's not of shorter length
+                        const longWordRef = thisWordRef;
+                        const shortWordRef = thisComment.words[thisShortWordStr];
+                        if (longWordRef.word === shortWordRef.word) continue;
 
                         // hashHype rule - we don't make single word symbols take a hit for being part of longer sequences. They get to keep all of their points.
                         // Not only does this ensure that a comment is properly represented by it's top symbol, but it will save on cpu cycles as we return early.
-                        const shortWord = thisComment.words[thisShortWordStr];
-                        if (shortWord.type === 'word' && shortWord.hasSymbols.length > 0) continue;
+                        if (shortWordRef.type === 'word' && shortWordRef.hasSymbols.length > 0) continue;
 
-                        if (thisWordStr.indexOf(thisShortWordStr) === -1) continue; // thisShortWordStr is not a substring
+                        // Return as quickly as we can determine these 2 strings do not overlap
+                        if (shortWordRef.word.length >= longWordRef.word.length) continue; // can't be an inner shortWordStr if it's not of shorter length (only when not 2dGram because they get maxMisalignPerc wiggle room)
+                        if (longWordRef.word.indexOf(shortWordRef.word) === -1) continue;
+
                         if (!thisComment.pointsRecords[timeBucketKey][thisWordStr] || !thisComment.pointsRecords[timeBucketKey][thisShortWordStr]) {
                             // console.warn(`Missing pointsRecords for ${thisWordStr} or ${thisShortWordStr} (${timeBucketKey}) on comment:${thisComment.id} comment.pointsRecords:`, thisComment.pointsRecords);
                             continue;
                         }
 
-                        // JWW stopping -
-                        // 1. what about 2dGrams "ha been go up" and "been go up all" which can both score together because technically neither is a substring of the other? Do we work this
-                        // into point deduction logic or extractNew2dGramsFromTopComment. Eliminate 2dGrams with index+distance overlap?
-                        // 2. words continue to dominate points for topComments (2dGrams don't surface as often as expected). Should we consider a rule for max words? a high/low scenario like for symbols?
-
                         // console.warn(`Detected overlapping words ${thisWordStr} and ${thisShortWordStr} in comment:${thisComment.id}`);
                         thisComment.pointsRecords[timeBucketKey][thisWordStr].forEach((thisLongWordFoundAtTstamp) => {
                             if (thisComment.pointsRecords[timeBucketKey][thisShortWordStr].indexOf(thisLongWordFoundAtTstamp) !== -1) {
-                                //console.warn(`Detected that overlapping words ${thisWordStr} and ${thisShortWordStr} in comment:${thisComment.id} both earned points from the same re-comment.`);
-                                const shortWord = thisComment.words[thisShortWordStr];
-                                //console.warn(`Deducting ${shortWord.pointVal} from ${thisComment.points[timeBucketKey][thisShortWordStr]} points (${timeBucketKey}) for comment:${thisComment.id} for word:${thisShortWordStr}`);
+                                // console.warn(`Detected that overlapping words ${thisWordStr} and ${thisShortWordStr} in comment:${thisComment.id} both earned points from the same re-comment.`);
+                                // console.warn(`Deducting ${shortWordRef.pointVal} from ${thisComment.points[timeBucketKey][thisShortWordStr]} points (${timeBucketKey}) for comment:${thisComment.id} for word:${thisShortWordStr}`);
 
-                                const deductPoints = shortWord.pointVal;
+                                const deductPoints = shortWordRef.pointVal;
                                 thisComment.points[timeBucketKey][thisShortWordStr] = Math.max(0, thisComment.points[timeBucketKey][thisShortWordStr] - deductPoints)
                                 thisComment.totalPoints[timeBucketKey] = thisComment.totalPoints[timeBucketKey] - deductPoints;
                             }
@@ -601,11 +582,12 @@ class TopCommentsStats {
                     } // end Object.entries(thisComment.points[timeBucketKey])) {
 
                     /////////
-                    // 3. We are now ready to sum the totalPoints.
+                    // 3. We are now ready to add in totalPoints for this word
                     thisComment.totalPoints[timeBucketKey] = thisComment.totalPoints[timeBucketKey] + thisComment.points[timeBucketKey][thisWordStr];
-                }
-            }; // end for (const [timeBucketKey, prevPoints] of Object.entries(thisComment.totalPoints)) {
 
+                } //end for (const [thisWordStr, pointsForThisWord] of Object.entries(thisComment.points[timeBucketKey])) {
+
+            }; // end for (const [timeBucketKey, prevPoints] of Object.entries(thisComment.totalPoints)) {
         }); // end comments.forEach((thisComment) => {
 
     } // end calcTotalPointsForPendingTopComments
@@ -620,8 +602,44 @@ class TopCommentsStats {
         const finalTopComments = []; // sorted by points ascending. This is the trimmed final collection which will be set to self.topComments.comments. This will likely not include all of the comments in allChangedTopComments.
         const finalTopCommentIds = [];
 
-        // 1. Move all (unique) comments from self.pendingTopComments into flattened array allChangedTopComments. At the same time, only take 1 comment per symbol (the one with highest score) for finalTopComments array.
+        /////////////
+        // 1. Move all (unique) comments from self.pendingTopComments into flattened array allChangedTopComments. At the same time, remove point outliers from every symbol group, then take only take 1 comment per symbol (the one with highest score) for finalTopComments array.
         for (const [thisSymbolKey, pendingTopCommentsForThisSymbol] of Object.entries(self.pendingTopComments)) {
+            // HashHype rule - first we will loop through the totalPoints['1Hr'] for each comment in this symbol group, then determine if any are outliers.
+            // A comment may score suspiciously high if it slips through an edge case in our algo, or users discover a vulneribility and game the points. This
+            // very basic math is our last defense in attempting to block comments that should not earn trend ranking.
+
+            // if the stDevCount is greater than {stdDevCountMax}, but less than {stdDevCountExtreme}, we discard the comment from this symbol group BUT we let it still circulate through topCommentStats to see if it's a future hit, or a hit in another symbol group.
+            // if the stDevCount is super high (over {stdDevCountExtreme}) then we are going to assume that this is a point miscalculation (most likely due to lost data from redis LRU eviction). We will fully delete this comment below.
+            let stdDevCountMax = 5;
+            let stdDevCountExtreme = 10;
+
+            let nonOutlierTotalPoints = null; // array of ints which represent only valid totalPoints['1Hr'] found in this comment group.
+            let pointsMedian;
+            let pointsStdDev;
+            if (thisSymbolKey !== 'noSymbols' && pendingTopCommentsForThisSymbol.length >= 5) { // we can't assume any outliers with data sets smaller than 5
+                let allTotalPoints = [];
+                pendingTopCommentsForThisSymbol.forEach(thisComment => {
+                    if (thisComment.totalPoints['1Hr']) allTotalPoints.push(thisComment.totalPoints['1Hr']);
+                });
+                allTotalPoints.sort();
+                pointsMedian = median(allTotalPoints);
+                pointsStdDev = std(allTotalPoints);
+                if (pointsStdDev !== 0) {
+                    nonOutlierTotalPoints = [];
+                    allTotalPoints.forEach((thisTotalPoints) => {
+                        const diff = Math.abs(thisTotalPoints - pointsMedian);
+                        if (diff === 0) {
+                            nonOutlierTotalPoints.push(thisTotalPoints);
+                            return;
+                        }
+                        const stDevCount = diff / pointsStdDev;
+                        if (stDevCount < stdDevCountMax) nonOutlierTotalPoints.push(thisTotalPoints);
+                    });
+                }
+            }
+
+            // Ok now we can proceed to select only the top scoring comment for each symbol, and flatten all of them (including comments with no symbols) into an array for sorting.
             let highestScoredCommentForSymbol = null;
             pendingTopCommentsForThisSymbol.forEach((thisComment) => {
                 if (allChangedTopCommentsIds.indexOf(thisComment.id) === -1) {
@@ -635,6 +653,15 @@ class TopCommentsStats {
                     finalTopComments.push(thisComment);
                     return;
                 }
+                if (nonOutlierTotalPoints !== null && nonOutlierTotalPoints.indexOf(thisComment.totalPoints['1Hr']) === -1) {
+                    const stDevCount = Math.abs(thisComment.totalPoints['1Hr'] - pointsMedian) / pointsStdDev;
+                    console.warn(`An outlier totalPoints (${thisComment.totalPoints['1Hr']}) was found on comment:${thisComment.id} (${stDevCount} stdDevs from median ${pointsMedian}). This comment will be discarded from ${thisSymbolKey} group (${pendingTopCommentsForThisSymbol.length} comments). comment.points['1Hr']:`, thisComment.points['1Hr']);
+                    if (stDevCount > stdDevCountExtreme) {
+                        console.warn(`An extreme outlier totalPoints (${thisComment.totalPoints['1Hr']}) was found on comment:${thisComment.id} (${stDevCount} stdDevs from median ${pointsMedian}). This comment will be DELETED from redis. comment.points['1Hr']:`, thisComment.points['1Hr']);
+                        self.removeCommentFromAll({comment: thisComment});
+                    }
+                    return;
+                }
                 if (highestScoredCommentForSymbol === null || thisComment.totalPoints['1Hr'] > highestScoredCommentForSymbol.totalPoints['1Hr']) {
                     highestScoredCommentForSymbol = thisComment;
                 }
@@ -646,11 +673,13 @@ class TopCommentsStats {
             }
         }
 
+        ///////////
         // 2. Next thing is to sort this final set of topComments descending (totalPoints)
         finalTopComments.sort((commentA, commentB) => {
             return commentB.totalPoints['1Hr'] - commentA.totalPoints['1Hr'];
         });
 
+        ///////////
         // 3. And trim off the lowest scoring comments (until we have the minimum required comments with symbols)
         let topCommentsWithSymbolsCount = 0;
         finalTopComments.some((thisTopComment) => {
@@ -812,6 +841,33 @@ class TopCommentsStats {
                     }
                 }
 
+                ///////////
+                // HashHype rule - 2dGrams with a distance of 0 are invalid. The point of a 2dGram is to frame an unpointed portion of a comment between 2 or more pointed portions.
+                // If a 2dGram is back-to-back pointed words, then we simply allow those words to earn their points individually (a smaller sum). This also helps eliminate the potential
+                // for inflated points when a user is simply quoting another user (whether that quote is sincere, or an attempt to game points).
+                if (thisTokenSetDistance === 0) {
+                    // console.warn(`Discarding 2dGram on comment:${comment.id} with a distance of 0:`, thisTokenSet);
+                    continue; // continue loop "for (let thisTokenInsetCount = 0; ..." so this invalid 2dGram isn't pushed to all2dGramParts.
+                }
+
+                //////////
+                // HashHype rule - A word sequence can't earn points if it's length is greater than 70% the length of the entire comment body. This blocks comments from
+                // earning tons of 2dGram points when many users are quoting the same phrase but not adding anything original to it. We only apply this rule to long comments (greater than
+                // minCommentLengthForMaxWordLengthRule) because there are so many short comments that have key phrases which are understandably most of that short comment body.
+                // I.e: "you know you are a redneck when GME" does not deserve to launch GME to rank 1 comment.
+                const minCommentLengthForMaxWordLengthRule = 70;
+                const maxWordSeqLength = 0.7; // a percentage of the length of comment.stemmedBody
+                if (comment.stemmedBody.length >= minCommentLengthForMaxWordLengthRule) {
+                    const thisWordStrSpaced = thisTokenSet.join(' ');
+                    let thisWordStrLength = thisWordStrSpaced.length + thisTokenSetDistance;
+                    const wordStringPercOfBody = thisWordStrLength / comment.stemmedBody.length;
+                    if (wordStringPercOfBody > maxWordSeqLength) {
+                        // console.warn(`2dGram sequence was too long and will not be saved to comment. The 2dGram spanned ${wordStringPercOfBody * 100}% of the entire body comment:${comment.id}`, thisTokenSet);
+                        continue; // continue loop "for (let thisTokenInsetCount = 0; ..." so this invalid 2dGram isn't pushed to all2dGramParts.
+                    }
+                }
+
+                ///////////
                 // HashHype rule - a 2dGram can't have the same token twice in a row. I.e: "I love GME go moon :smile_emoji: :smile_emoji: :smile_emoji: Let's go!"
                 // Now we will loop through thisTokenSet and condense any sequence of the same word into just one occurance: "I love GME go moon :smile_emoji: Let's go!"
                 const dupWordSeqs = []; // array of objects [{word: ":smile_emoji:", dupIndexes: [5, 6, 7]}, etc...] - where 5, 6, 7 are the indexes of the tokens in thisTokenSet
@@ -831,16 +887,23 @@ class TopCommentsStats {
                     }
                     curDupSequence.push(thisTokenIndex);
                     prevToken = thisToken;
+                    if (thisTokenIndex === thisTokenSet.length-1 && curDupSequence.length > 1) {
+                        // we reached the end of our loop and have a pending dupWordSeq. Must store it now.
+                        dupWordSeqs.push({
+                            word: thisTokenSet[curDupSequence[0]],
+                            dupIndexes: curDupSequence
+                        });
+                    }
                 });
                 if (dupWordSeqs.length) {
                     dupWordSeqs.forEach((thisDupWordSeq) => {
-                        console.warn(`Found a dup word sequence within a 2dGram on comment:${comment.id}`, thisTokenSet);
+                        // console.warn(`Found a dup word sequence within a 2dGram on comment:${comment.id}`, thisTokenSet);
                         thisDupWordSeq.dupIndexes.forEach((thisDupIndex) => {
                             if (thisDupIndex !== 0) thisTokenSet[thisDupIndex] = null;
                         })
                     });
                     thisTokenSet = thisTokenSet.filter(Boolean);
-                    console.warn(`Corrected 2dGram:`, thisTokenSet);
+                    // console.warn(`Corrected 2dGram:`, thisTokenSet);
                 }
 
                 all2dGramParts.push({
@@ -868,14 +931,6 @@ class TopCommentsStats {
         const wordRefSavePromises = [];
         const wordSavePromises = [];
         all2dGrams.forEach((this2dGram) => {
-            // HashHype rule - 2dGrams with a distance of 0 are invalid. The point of a 2dGram is to frame an unpointed portion of a comment between 2 or more pointed portions.
-            // If a 2dGram is back-to-back pointed words, then we simply allow those words to earn their points individually (a smaller sum). This also helps eliminate the potential
-            // for inflated points when a user is simply quoting another user (whether that quote is sincere, or an attempt to game points).
-            if (this2dGram.distance === 0) {
-                // console.warn(`Discarding 2dGram on comment:${comment.id} with a distance of 0: ${this2dGram.word}`);
-                return;
-            }
-
             const newWordAbsKey = wordModel.generateWordObjectKey(this2dGram.word);
             // add wordRef to comment
             if (!comment.words[this2dGram.word]) { // first check if already exists
@@ -1134,7 +1189,10 @@ class TopCommentsStats {
         if (opts.commentId) this.removeCommentFromTopComments(opts.commentId);
         if (opts.commentId && opts.associatedWords) this.removeCommentFromWordToCommentIndexes(opts.commentId, opts.associatedWords);
         // In some logic this function may be called for a comment which was not found in redis (returned null). If that was the case, we don't want to attempt to delete right now.
-        if (opts.commentId && opts.comment !== null) this.redisClient.del(`comment:${opts.commentId}`);
+        if (opts.commentId && opts.comment !== null) {
+            opts.comment.deleted = true; // Set this local flag so that the comment can't be re-saved later if it's being held somewhere in this process's live memory (is honored in redisClient.js "set")
+            this.redisClient.del(`comment:${opts.commentId}`);
+        }
     }
 
     newTimeBucketObject(bucketType = 'objects') {

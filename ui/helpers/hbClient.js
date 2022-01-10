@@ -11,6 +11,13 @@ var hbClient = {
     fauxSocketPollIntervalLength: 5000,
     fauxSocketPollIntervals: [],
 
+    // clientSideRedirects will look at the landing URL and it it matches a key, will "redirect" to the val. This redirect
+    // is actually a history push state and does not actually send any HTTP redirect codes. This is to avoid impacting performance and seo scores.
+    clientSideRedirects: {
+        '': 'stats_topComments.html',
+        '/': 'stats_topComments.html'
+    },
+
     init() {
         window.hbClient = this;
         console.log('Opening connection with', hbClient.serverAddress);
@@ -86,12 +93,19 @@ var hbClient = {
     }, // initSocketListeners
 
     loadLandingView() {
+        const self = hbClient;
         // now that the client has a socket connection with the server, manually
         // ping through that socket to load the landing url.
-        const landingUrl = window.location.pathname.replace('.html', '');
-        const absKey = landingUrl.slice(1).replace('_', ':'); //reform with proper redis keyspace delimeters
+        let landingUrl = window.location.pathname.slice(1); // remove preceding slash
+        if (self.clientSideRedirects[landingUrl]) {
+            landingUrl = self.clientSideRedirects[landingUrl];
+            history.pushState({}, document.title, landingUrl); // JWW stopping - why for this not show in url bar
+        }
+
+        let landingAbsKey = landingUrl.replace('.html', '');
+        landingAbsKey = landingAbsKey.replace('_', ':'); //reform with proper redis keyspace delimeters
         socketViewRequests.viewRequest({
-            absKey: absKey,
+            absKey: landingAbsKey,
             targetEl: document.querySelector('#main'),
         });
         // Since we are loading this view onto a blank page, the target el must be "main".
