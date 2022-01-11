@@ -147,12 +147,19 @@ class SetTrendAction extends React.Component {
             renderSymbolText = this.props.activeTopComment.renderedSymbol.symbol;
         }
 
+        const directionalInputKeySetMap = { // the 'up' and 'down' input
+            38: (e) => { return 'up' }, //arrow up
+            40: (e) => { return 'down' }, //arrow down
+            85: (e) => { return 'up' }, //'u'
+            68: (e) => { return 'down' } //'d'
+        };
+
         return (
             <div className="setTrendAction" style={css.setTrendAction}>
                 <div style={css.setTrendAction_section}>
                     <h2>
                         <span className="noBreakTextGroup">The next time<TextInput placeholder={renderSymbolText} minWidth="6rem" /></span>
-                        <span className="noBreakTextGroup">trends to<TextInput placeholder={this.props.activeTopComment.rank} type="ordinal" minWidth="4rem" />place:</span>
+                        <span className="noBreakTextGroup">trends <TextInput placeholder="up" type="keySet" keySetMap={directionalInputKeySetMap} minWidth="3rem" /> to <TextInput placeholder={this.props.activeTopComment.rank} type="ordinal" minWidth="4rem" />place:</span>
                     </h2>
                 </div>
                 <div style={css.setTrendAction_section}>

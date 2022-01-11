@@ -42,6 +42,7 @@ const ignore = [ // these are matched against STEMMED tokens during getWordPoint
     'will',
     'do',
     'does',
+    'did',
     'have',
     'if',
     'or',

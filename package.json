@@ -43,6 +43,7 @@
     "deployDev01_dev": "node -r esm ./utils/deployCodeSftp.js -target dev01_dev",
     "deployDev01_flush": "node -r esm ./utils/deployCodeSftp.js -target dev01_flush",
     "deployProd01": "node -r esm ./utils/deployCodeSftp.js -target prod01",
+    "deployProd01_hotfix": "node -r esm ./utils/deployCodeSftp.js -target prod01_hotfix",
     "deployProd01_recover": "node -r esm ./utils/deployCodeSftp.js -target prod01_recover",
     "deployProd01_flush": "node -r esm ./utils/deployCodeSftp.js -target prod01_flush",
     "deployProd02": "node -r esm ./utils/deployCodeSftp.js -target prod02",

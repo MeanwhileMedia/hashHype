@@ -1,5 +1,6 @@
 import React from '/node_modules/react';
 import Radium from '/node_modules/radium';
+import utils from '../../helpers/utils.js'
 
 class TextInput extends React.Component {
     constructor(props) {
@@ -11,13 +12,23 @@ class TextInput extends React.Component {
             curSelection: null
         }
         this.contenteditableRef = React.createRef();
+        this.hasFocus = false;
+
+        if (props.type === 'keySet' && !props.keySetMap) {
+            console.log(`Input of type "keySet" must include the props.keySetMap object. Reverting to default.`);
+            props.type = 'default';
+        }
 
          // props.placeholder - same as native input placeholder prop
          // props.preservePlaceholder - set to true and the placeholder text will not clear on focus
 
          // props.type can be:
          // - "ordinal" (and below code automatically applies the suffix as input changes)
+         // - "keySet" (input changes based on specific rules set for specific keypress types - must be accompanied by the keySetMap prop)
          // - "default" to be any string input without code based formatting
+
+         // props.keySetMap (must be defined when type === keySet)
+         // {keyCode: (e) => { return 'valToBeRendered'}, etc ...}
 
          // props.size can be:
          // - "small" fo inline inputs inside body size text
@@ -26,43 +37,7 @@ class TextInput extends React.Component {
          // props.textAlign
          // props.minWidth
          // props.ctaGutter - rem measurement. carves out space via bottom padding to float in cta buttons (for props.size = large)
-    }
 
-    onInputChange(e) {
-        if (!e.target || !document.getSelection) return;
-        const curSelection = document.getSelection();
-        const newVal = this.determineVal(e.target.innerText);
-        const focusOffset = curSelection.focusOffset;
-        this.setState({
-            value: newVal,
-            renderVal: this.determineRenderedVal(newVal),
-            curSelection: {focusOffset: focusOffset}
-        });
-    }
-
-    onInputFocus(e) {
-        if (!e.target) return;
-        if (e.target.innerText === this.determineRenderedVal(this.props.placeholder) && !this.props.preservePlaceholder) {
-            const curSelection = document.getSelection();
-            const focusOffset = curSelection.focusOffset;
-            // remove placeholder text now that user has focused
-            this.setState({
-                value: '',
-                renderVal: '',
-                curSelection: {focusOffset: 0}
-            });
-        }
-    }
-
-    onInputBlur(e) {
-        // if the user left the input with no value, render the placeholder. Also set curSelection back to null.
-        if (!e.target) return;
-        const newVal = this.determineVal(e.target.innerText, false);
-        this.setState({
-            value: newVal,
-            renderVal: this.determineRenderedVal(newVal),
-            curSelection: null
-        });
     }
 
     componentDidUpdate(prevProps, prevState) {
@@ -86,6 +61,72 @@ class TextInput extends React.Component {
         range.collapse(true);
         sel.removeAllRanges();
         sel.addRange(range);
+    }
+
+    onInputChange(e) {
+        if (!e.target || !document.getSelection) return;
+        if (this.props.type === 'keySet') { // the keySet type takes full control of what renders to the input
+            e.target.innerText = this.state.renderVal;
+            return;
+        }
+        const curSelection = document.getSelection();
+        const newVal = this.determineVal(e.target.innerText);
+        const focusOffset = curSelection.focusOffset;
+        this.setState({
+            value: newVal,
+            renderVal: this.determineRenderedVal(newVal),
+            curSelection: {focusOffset: focusOffset}
+        });
+    }
+
+    onInputFocus(e) {
+        this.hasFocus = true;
+        if (!e.target) return;
+        if (e.target.innerText === this.determineRenderedVal(this.props.placeholder) && !this.props.preservePlaceholder) {
+            const curSelection = document.getSelection();
+            const focusOffset = curSelection.focusOffset;
+            // remove placeholder text now that user has focused
+            this.setState({
+                value: '',
+                renderVal: '',
+                curSelection: {focusOffset: 0}
+            });
+        }
+        this.bindKeyboardCtrls();
+    }
+
+    onInputBlur(e) {
+        // if the user left the input with no value, render the placeholder. Also set curSelection back to null.
+        this.hasFocus = false;
+        if (!e.target) return;
+        const newVal = this.determineVal(e.target.innerText, false);
+        this.setState({
+            value: newVal,
+            renderVal: this.determineRenderedVal(newVal),
+            curSelection: null
+        });
+    }
+
+    bindKeyboardCtrls() {
+        const self = this;
+        if (self.props.type !== 'keySet') return;
+
+        for (const [thisKeyCode, thisValGenFunction] of Object.entries(self.props.keySetMap)) {
+            const thisKeyboardCtrlsCback = (e) => {
+                if (!self.hasFocus) return;
+                const newVal = thisValGenFunction(e);
+                self.setState({
+                    value: newVal,
+                    renderVal: self.determineRenderedVal(newVal),
+                    curSelection: {focusOffset: 0}
+                });
+            }
+            utils.registerKeyboardCtrlsListener(`inputKeyset${thisKeyCode}`, thisKeyboardCtrlsCback.bind(self), {
+                keyCode: parseInt(thisKeyCode),
+                ctrlKey: false,
+                shiftKey: false
+            });
+        };
     }
 
     render() {

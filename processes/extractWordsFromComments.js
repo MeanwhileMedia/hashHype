@@ -578,8 +578,9 @@ class ExtractWordsFromComments {
 
                     // Add a foundAt tstamp for this word and save this comment to it's WordToCommentsIndex (creating one if it does not yet exist)
                     wordModel.addFoundAtTstampForWord(sequenceKey, commentData, self.redisClient, () => { // this must be done BEFORE registerWordToCommentsIndex or the foundAt tstamp will be cancelled as dup word by same user.
-                        resolve(); // We can resolve this wordSavePromise without waiting for registerWordToCommentsIndex
-                        wordModel.registerWordToCommentsIndex(redisWordKey.replace('word:', ''), commentData, self.redisClient);
+                        wordModel.registerWordToCommentsIndex(redisWordKey.replace('word:', ''), commentData, self.redisClient, () => {
+                            resolve();
+                        });
                     });
                 }); // end self.redisClient.get(redisWordKey
             })); // end wordSavePromises.push

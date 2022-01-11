@@ -4,7 +4,7 @@ const symbolObjModel = {
 
     createSymbolObject: function(props) {
         if (!props.symbol || !props.name) {
-            console.log(`Cannot create ${props.type} symbol object. Must provide the symbol and name. Got:`, props);
+            // console.warn(`Cannot create ${props.type} symbol object. Must provide the symbol and name. Got:`, props);
             return null;
         }
         const symbolObj = {

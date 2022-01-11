@@ -116,6 +116,16 @@ const commentObjModel = {
         });
     },
 
+    getPointed2dGramCount: function(commentObj, timeBucket = '1Hr') {
+        let pointed2dGramCount = 0;
+        for (const [thisWordStr, thisWordRef] of Object.entries(commentObj.words)) {
+            if (thisWordRef.type === '2dGram' && commentObj.points[timeBucket][thisWordRef.word]) {
+                ++pointed2dGramCount;
+            }
+        };
+        return pointed2dGramCount;
+    },
+
     minimizeForDb: function(commentObj){
         // comments tend to be relatively large redis objects. Run this function on a commentObject before db.set and all props that
         // arent required for persistence will be deleted.
