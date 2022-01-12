@@ -218,13 +218,17 @@ class ExtractWordsFromComments {
                 tokenSymbolResult.normalizedToken = normalizedUrl;
 
                 // Generate a symbol key from this URL and see if it already exists in redis. If not, create now.
-                const symbolKey = `symbol:url:${normalizedUrl}`; // `symbol:stock:gme`
+                const symbolKey = `symbol:url:${normalizedUrl}`;
                 tokenSymbolResult.symbolKey = symbolKey;
-                self.redisClient.get(symbolKey, (symbol) => {
+                self.redisClient.get(symbolKey, (symbol, actualAbsKey) => { // actualAbsKey will be defined when this .get followed an alias. Needed below.
                     if(symbol) {
                         // now that we have done a very basic symbol match against our redis key pattern, we will confirm the match by passing this token
                         // into the symbols customizable match function.
-                        const isMatch = symbolModel.execMatch(symbol, thisUrl, true);
+
+                        // In case this symbolKey actually pointed to a keyAlias, and the parent object was returned as symbol, correct the symbolKey now.
+                        if (actualAbsKey) tokenSymbolResult.symbolKey = actualAbsKey;
+
+                        const isMatch = symbolModel.execMatch(symbol, thisUrl);
                         if(!isMatch) {
                             resolve(tokenSymbolResult);
                             return;
@@ -244,7 +248,7 @@ class ExtractWordsFromComments {
                             type: 'url',
                             assocs: tokenSymbolResult.assocs,
                         });
-                        self.redisClient.set(symbolKey, newSymbolObj, () => {
+                        self.redisClient.set(symbolKey, symbolModel.minimizeForDb(newSymbolObj), () => {
                             console.log(`Created new URL symbol object for ${symbolKey}`);
                             tokenSymbolResult.matchedSymbol = newSymbolObj;
                             resolve(tokenSymbolResult);
@@ -275,13 +279,12 @@ class ExtractWordsFromComments {
         // Like "preserveUrlsInCommentBody", this command extracts potential stock symbol matches BEFORE the comment body is stemmed/tokenized in "extractWordSequences".
         // This is to preserve symbols like "MVIS" - which would get tokenized to MVI.
         const commentTokens = naturalWordTokenizer.tokenize(comment.normalizedBody);
+
         const tokenSymbolSearchPromises = [];
         commentTokens.forEach((thisToken, thisTokenIndex) => {
             tokenSymbolSearchPromises.push(new Promise( (resolve, reject) => {
-                const symbolKey = `symbol:${symbolType}:${thisToken.toUpperCase()}`; // `symbol:stock:GME` - stock symbol object keys always make the ticker caps
-                const tokenSymbolResult = self.newPendingSymbolEntity({token: thisToken, normalizedToken: thisToken.toUpperCase(), symbolKey: symbolKey});
-                let precedingToken = null;
-                if (thisTokenIndex !== 0) precedingToken = commentTokens[thisTokenIndex-1];
+                const symbolKey = `symbol:${symbolType}:${thisToken}`; // `symbol:stock:GME` - stock symbol object keys always make the ticker caps
+                const tokenSymbolResult = self.newPendingSymbolEntity({token: thisToken, normalizedToken: thisToken, symbolKey: symbolKey});
 
                 // Step 1: eliminate this word based on quick basic rules
                 if (thisToken.length === 0 || thisToken.length > 5) { // Enforce a max length for stock symbols
@@ -295,15 +298,23 @@ class ExtractWordsFromComments {
                 }
                 // Step 2: Generate a symbol key from this word and see if it exists in redis. If it does, we still can't conclude this word matches a symbol (because
                 // we only looked up its stemmed token representation). The custom match function will have more specific logic that we must now test.
-                self.redisClient.get(symbolKey, (symbol) => {
+                self.redisClient.get(symbolKey, (symbol, actualAbsKey) => { // actualAbsKey will be defined when this .get followed an alias. Needed below.
                     if(!symbol) {
                         resolve(tokenSymbolResult);
                         return;
                     }
-                    let isMatch = symbolModel.execMatch(symbol, thisToken, true);
-                    if(!isMatch && precedingToken === '$') { // We manually support passing $ to the custom match function if a "$" token preceeded this stock symbol. Some custom match functions will require $ to be preset (when tokens withou $ are too too ambiguous)
-                        isMatch = symbolModel.execMatch(symbol, `$${thisToken}`, true);
+
+                    // In case this symbolKey actually pointed to a keyAlias, and the parent object was returned as symbol, correct the symbolKey now.
+                    if (actualAbsKey) tokenSymbolResult.symbolKey = actualAbsKey;
+
+                    let isMatch = symbolModel.execMatch(symbol, thisToken);
+                    if(!isMatch) { // We manually support passing $ to the custom match function if a "$" token preceeded this stock symbol. Some custom match functions will require $ to be preset (when tokens withou $ are too too ambiguous)
+                        const tokenWithDollarSign = `$${thisToken}`; // dollar signs are stripped from tokenized body, so we manually add it now (IF we find that it was present in normalizedBody)
+                        if (comment.normalizedBody.indexOf(tokenWithDollarSign) !== -1) {
+                            isMatch = symbolModel.execMatch(symbol, tokenWithDollarSign);
+                        }
                     }
+
                     if(!isMatch) {
                         resolve(tokenSymbolResult);
                         return;
@@ -387,11 +398,15 @@ class ExtractWordsFromComments {
         Object.values(foundEmojis).forEach((thisPendingSymbolEntity) => {
             symbolSearchPromises.push(new Promise( (resolve, reject) => {
                 // See if this emoji symbol already exists in redis. If not, create now.
-                self.redisClient.get(thisPendingSymbolEntity.symbolKey, (symbol) => {
+                self.redisClient.get(thisPendingSymbolEntity.symbolKey, (symbol, actualAbsKey) => { // actualAbsKey will be defined when this .get followed an alias. Needed below.
                     if(symbol) {
                         // now that we have done a very basic symbol match against our redis key pattern, we will confirm the match by passing this token
                         // into the symbols customizable match function.
-                        const isMatch = symbolModel.execMatch(symbol, thisPendingSymbolEntity.token, true);
+
+                        // In case this symbolKey actually pointed to a keyAlias, and the parent object was returned as symbol, correct the symbolKey now.
+                        if (actualAbsKey) thisPendingSymbolEntity.symbolKey = actualAbsKey;
+
+                        const isMatch = symbolModel.execMatch(symbol, thisPendingSymbolEntity.token);
                         if(!isMatch) {
                             resolve(thisPendingSymbolEntity);
                             return;
@@ -407,7 +422,7 @@ class ExtractWordsFromComments {
                             type: 'emoji',
                             assocs: thisPendingSymbolEntity.assocs,
                         });
-                        self.redisClient.set(thisPendingSymbolEntity.symbolKey, newSymbolObj, () => {
+                        self.redisClient.set(thisPendingSymbolEntity.symbolKey, symbolModel.minimizeForDb(newSymbolObj), () => {
                             console.log(`Created new emoji symbol object for ${thisPendingSymbolEntity.symbolKey}`);
                             thisPendingSymbolEntity.matchedSymbol = newSymbolObj;
                             resolve(thisPendingSymbolEntity);

@@ -21,7 +21,6 @@ class RedisClient {
             self.attachThrottleFuncs();
             self.throttle.initGetBatchInterval();
             self.throttle.initLrangeBatchInterval();
-            self.throttle.initClearCachedGetObjectsInterval();
             if (opts.onConnect) opts.onConnect();
         });
     }
@@ -476,6 +475,17 @@ class RedisClient {
                 if (normalizedArgs.cback) normalizedArgs.cback(null);
                 return;
             }
+
+            // The get command also fulfills forwarded gets via the keyAlias redis object.
+            // Check if this response returned a keyAlias, and if so, fetch the parent now, and send THAT back to the cback.
+            if (redisObject.class === 'keyAlias') {
+                self.get(redisObject.parentKey, (parentRedisObject) => {
+                    const actualAbsKey = redisObject.parentKey; // When following an alias, the cback receives a 2nd argument "actualAbsKey". This let's the cback code know that its get cmd followed an alias.
+                    normalizedArgs.cback(parentRedisObject, actualAbsKey);
+                });
+                return;
+            }
+
             if (normalizedArgs.cback) normalizedArgs.cback(redisObject);
         });
     }
@@ -856,80 +866,6 @@ class RedisClient {
                         });
                     });
                 });
-            },
-
-            ////////
-            // GET (cached)
-            cachedGetObjectsMaxSize: 1000, // only stores the most recently used cached objects
-            cachedGetObjects: [], // held as an array for quick unshift and splice (to limit cache size)
-            cachedGetObjectsIndex: {}, // also maintain an index for increased performance (don't have to loop through array for every getCached request) {'redis:key': int (index within cachedGetObjects array), etc..}
-            cachedGetObjectsAccessLog: [], // every time a redis key is returned via getCached (whether from cache, or from redis), it's key is pushed to this array. cachedGetObjectsAccessLog is used to meet cachedGetObjectsMaxSize in an LRU fashion.
-            clearCachedGetObjectsIntervalTime: 60000*10, // 10 mins - completely clear out cached get objects in intervals to ensure fresh data in local memory, and to clear out accessLog
-            getCached: (redisKey, cback) => { // ALWAYS returns a JSON parsed object to cback
-                self.throttle.cachedGetObjectsAccessLog.push(redisKey);
-                // Can use this function to get an object but then hold it in local live memory. If getCached
-                // is called again for same key, the live object is returned immediately. This function is useful
-                // for data that is requested frequently, but does not change in redis frequently. (big performance
-                // gain for speed and memory because we aren't holding a ton of node_redis queue items in memory).
-                const cachedObjectIndex = self.throttle.cachedGetObjectsIndex[redisKey];
-                if (typeof cachedObjectIndex === 'number' && self.throttle.cachedGetObjects[cachedObjectIndex]) {
-                    const cachedObject = self.throttle.cachedGetObjects[cachedObjectIndex];
-                    if (cback) cback(cachedObject);
-                    // console.log(`Got a cached object from cachedGetObjects: ${redisKey} -> ${cachedObject.redisKey}`);
-                    return;
-                }
-                // Did not exist in cached, fetch from redis then add to cached, then rebuild cachedGetObjectsIndex
-                self.throttle.get(redisKey, (gotObj) => {
-                    if (cback) cback(gotObj);
-                    if (!gotObj) {
-                        console.log(`getCached could not find key in redis: ${redisKey}`);
-                        return;
-                    }
-                    gotObj.redisKey = gotObj.redisKey || redisKey; // save this directly on object to assist in reindexing below (cachedGetObjectsIndex)
-                    const cachedGetObjectsLength = self.throttle.cachedGetObjects.push(gotObj);
-                    self.throttle.cachedGetObjectsIndex[redisKey] = cachedGetObjectsLength - 1; // 0 based
-                    // console.log(`Got an object from redis and will now hold in cachedGetObjects: ${redisKey}. Cache size: ${cachedGetObjectsLength}/${self.throttle.cachedGetObjectsMaxSize}`);
-                    if (self.throttle.cachedGetObjects.length === self.throttle.cachedGetObjectsMaxSize) {
-                        console.log(`cachedGetObjects array has exceeded size limit (${self.throttle.cachedGetObjects.length}/${self.throttle.cachedGetObjectsMaxSize}). Clearing LRU items...`);
-                        self.throttle.trimCachedGetObjects();
-                    }
-                });
-            },
-            trimCachedGetObjects: () => {
-                const accessLog = self.throttle.cachedGetObjectsAccessLog.reverse();
-                self.throttle.cachedGetObjectsAccessLog = [];
-                const cachedGetObjectsTargetLength = Math.round(self.throttle.cachedGetObjectsMaxSize * .5); // Free up 50% so we aren't running this cache trimming logic for every single call to getCached (after the cache has filled)
-                const keepRedisKeys = [];
-                accessLog.some((accessedRedisKey) => {
-                    if (keepRedisKeys.indexOf(accessedRedisKey) === -1) {
-                        keepRedisKeys.push(accessedRedisKey);
-                        if (keepRedisKeys.length === cachedGetObjectsTargetLength) return true; // break from some loop
-                    }
-                });
-                self.throttle.cachedGetObjectsIndex = {};
-                const newCachedGetObjects = [];
-                self.throttle.cachedGetObjects.some((cachedGetObject) => {
-                    if (keepRedisKeys.indexOf(cachedGetObject.redisKey) !== -1) {
-                        const newCachedGetObjectsLength = newCachedGetObjects.push(cachedGetObject);
-                        self.throttle.cachedGetObjectsIndex[cachedGetObject.redisKey] = newCachedGetObjectsLength - 1; // 0 based
-                        self.throttle.cachedGetObjectsAccessLog.push(cachedGetObject.redisKey); // refill this cachedGetObjectsAccessLog array immediately (or if trimCachedGetObjects is called again quickly - during a busy time - it will wrongly conclude that no cached items should be kept)
-                        if (newCachedGetObjectsLength === cachedGetObjectsTargetLength) return true; // break from some loop
-                    }
-                });
-                self.throttle.cachedGetObjects = newCachedGetObjects;
-                console.log(`cachedGetObjects new length after cleanup: ${self.throttle.cachedGetObjects.length}`)
-            },
-            clearCachedGetObjects: () => {
-                console.log(`Clearing ${self.throttle.cachedGetObjects.length} objects from cachedGetObjects...`);
-                self.throttle.cachedGetObjects = [];
-                self.throttle.cachedGetObjectsIndex = {};
-                self.throttle.cachedGetObjectsAccessLog = [];
-            },
-            initClearCachedGetObjectsInterval: () => {
-                if (self.throttle.clearCachedGetObjectsInterval) return;
-                self.throttle.clearCachedGetObjectsInterval = setInterval(() => {
-                    self.throttle.clearCachedGetObjects();
-                }, self.throttle.clearCachedGetObjectsIntervalTime);
             },
 
             ////////

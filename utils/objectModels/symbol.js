@@ -14,14 +14,22 @@ const symbolObjModel = {
             type: props.type || null, // 'stock', 'coin', 'url', etc // read-only
             exchange: props.exchange || null, //nyse, etc // read-only
             assocs: props.assocs || [], // [{assoc: 'http://imgUrl.jpg', type: 'img'}, etc..] - link this symbol to one or more associations with greater context - i.e. an image url for an emoji symbol, etc
+
+            // When extractWordsFromComments is checking each comment token to see if it's a symbol, tokens within the symbolAlias array will also produce a match (in addition to symbol.symbol).
+            // i.e. it performs a redis 'get symbol:stock:GME' to confirm a symbol, but we might also want 'get symbol:stock:gamestop' to assign that symbol to the comment. The string 'gamestop'
+            // is added to the symbolAlias array via the adminTrain UI (by customizing the get function). Otherwise, symbolAlias is always null.
+            symbolAlias: props.symbolAlias || null,
+            // Similar to symbolAlias, prettyName can be set via the adminTrain UI (by customizing the get function).  Otherwise, prettyName is always null. This is the name that will render in UI when showing this symbol.
+            prettyName:  props.prettyName || null,
             // The following accessor functions are stored to redis as strings. the get and match functions are customizable via adminTrain UI.
             // They are executed via "new Function(getFuncString)". The args seen below are required every time the functions are called.
             // 'get' is the funtion that returns the props for the symbol (allowing programatic edits to symbol.name, for example)
             get: '', // generated below
-            // 'match' is the function used when determining if a word/bigram/trigram contains this symbol. By default, it checks each word part of matchAgainst (trigram_example_gme) for an
-            // exact match to symbol.symbol.toUpperCase(). If found, this custom match is run AFTER the default match logic, with it's arg "isMatch" initially true.
-            // The outcome of our default match logic is passes to this secondary match function via the (isMatch) argument.
-            match: '' // generated below
+            // 'match' is the function used when determining if a token should represent this symbol. If the match function returns true (isMatch == true), the host comment for that token
+            // gets a comment.symbols entry (which may later become it's comment.topSymbolHigh). The get and match functions are customizable via adminTrain UI, so every symbol has it's custom match code hardcoded into it's redis object.
+            match: '', // generated below
+
+            // funcdSymbolData: {}, //obj. this prop is sometimes stored on live objects but must NEVER be persisted to DB. Shown here for documentation only
         };
         symbolObjModel.defaultSymbolFuncString(symbolObj, 'get');
         symbolObjModel.defaultSymbolFuncString(symbolObj, 'match');
@@ -36,6 +44,13 @@ const symbolObjModel = {
         if (newSymbol.name) existingSymbol.name = newSymbol.name;
         if (newSymbol.type) existingSymbol.type = newSymbol.type;
         if (newSymbol.exchange) existingSymbol.exchange = newSymbol.exchange;
+        if (newSymbol.assocs) {
+            newSymbol.assocs.forEach((newAssoc) => {
+                let assocExists = existingSymbol.assocs.find(existingAssoc => existingAssoc.assoc === newAssoc.assoc);
+                if (!assocExists) existingSymbol.assocs.push(newAssoc);
+            });
+        }
+        // All other props are customized in adminTrain UI and should never be programatically overwritten
         return existingSymbol;
     },
 
@@ -51,11 +66,11 @@ const symbolObjModel = {
         return symbol.funcdSymbolData;
     },
 
-    execMatch: function(symbol, matchAgainst, isMatch) {
-        const execFunc = new Function(`const execFunc = (props, matchAgainst, isMatch) => { ${symbol.match} }; return execFunc.apply(undefined, arguments);`);
+    execMatch: function(symbol, matchAgainst) {
+        const execFunc = new Function(`const execFunc = (props, matchAgainst) => { ${symbol.match} }; return execFunc.apply(undefined, arguments);`);
         let matchOutcome;
         try {
-            matchOutcome = execFunc(symbol, matchAgainst, isMatch);
+            matchOutcome = execFunc(symbolObjModel.execGet(symbol), matchAgainst);
         } catch (error) {
             console.warn(`Symbol (${symbol.symbol}) match function ran with error:`, error);
             matchOutcome = false;
@@ -66,27 +81,54 @@ const symbolObjModel = {
     defaultSymbolFuncString: function(symbolObj, funcName) {
         // alters symbol object in-place
         const defaultFuncStings = {
-            'get': '/*\nArgs available: (props)\nRequired return value: props (object)\n*/\nreturn props;',
-            'match': '/*\nArgs available: (props, matchAgainst, isMatch)\nRequired return value: isMatch (boolean)\n*/\nreturn isMatch;'
-        };
 
-        if (symbolObj.type === 'stock' || symbolObj.type === 'coin') {
-            defaultFuncStings.match = `/*
-Args available: (props, matchAgainst, isMatch)
-Required return value: isMatch (boolean)
+            'get': `/*
+Args available: (props)
+Required return value: props (object)
 */
 
-/* 1. Stock symbols must be commented in all caps */
-const allCapsSymbol = props.symbol.toUpperCase();
-if (matchAgainst.indexOf(allCapsSymbol) === -1) {
-  isMatch = false;
+return props;`,
+
+            'match': `/*
+Args available: (props, matchAgainst)
+Required return value: isMatch (boolean)
+*/
+let isMatch = false;
+
+/* 1. Exact match */
+if (matchAgainst === props.symbol) {
+    isMatch = true;
+    return isMatch;
 }
 
-return isMatch;`
-        }
+/* 2. Matches one of our manually defined symbol aliases (set via the symbol get function). Case sensitive. */
+if (props.symbolAlias && props.symbolAlias.length) {
+    const matchedAlias = props.symbolAlias.find((alias) => {
+        return matchAgainst === alias;
+    });
+    if (matchedAlias) {
+        isMatch = true;
+        return isMatch;
+    }
+}
+
+return isMatch;`,
+
+        }; // end defaultFuncStings
 
         symbolObj[funcName] = defaultFuncStings[funcName];
-    }
+    },
+
+    minimizeForDb: function(symbolObj){
+        // Run this function on a symbol object before db.set and all props that arent required for persistence will be deleted.
+        // RETURNS A SHALLOW COPY! This function will not alter the original symbol obj. First it clones, then returns the clone object.
+        // The returned object should be saved immediately and not used for other purposes.
+        const symbolClone = { ...symbolObj }; // this is a shallow copy so nested objects should not be altered within this function.
+
+        delete symbolClone.funcdSymbolData; // the outcome from running symbol.execGet. Is held locally on live object, but should NEVER be persisted to DB.
+
+        return symbolClone;
+    },
 
 }; // end symbolObjModel
 

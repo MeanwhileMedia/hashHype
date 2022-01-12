@@ -81,14 +81,14 @@ class AdminTrain extends React.Component {
         let symbolsSection = [];
         this.props.topComment.symbols.forEach((symbol) => {
             const rowRef = React.createRef();
-            let symbolSymbolText = symbol.symbol.toUpperCase();
-            if (symbolSymbolText.indexOf('HTTP') !== -1) {
-                symbolSymbolText = (
+            let symbolText = symbol.symbol;
+            if (symbolText.toUpperCase().indexOf('HTTP') !== -1) {
+                symbolText = (
                     <a href={symbol.symbol}>Link</a>
                 );
             }
             const rowLabel = (
-                <><p>{symbol.name} <b>({symbolSymbolText})</b></p></>
+                <><p>{symbol.name} <b>({symbolText})</b></p></>
             );
             const deletePrompt = (
                 <>

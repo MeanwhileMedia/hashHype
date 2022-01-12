@@ -24,8 +24,7 @@ const commentFormatter = {
                 if (thisSymbolKey === comment.topSymbolHigh['1Hr']) wordTopSymbolObj = thisSymbol;
             });
             if (wordTopSymbolObj && wordTopSymbolObj.type !== 'emoji') {
-                topSymbolName = wordTopSymbolObj.name;
-                if (wordTopSymbolObj.funcdSymbolData) topSymbolName = wordTopSymbolObj.funcdSymbolData.name || topSymbolName;
+                topSymbolName = wordTopSymbolObj.prettyName || wordTopSymbolObj.name;
             }
         }
         return topSymbolName;

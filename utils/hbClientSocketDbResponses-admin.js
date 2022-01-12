@@ -1,5 +1,6 @@
 import trainingModels from '../utils/objectModels/training.js';
 import symbolModel from '../utils/objectModels/symbol.js';
+import keyAliasModel from '../utils/objectModels/keyAlias.js';
 
 // This file includes all the socket requests to set/alter redis data based on the trend training UI
 class HbClientSocketDbResponses_admin {
@@ -137,26 +138,51 @@ class HbClientSocketDbResponses_admin {
                 return;
             }
             // First run it in a try/catch before saving to redis - in case the edited function contains an error.
+            let funcdSymbolData = null;
             try {
                 let testFunc;
                 if (opts.functionName === 'get') {
                     symbolRedisData.get = opts.functionString
-                    const funcdSymbolData = symbolModel.execGet(symbolRedisData);
+                    funcdSymbolData = symbolModel.execGet(symbolRedisData);
                     if (typeof funcdSymbolData !== 'object') throw 'Symbol get function must return an object.'
                 }
                 if (opts.functionName === 'match') {
                     symbolRedisData.match = opts.functionString
-                    const matchOutcome = symbolModel.execMatch(symbolRedisData, 'bui_gme', true);
+                    const matchOutcome = symbolModel.execMatch(symbolRedisData, 'bui_gme');
                     if (typeof matchOutcome !== 'boolean') throw 'Symbol match function must return a boolean.'
                 }
             } catch (error) {
                 console.warn(`Edited symbol (${symbolRedisData.symbol}) function ${opts.functionName}() ran with error. Won't save.`, error);
                 return;
             }
+
+            // Now check if this admin edit resulted in any new symbolAliases
+            if (funcdSymbolData && funcdSymbolData.symbolAlias && funcdSymbolData.symbolAlias.length) { // this symbol has the symbolAlias prop defined (array). These aliases may or may not have been just newly defined in this admin edit. Either way, we will save them (again) now.
+                symbolRedisData.symbolAlias = funcdSymbolData.symbolAlias; // so it saves as a top level prop on the symbol object too
+                funcdSymbolData.symbolAlias.forEach((thisAliasStr) => {
+                    const aliasRedditKey = `symbol:${symbolRedisData.type}:${thisAliasStr}`
+                    const newAliasObject = keyAliasModel.createKeyAliasObject({parentKey: symbolRedisKey});
+                    self.redisClient.get(aliasRedditKey, (existingObjAtKey) => {
+                        if (existingObjAtKey) {
+                            console.warn(`Can't save reddit keyAlias object because an object already exists at that key (${aliasRedditKey}).`)
+                        }
+                        console.warn(`Now saving new symbol alias: ${aliasRedditKey} -> ${symbolRedisKey}`);
+                        self.redisClient.set(aliasRedditKey, newAliasObject);
+                    });
+                });
+            }
+
+            // Now check if this admin edit resulted in a new symbol.prettyName
+            if (funcdSymbolData && funcdSymbolData.prettyName) {
+                console.warn(`A prettyName was defined for ${symbolRedisKey} (${funcdSymbolData.prettyName}).`)
+                symbolRedisData.prettyName = funcdSymbolData.prettyName; // so it saves as a top level prop on the symbol object too
+            }
+
             // Looks legit, save now.
             console.log(`Saving ${opts.functionName}() function edit on symbol ${opts.symbol.symbol}:`, opts.functionString);
-            self.redisClient.set(symbolRedisKey, symbolRedisData);
-        });
+            self.redisClient.set(symbolRedisKey, symbolModel.minimizeForDb(symbolRedisData));
+
+        }); // end this.redisClient.get(symbolRedisKey
     }
 
     deleteWordFromCommentAndSave(removeWord, commentId, cback) { // send commentRedisKey to cback

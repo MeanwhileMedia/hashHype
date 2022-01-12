@@ -231,7 +231,10 @@ class SpinWheel extends React.Component {
             hierarchyData.children.forEach((thisTopComment) => {
                 const hasTopSymbolKey = thisTopComment.topSymbolHigh['1Hr'] || thisTopComment.topSymbolLow['1Hr'] || null;
                 if (hasTopSymbolKey) {
-                    const hasTopSymbol = thisTopComment.symbols.find(thisSymbol => thisSymbol.redisKey === hasTopSymbolKey);
+                    const hasTopSymbol = thisTopComment.symbols.find(thisSymbol => {
+                        const thisSymbolRedisKey = `symbol:${thisSymbol.type}:${thisSymbol.symbol}`;
+                        return thisSymbolRedisKey === hasTopSymbolKey;
+                    });
                     if (hasTopSymbol && thisView.state.showTopCommentSymbolTypes.indexOf(hasTopSymbol.type) !== -1) {
                         reducedTopCommentsBySymbol[hasTopSymbolKey] = reducedTopCommentsBySymbol[hasTopSymbolKey] || [];
                         reducedTopCommentsBySymbol[hasTopSymbolKey].push(thisTopComment);

@@ -365,7 +365,10 @@ class TopCommentBodyAndPoints extends React.Component {
                 underlineColor = 'rgba(255, 149, 151, 0.4)';
             }
             if (thisPointedWordRef.hasSymbols.length && thisPointedWordRef.word.split('_!!_').length === 1) {
-                const thisSymbol = self.props.topComment.symbols.find((symb) => symb.redisKey === thisPointedWordRef.hasSymbols[0])
+                const thisSymbol = self.props.topComment.symbols.find(thisSymbol => {
+                    const thisSymbolRedisKey = `symbol:${thisSymbol.type}:${thisSymbol.symbol}`;
+                    return thisSymbolRedisKey === thisPointedWordRef.hasSymbols[0];
+                });
                 thisPhraseType = `${thisSymbol.type} symbol`;
             }
 

@@ -99,7 +99,7 @@ class FetchCoinAndStockSymbols {
                     const existingSymbol = gotSymbol;
                     symbol = symbolModel.merge(existingSymbol, symbol);
                 }
-                self.redisClient.set(symbolKey, symbol);
+                self.redisClient.set(symbolKey, symbolModel.minimizeForDb(symbol));
             });
         });
     }

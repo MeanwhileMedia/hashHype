@@ -57,7 +57,10 @@ class BarRace extends React.Component {
             this.props.topComments.forEach((thisTopComment) => {
                 const hasTopSymbolKey = thisTopComment.topSymbolHigh['1Hr'] || thisTopComment.topSymbolLow['1Hr'] || null;
                 if (hasTopSymbolKey) {
-                    const hasTopSymbol = thisTopComment.symbols.find(thisSymbol => thisSymbol.redisKey === hasTopSymbolKey);
+                    const hasTopSymbol = thisTopComment.symbols.find(thisSymbol => {
+                        const thisSymbolRedisKey = `symbol:${thisSymbol.type}:${thisSymbol.symbol}`;
+                        return thisSymbolRedisKey === hasTopSymbolKey;
+                    });
                     if (hasTopSymbol && self.state.showTopCommentSymbolTypes.indexOf(hasTopSymbol.type) !== -1) {
                         reducedTopCommentsBySymbol[hasTopSymbolKey] = reducedTopCommentsBySymbol[hasTopSymbolKey] || [];
                         reducedTopCommentsBySymbol[hasTopSymbolKey].push(thisTopComment);
@@ -75,6 +78,7 @@ class BarRace extends React.Component {
         } else {
             reducedTopComments = this.props.topComments;
         }
+
         if (reducedTopComments.length === 0) { return []; }
 
         reducedTopComments.sort((a, b) => b.totalPoints['1Hr'] - a.totalPoints['1Hr']);
@@ -216,6 +220,10 @@ class BarRace extends React.Component {
 
     getRankOnePointScale() {
         const self = this;
+        if (!self.reducedTopComments[0]) {
+            self.rankOnePoints = 0;
+            return;
+        }
         const minSpaceUsageForRankOneBar = 0.9; // min percent of parent container the bar must fill. We let it fluctuate within this margin to allow for a more stable chart that isn't constantly scaling based on rank one point changes.
         const newRankOnePoints = self.reducedTopComments[0].totalPoints['1Hr'];
         if (self.rankOnePoints && newRankOnePoints / self.rankOnePoints <= minSpaceUsageForRankOneBar) {

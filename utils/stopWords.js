@@ -4,8 +4,8 @@
 // the one that comes with natural js because hashHypes algo is efficient enough to allow, and draw meaning from many
 // of the most common english words. We really only need to exlude article and some transitional words.
 
-// The 'remove' list are words which will be totally stripped from comment.stemmedBody. These words will play no role in building word sequences, or earning points.
-const remove = [
+// The 'remove' list are words which will be totally omitted when forming comment.stemmedBody. These words will play no role in building word sequences, or earning points.
+const remove = [ // these are matched again NON-STEMMED tokens inside the extractWordsFromComments stemToken() function.
     'a',
     'am',
     'an',
@@ -41,7 +41,7 @@ const ignore = [ // these are matched against STEMMED tokens during getWordPoint
     'can',
     'will',
     'do',
-    'does',
+    'doe', //does
     'did',
     'have',
     'if',

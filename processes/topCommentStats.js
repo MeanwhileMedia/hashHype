@@ -1017,8 +1017,7 @@ class TopCommentsStats {
         // allSymbolObjectsForComment will be populated using getCached - our most performant redis get method, but data may be stale if other processes are manipulating the objects.
         const allSymbolObjectsForComment = [];
         allSymbolKeys.forEach((thisSymbolKey) => {
-            self.redisClient.throttle.getCached(thisSymbolKey, (gotSymbol) => {
-                if (gotSymbol) symbolModel.execGet(gotSymbol); // add the functionally populated symbol props. The ones produced by the customizable symbol.get function string. They are assigned to gotSymbol.funcdSymbolData and are used in UI.
+            self.redisClient.get(thisSymbolKey, (gotSymbol) => {
                 allSymbolObjectsForComment.push(gotSymbol);
                 if (allSymbolObjectsForComment.length === allSymbolKeys.length) {
                     comment.symbols = allSymbolObjectsForComment.filter(Boolean); // Remove falsies (not found in redis)
