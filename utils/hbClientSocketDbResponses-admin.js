@@ -13,6 +13,13 @@ class HbClientSocketDbResponses_admin {
 
     markUserNotRelevant(message, socket) {
         const self = this;
+
+        // Respond to client right away. Not going to wait.
+        socket.send({
+            channel: `status:clientResponse`, // this is just a generic response message that doesn't have any followup logic. Client just logs to console.
+            data: `markUserNotRelevant (${message.data.username}) request received.`,
+        });
+
         const username = message.data.username;
         const commentId = message.data.commentId; // optional (so the comment which caused this user to become not relevant will be deleted)
         if (!username) return;
@@ -35,6 +42,13 @@ class HbClientSocketDbResponses_admin {
 
     markWordNotRelevant(message, socket) {
         const self = this;
+
+        // Respond to client right away. Not going to wait.
+        socket.send({
+            channel: `status:clientResponse`, // this is just a generic response message that doesn't have any followup logic. Client just logs to console.
+            data: `markWordNotRelevant (${message.data.word}) request received.`,
+        });
+
         const removeWord = message.data.word;
         const commentId = message.data.commentId; // optional (so the comment which caused this word to become not relevant will have this word deducted from it)
         if (!removeWord) return;
@@ -86,6 +100,13 @@ class HbClientSocketDbResponses_admin {
 
     deleteWordFromComment(message, socket) {
         const self = this;
+
+        // Respond to client right away. Not going to wait.
+        socket.send({
+            channel: `status:clientResponse`, // this is just a generic response message that doesn't have any followup logic. Client just logs to console.
+            data: `deleteWordFromComment (${message.data.word}) request received.`,
+        });
+
         const word = message.data.word;
         const commentId = message.data.commentId;
         const commentKey = `comment:${commentId}`;
@@ -102,6 +123,13 @@ class HbClientSocketDbResponses_admin {
 
     deleteComment(message, socket) {
         const self = this;
+
+        // Respond to client right away. Not going to wait.
+        socket.send({
+            channel: `status:clientResponse`, // this is just a generic response message that doesn't have any followup logic. Client just logs to console.
+            data: `deleteComment (${message.data.commentId}) request received.`,
+        });
+
         const commentId = message.data.commentId;
         const commentKey = `comment:${commentId}`;
         if (!commentId) return;
@@ -128,6 +156,13 @@ class HbClientSocketDbResponses_admin {
 
     editSymbolFunction(message, socket) {
         const self = this;
+
+        // Respond to client right away. Not going to wait.
+        socket.send({
+            channel: `status:clientResponse`, // this is just a generic response message that doesn't have any followup logic. Client just logs to console.
+            data: `editSymbolFunction (${message.data.symbol} ${message.data.functionName}) request received.`,
+        });
+        
         const opts = message.data;
         if (!opts || !opts.symbol || !opts.functionName || !opts.functionString) return;
         if (opts.functionName !== 'get' && opts.functionName !== 'match') return;

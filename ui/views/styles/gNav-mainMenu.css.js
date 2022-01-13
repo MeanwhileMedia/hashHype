@@ -39,7 +39,7 @@ const styles = {
                 'align-items': 'center',
                 'position': 'absolute',
                 'top': '0.8rem',
-                'right': '107%',
+                'right': '112%',
                 'margin-right': '.2rem',
                 'transform-origin': 'right top',
             },

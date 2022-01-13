@@ -13,8 +13,14 @@ var hbClientSocketViewResponses = {
       // We are receiving the path to the view file so we can require it async
       hbClientSocketViewResponses.receiveViewResponse(message);
     }
+
     if (hbClientSocketViewResponses.activeViewChangeEvents[message.channel]) { // for when message.channel === "change:redis:key"
       hbClientSocketViewResponses.activeViewChangeEvents[message.channel](message);
+    }
+
+    if (message.channel == 'status:clientResponse') {
+        // this is just a generic response message that doesn't have any followup logic. Just log to console.
+        console.log(message.data);
     }
   },
 

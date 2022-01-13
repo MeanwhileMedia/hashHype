@@ -17,14 +17,16 @@ const styles = {
 
             topCommentStats_barRace_activeCommentInfo: {
                 'position': 'fixed',
+                'top': '0',
+                'bottom': '0',
+                'padding-top': '7rem',
+                'overflow-y': 'scroll',
                 'text-align': 'right',
-                'padding-left': '1rem',
+                'box-sizing': 'border-box',
+                'width': '55%',
+                'padding-left': '2rem',
                 'margin-left': '50%',
-                'padding-right': '2%',
-                'width': '48%',
-                'top': '7rem',
-                'height': `calc(${window.innerHeight}px - 7rem)`,
-                'overflow-y': 'scroll'
+                'padding-right': '6%',
             },
             topCommentStats_barRace_activeCommentInfo_symbolTitle: {
                 'margin-bottom': '4rem',

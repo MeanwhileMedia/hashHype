@@ -5,6 +5,7 @@ import pm2 from 'pm2';
 import {google} from 'googleapis';
 import RedisClient from '../utils/redisClient.js';
 import gDriveConfig from '../utils/googleClient-config.js';
+import NodeMailer from '../utils/nodeMailer.js';
 
 const argv = yargs(process.argv.slice(2)).argv;
 
@@ -18,6 +19,7 @@ class MaintainLogsAndBackups {
     constructor() {
         const self = this;
         self.googleDriveClient = null;
+        self.nodeMailer = new NodeMailer('joeATmeanwhile');
 
         // All interval routines run immediately upon maintence process init, then at the interval times specified.
         self.dbHealthLogInterval = null;
@@ -45,6 +47,8 @@ class MaintainLogsAndBackups {
         self.cloudArchiveCleanupInterval = null;
         self.cloudArchiveCleanupIntervalTime = 60000*720; // twice per 24hrs crawl the files backed up to cloud (google drive) - both logs and rdbs. Delete files older than X days.
 
+        self.maintenaceStatusEmailInterval = null; // sends at app start, and at end of day (UTC)
+
         // In case of cback errors, manually unlock these flags in intervals.
         self.isCleaningArchive = false;
         self.isArchivingLogs = false;
@@ -61,6 +65,7 @@ class MaintainLogsAndBackups {
                 self.initPm2HealthLogInterval();
                 self.initRotateLogsInterval();
                 self.initRotateRDBInterval();
+                self.initMaintenaceStatusEmailInterval();
                 if (self.archiveLogsAndRdbForEnvnames.indexOf(argv.envname) !== -1) {
                     self.initArchiveLogsInterval();
                     self.initArchiveRDBInterval();
@@ -101,10 +106,8 @@ class MaintainLogsAndBackups {
 
     initDbHealthLogInterval() {
         const self = this;
-        self.redisClient.info('all', function (infoObjArray) {
-            // infoObjArray holds "client.server_info" objects for all requested DBs (defaults to run info command on all dbs.)
-            if (!infoObjArray || infoObjArray.length === 0) return;
-            infoObjArray.forEach((thisDbInfoObj) => {
+        self.getDbHealthLog((dbInfoObjArray) => {
+            dbInfoObjArray.forEach((thisDbInfoObj) => {
                 console.log(`DB info stats for "${thisDbInfoObj.dbName}" DB at time ${Date.now()} :`, thisDbInfoObj);
             });
         });
@@ -114,8 +117,28 @@ class MaintainLogsAndBackups {
             self.initDbHealthLogInterval();
         }, self.dbHealthLogIntervalTime);
     }
+    getDbHealthLog(cback) {  // returns array of objects
+        const self = this;
+        self.redisClient.info('all', function (infoObjArray) {
+            // infoObjArray holds "client.server_info" objects for all requested DBs (defaults to run info command on all dbs.)
+            if (!infoObjArray || infoObjArray.length === 0) return;
+            if (cback) cback(infoObjArray);
+        });
+    }
 
     initPm2HealthLogInterval() {
+        const self = this;
+        self.getPm2HealthLog((healthLog) => {
+            console.log(`Process summary (${healthLog.length}):`);
+            console.log(healthLog);
+        });
+
+        if (self.pm2HealthLogInterval) return;
+        self.pm2HealthLogInterval = setInterval(() => {
+            self.initPm2HealthLogInterval();
+        }, self.pm2HealthLogIntervalTime);
+    }
+    getPm2HealthLog(cback) { // returns array of objects
         const self = this;
         pm2.connect((err) => {
             if (err) {
@@ -138,16 +161,11 @@ class MaintainLogsAndBackups {
                         memory: `${Math.ceil(thisProc.monit.memory/1048576*100)/100}mb`
                     }
                 });
-                console.log(`Process summary (${listSummary.length}):`);
-                console.log(listSummary);
                 pm2.disconnect();
+
+                if (cback) cback(listSummary);
             });
         });
-
-        if (self.pm2HealthLogInterval) return;
-        self.pm2HealthLogInterval = setInterval(() => {
-            self.initPm2HealthLogInterval();
-        }, self.pm2HealthLogIntervalTime);
     }
 
     initRotateLogsInterval() {
@@ -370,6 +388,34 @@ class MaintainLogsAndBackups {
         self.cloudArchiveCleanupInterval = setInterval(() => {
             self.initCloudArchiveCleanupInterval();
         }, self.cloudArchiveCleanupIntervalTime);
+    }
+
+    initMaintenaceStatusEmailInterval() {
+        // Sends an email to contact@meanwhilemedia once per day. This stores db and pm2 health info in email, but ALSO is
+        // a health check for your nodemailer. It can never stop working because it's how users request invites.
+        const self = this;
+
+        self.getPm2HealthLog((pm2HealthObjArray) => {
+            self.getDbHealthLog((dbInfoObjArray) => {
+                const statusObj = {
+                    pm2: pm2HealthObjArray,
+                    redis: dbInfoObjArray
+                }
+                const emailType = 'maintenaceStatus';
+                const emailMsgObj = self.nodeMailer.emails['maintenaceStatus'];
+                emailMsgObj.setEmailBody(statusObj, emailMsgObj);
+                self.nodeMailer.sendEmail(emailMsgObj, emailType);
+            });
+        });
+
+        const now = Date.now();
+        const msInDay = 86400000;
+        let eODTstamp = Math.floor((now+msInDay) / msInDay) * msInDay;
+        const msUntilEOD = eODTstamp - now;
+        console.log(`Sending maintenace status email. Next status email will be sent in ${msUntilEOD/1000/60/60}hrs...`);
+        self.maintenaceStatusEmailInterval = setTimeout(() => {
+            self.initMaintenaceStatusEmailInterval();
+        }, msUntilEOD);
     }
 
     getAllLogFileNames(cback) {

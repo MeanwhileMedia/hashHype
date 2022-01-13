@@ -167,6 +167,9 @@ const uiServer = {
                 const sendPromise = new Promise( (resolve, reject) => {
                     let thisFauxSocketObj = {
                         send: (encodedResponseStr) => {
+                            if (typeof encodedResponseStr !== 'string') { // in case one of our socket channels sent back a non-encoded object to send
+                                encodedResponseStr = self.encodeSocketMessage(encodedResponseStr);
+                            }
                             if (thisFauxSocketObj.wasResolved) {
                                 // Because logic below treats this like a socket, it may call this send function more than once (in an attempt to push data to the client). When that occurs,
                                 // we will instead set the new data to our local cachedServerSocketSends object so it's prepped for when the client sends another get request for it (see Scenario 1 above).
@@ -181,7 +184,7 @@ const uiServer = {
                     const foundChannelRoute = self.receiveSocketMessage(encodedMessageStr, thisFauxSocketObj, ctx);
                     if (!foundChannelRoute) {
                         thisFauxSocketObj = null;
-                        resolve(null);
+                        resolve(null); // koa will send a 204 status when body === null
                     }
                 });
                 const encodedResponse = await sendPromise;

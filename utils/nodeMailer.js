@@ -5,6 +5,7 @@ class NodeMailer {
 
     constructor(transporterAccountName = 'joeATmeanwhile') {
         this.emails = {
+
             inviteRequest: {
                 from: 'joe@meanwhilemedia.com',
                 to: 'contact@meanwhilemedia.com',
@@ -16,7 +17,21 @@ class NodeMailer {
                     emailMsgObj.html = emailMsgObj.text;
                     return emailMsgObj;
                 }
+            },
+
+            maintenaceStatus: {
+                from: 'joe@meanwhilemedia.com',
+                to: 'contact@meanwhilemedia.com',
+                subject: 'HashHype daily app status report - HashHype_sys_msg',
+                text: '',
+                html: '',
+                setEmailBody: (data, emailMsgObj) => {
+                    emailMsgObj.text = JSON.stringify(data);
+                    emailMsgObj.html = emailMsgObj.text;
+                    return emailMsgObj;
+                }
             }
+
         }
         const transportConfig = nodeMailerConfig[transporterAccountName]();
         this.transporter = nodemailer.createTransport(transportConfig);
@@ -27,6 +42,10 @@ class NodeMailer {
             const emailMsgObj = this.emails[message.data.emailType];
             emailMsgObj.setEmailBody(message.data, emailMsgObj);
             this.sendEmail(emailMsgObj, message.data.emailType);
+            socket.send({
+                channel: `status:clientResponse`, // this is just a generic response message that doesn't have any followup logic. Client just logs to console.
+                data: 'Invite request succesful.',
+            });
         }
     }
 
