@@ -12,7 +12,7 @@ const commentObjModel = {
             normalizedBody: props.normalizedBody || null, // this is comment.body with contractions expanded + more. See extractWordsFromComments.sanitizeAndNormalizeCommentBody
             stemmedBody: props.stemmedBody || null, // the comment.body passed through natural.PorterStemmer. Lets us know how our code understood the comment.body
             author: props.author || {name: null},
-            createdUtc: props.createdUtc || Date.now(), // when the comment was posted (ms)
+            createdUtc: props.createdUtc || Date.now(), // when the comment was posted (ms). When available, this prop is read from source API. Therefore, this tstamp IS NOT used in our comment pointing algo (we use foundAt - a tstamp hashHype controls)
             foundAt: props.foundAt || Date.now(), // when the comment registered to hashHype
             words: props.words || {}, // object with wordRef objects for vals { 'word_!!_1': wordRef1, 'other_!!_word_!!_GME': wordRef2, etc}
             wordAssocs: props.wordAssocs || {}, // {':happy_face:': {assoc: 'http://imgUrl.jpg', type: 'img'}, etc..} - When parsing raw comments, this offers a way to preserve a word association within comment.body to an image, url, etc greater context. When the raw comment is later processed in "extractWordsFromComments" - this data should be transferred to the individual word/symbol redis object, and this property can be deleted from comment object.

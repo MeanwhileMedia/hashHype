@@ -31,7 +31,7 @@ class TopCommentsStats {
         this.pendingWordFoundAtKeyspaceChannels = {}; // a local record of which '__keyspace@0__:word:*:foundAt' channels have already emitted messages during this refreshTopComments interval. No channel will be acted on twice during one interval.
 
         this.topComments = this.newTopCommentsEntity();
-        this.pendingTopComments = {};  // { GME: [comment1, comment3], YOLO: [comment2, comment3, etc...]} }
+        this.pendingTopComments = {};  // { 'symbol:stock:GME': [comment1, comment3], 'symbol:stock:YOLO': [comment2, comment3, etc...]} }
 
         this.topWordsCounts = {}; // {foo_bar: 35, baz: 100, etc...} // caches counts for words found to be both top, or not.
         this.topWordsCountsMaxLength = 200;
@@ -644,6 +644,18 @@ class TopCommentsStats {
                 //     finalTopComments.push(thisComment);
                 //     return;
                 // }
+
+                // HashHype rule - when a comment has been assigned a topSymbolHigh, that symbol must have earned points for this comment to be selected as a topComment (and potentially surfacing it's symbol as a trend).
+                // This rule is required so that if a comment scores very high because of good word combos and/or 2dGrams, BUT has a topSymbolHigh that isn't trending, we won't present it's symbol in the trending UI.
+                // Adjust minPercOfTotalPointsForSymbol to change how strict this rule is. I.e: minPercOfTotalPointsForSymbol = 0.1 required that a symbol accounts for at least 10% of the comments totalPoints (or else comment is discarded).
+                const minPercOfTotalPointsForSymbol = 0.1;
+                const thisSymbolWord = thisSymbolKey.split(':').splice(2).join(':'); // JWW stopping THIS WILL NOT ACCOUNT FOR symbolAlias matches (and comments that have earned based on alias usage will be wrongly discarded here). Those comments will, however, still earn points for this symbols usage (to provide for another topComment to carry the torch)
+                let percOfTotalPointsFromThisSymbol = 0;
+                if (thisComment.points['1Hr'][thisSymbolWord]) percOfTotalPointsFromThisSymbol = thisComment.points['1Hr'][thisSymbolWord] / thisComment.totalPoints['1Hr'];
+                if (percOfTotalPointsFromThisSymbol < minPercOfTotalPointsForSymbol) {
+                    // console.warn(`Must discard comment:${thisComment.id} for symbol group ${thisSymbolWord} because only ${percOfTotalPointsFromThisSymbol*100}% of it's totalPoints were earned from it's topSymbolHigh (${thisComment.topSymbolHigh['1Hr']}).`);
+                    return;
+                }
 
                 if (nonOutlierTotalPoints !== null && nonOutlierTotalPoints.indexOf(thisComment.totalPoints['1Hr']) === -1) {
                     const stDevCount = Math.abs(thisComment.totalPoints['1Hr'] - pointsMedian) / pointsStdDev;

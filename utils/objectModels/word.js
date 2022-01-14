@@ -84,12 +84,12 @@ const wordObjModel = {
 
     registerWordToCommentsIndex: function(wordString, comment, redisClient, cback) {
         const self = wordObjModel;
-        // A wordToComments index (index:wordToComments:foo_bar) is a redis sorted set of comment ids (order pointed using their createdUtc tstamps). Sorted sets let us later fetch ranges based on createdUtc time frames.
+        // A wordToComments index (index:wordToComments:foo_bar) is a redis sorted set of comment ids (order pointed using their foundAt tstamps). Sorted sets let us later fetch ranges based on foundAt time frames.
         // This index is used by topCommentStats when it gets another redis '__keyspace@0__:word:*:foundAt' and needs to determine all of the comments that may be eligible for new points.
         // cback returns true if was added and saved. false otherwise.
         const thisIndexKey = `index:wordToComments:${wordString}`;
         self.registerWordToUsersIndex(wordString, comment, redisClient, () => {
-            redisClient.zadd(thisIndexKey, [comment.createdUtc, comment.id], (itemsAddedCount) => {
+            redisClient.zadd(thisIndexKey, [comment.foundAt, comment.id], (itemsAddedCount) => {
                 if (itemsAddedCount === 0) {
                     // If zadd returns 0, this implies that the item could not be added because it already existed, or the command errored.
                     console.warn(`Could not zadd comment:${comment.id} to ${thisIndexKey}. Most likely, that comment id already existed in the sorted set.`);
@@ -107,12 +107,12 @@ const wordObjModel = {
 
     registerWordToUsersIndex: function(wordString, comment, redisClient, cback) {
         const self = wordObjModel;
-        // A wordToUsers index (index:wordToUsers:foo_bar:agentOOjoe) is a redis sorted set of comment ids (order pointed using their createdUtc tstamps). Sorted sets let us later fetch ranges based on createdUtc time frames.
+        // A wordToUsers index (index:wordToUsers:foo_bar:agentOOjoe) is a redis sorted set of comment ids (order pointed using their foundAt tstamps). Sorted sets let us later fetch ranges based on foundAt time frames.
         // This index is used by topCommentStats to get a list of all comments, by a user, which contained a specific word. A user can only earn points when one of their words is recommented IF they aren't the one who recommented it.
         // cback returns true if was added and saved. false otherwise.
 
         const thisIndexKey = `index:wordToUsers:${wordString}:${comment.author.name}`;
-        redisClient.zadd(thisIndexKey, [comment.createdUtc, comment.id], (itemsAddedCount) => {
+        redisClient.zadd(thisIndexKey, [comment.foundAt, comment.id], (itemsAddedCount) => {
             if (itemsAddedCount === 0) {
                 console.warn(`Could not zadd comment:${comment.id} to ${thisIndexKey}. Most likely, that comment id already existed in the sorted set.`);
                 if (cback) cback(false);

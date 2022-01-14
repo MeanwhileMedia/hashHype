@@ -160,9 +160,9 @@ class HbClientSocketDbResponses_admin {
         // Respond to client right away. Not going to wait.
         socket.send({
             channel: `status:clientResponse`, // this is just a generic response message that doesn't have any followup logic. Client just logs to console.
-            data: `editSymbolFunction (${message.data.symbol} ${message.data.functionName}) request received.`,
+            data: `editSymbolFunction (${message.data.symbol.symbol} ${message.data.functionName}) request received.`,
         });
-        
+
         const opts = message.data;
         if (!opts || !opts.symbol || !opts.functionName || !opts.functionString) return;
         if (opts.functionName !== 'get' && opts.functionName !== 'match') return;
