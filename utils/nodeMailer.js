@@ -30,6 +30,19 @@ class NodeMailer {
                     emailMsgObj.html = emailMsgObj.text;
                     return emailMsgObj;
                 }
+            },
+
+            diskWarning: {
+                from: 'joe@meanwhilemedia.com',
+                to: 'contact@meanwhilemedia.com',
+                subject: 'WARNING! disk space low - HashHype_sys_msg',
+                text: '',
+                html: '',
+                setEmailBody: (data, emailMsgObj) => {
+                    emailMsgObj.text = JSON.stringify(data);
+                    emailMsgObj.html = emailMsgObj.text;
+                    return emailMsgObj;
+                }
             }
 
         }

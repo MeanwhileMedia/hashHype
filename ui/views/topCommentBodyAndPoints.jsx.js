@@ -395,9 +395,7 @@ class TopCommentBodyAndPoints extends React.Component {
             thisPointsExplanation = (
                 <p style={css.topCommentBodyAndPoints_pointsInfo_body}>The {thisPhraseType}
                     {' '}"<span style={{'border-bottom': `4px solid ${underlineColor}`}}><b dangerouslySetInnerHTML={{__html: self.renderEmojisInBody(shortestRawWord)}}></b></span>"
-                    {' '}was in new comments by
-                    {' '}<b>{self.props.topComment.points['1Hr'][thisPointedWordRef.word] / thisPointedWordRef.pointVal}</b>
-                    {' '}other users. It's the
+                    {' '}is the
                     {' '}<b>{commentFormatter.getNumberOrdinal(self.state.activePointsInfoWordIndex+1)}</b>
                     {' '}most important phrase in this comment.
                 </p>

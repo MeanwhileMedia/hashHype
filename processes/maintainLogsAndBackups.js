@@ -1,8 +1,10 @@
 import fs from 'fs';
 import path from 'path';
+import {exec} from 'child_process';
 import yargs from 'yargs';
 import pm2 from 'pm2';
 import {google} from 'googleapis';
+import diskUsage from 'diskusage';
 import RedisClient from '../utils/redisClient.js';
 import gDriveConfig from '../utils/googleClient-config.js';
 import NodeMailer from '../utils/nodeMailer.js';
@@ -26,7 +28,11 @@ class MaintainLogsAndBackups {
         self.dbHealthLogIntervalTime = 60000*5; // once per 5 minutes. This is a sizeable log
 
         self.pm2HealthLogInterval = null;
-        self.pm2HealthLogIntervalTime = 60000*2; // once per 2 minutes. This is a sizeable log
+        self.pm2HealthLogIntervalTime = 60000*2; // once per 2 minutes.
+
+        self.archiveDbHealthLogInterval = null;
+        self.archiveDbHealthLogIntervalTime = 60000*4; // once per 4 minutes.
+        self.levelDbDir = path.resolve(process.cwd(), '..', 'hashHypeArchive'); // make sure this matches var by same name in ArchiveKeysToDisk
 
         self.rotateLogsInterval = null;
         self.rotateLogsIntervalTime = 60000*10; // check every 10mins. Confirm all required local log files exist according to our day tstamp naming pattern. Create a new log file when the day turns. Check logs directory for expired logs to delete from local machine.
@@ -63,6 +69,7 @@ class MaintainLogsAndBackups {
             self.initGoogleDriveClient(() => {
                 self.initDbHealthLogInterval();
                 self.initPm2HealthLogInterval();
+                self.initArchiveDbHealthLogInterval();
                 self.initRotateLogsInterval();
                 self.initRotateRDBInterval();
                 self.initMaintenaceStatusEmailInterval();
@@ -164,6 +171,55 @@ class MaintainLogsAndBackups {
                 pm2.disconnect();
 
                 if (cback) cback(listSummary);
+            });
+        });
+    }
+
+    initArchiveDbHealthLogInterval() {
+        const self = this;
+        self.getArchiveDbHealthLog((archiveDbHealthLogObj) => {
+            console.log(`Archive DB info at time ${Date.now()} :`, archiveDbHealthLogObj);
+            if (parseInt(archiveDbHealthLogObj.diskLeft) < 500) {
+                console.warn(`WARNING! This disk is running out of space. ${parseInt(archiveDbHealthLogObj.diskLeft) / parseInt(diskInfo.total)}% of space remains...`);
+                if (!self.sentDiskSpaceWarningEmail) {
+                    self.sentDiskSpaceWarningEmail = true;
+                    const emailType = 'diskWarning';
+                    const emailMsgObj = self.nodeMailer.emails[emailType];
+                    emailMsgObj.setEmailBody(archiveDbHealthLogObj, emailMsgObj);
+                    self.nodeMailer.sendEmail(emailMsgObj, emailType);
+                }
+            }
+        });
+
+        if (self.archiveDbHealthLogInterval) return;
+        self.archiveDbHealthLogInterval = setInterval(() => {
+            self.initArchiveDbHealthLogInterval();
+        }, self.archiveDbHealthLogIntervalTime);
+    }
+    getArchiveDbHealthLog(cback) {  // returns array of objects
+        const self = this;
+        const archiveDbHealthLogObj = {
+            envname: argv.envname,
+            dir: self.levelDbDir,
+            dbDiskUsage: null,
+            diskSize: null,
+            diskLeft: null
+        }
+        exec(`du -hs ${self.levelDbDir}`, (error, stdout, stderr) => {
+            if (error || stderr) {
+                console.error(`du -hs ${self.levelDbDir} error.`, error, stderr);
+                return;
+            }
+            archiveDbHealthLogObj.dbDiskUsage = stdout.split('\t')[0];
+
+            diskUsage.check('/', function(err, diskInfo) {
+                if (err) {
+                    console.log('Could not check disk usage', err);
+                } else {
+                    archiveDbHealthLogObj.diskSize = Math.floor(diskInfo.total / 1024 / 1024) + 'M';
+                    archiveDbHealthLogObj.diskLeft = Math.floor(diskInfo.available / 1024 / 1024) + 'M';
+                }
+                if (cback) cback(archiveDbHealthLogObj);
             });
         });
     }
@@ -397,14 +453,17 @@ class MaintainLogsAndBackups {
 
         self.getPm2HealthLog((pm2HealthObjArray) => {
             self.getDbHealthLog((dbInfoObjArray) => {
-                const statusObj = {
-                    pm2: pm2HealthObjArray,
-                    redis: dbInfoObjArray
-                }
-                const emailType = 'maintenaceStatus';
-                const emailMsgObj = self.nodeMailer.emails['maintenaceStatus'];
-                emailMsgObj.setEmailBody(statusObj, emailMsgObj);
-                self.nodeMailer.sendEmail(emailMsgObj, emailType);
+                self.getArchiveDbHealthLog((archiveDbInfoObj) => {
+                    const statusObj = {
+                        pm2: pm2HealthObjArray,
+                        redis: dbInfoObjArray,
+                        levelDB: archiveDbInfoObj
+                    }
+                    const emailType = 'maintenaceStatus';
+                    const emailMsgObj = self.nodeMailer.emails[emailType];
+                    emailMsgObj.setEmailBody(statusObj, emailMsgObj);
+                    self.nodeMailer.sendEmail(emailMsgObj, emailType);
+                });
             });
         });
 

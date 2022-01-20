@@ -66,7 +66,7 @@ const genConfigs = {
                 out_file: genConfigs.getLogPath('stockSymbols', 'out'),
                 log_date_format: 'MM/DD HH:mm:ss'
             }, {
-                name: 'Comment Word Extractor',
+                name: 'Extract Words From Comments',
                 script: './processes/extractWordsFromComments.js',
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('wordExtractor', 'err'),
@@ -80,12 +80,20 @@ const genConfigs = {
                 out_file: genConfigs.getLogPath('topComments', 'out'),
                 log_date_format: 'MM/DD HH:mm:ss'
             }, {
-                name: 'MaintainLogsAndBackups',
+                name: 'Maintain Logs And Backups',
                 script: './processes/maintainLogsAndBackups.js',
                 args: `--envname=${genConfigs.cliArgs.envname}`,
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('maintenance', 'err'),
                 out_file: genConfigs.getLogPath('maintenance', 'out'),
+                log_date_format: 'MM/DD HH:mm:ss'
+            }, {
+                name: 'Archive Keys To Disk',
+                script: './processes/archiveKeysToDisk.js',
+                args: `--envname=${genConfigs.cliArgs.envname}`,
+                interpreter_args: `-r esm`,
+                error_file: genConfigs.getLogPath('archiveKeys', 'err'),
+                out_file: genConfigs.getLogPath('archiveKeys', 'out'),
                 log_date_format: 'MM/DD HH:mm:ss'
             }
         ];
@@ -144,3 +152,4 @@ module.exports = {
 //     - for a machine that will run redis - sudo apt install build-essential
 //     - for a machine that will run redis - perform *1 above
 //     - install node (nvm) and redis (https://redis.io/topics/quickstart)
+//     - sudo apt-get install libleveldb-dev (for a machine that will hold long term archive data in LevelDB)
