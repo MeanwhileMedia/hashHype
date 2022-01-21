@@ -6,6 +6,7 @@ import pm2 from 'pm2';
 import {google} from 'googleapis';
 import diskUsage from 'diskusage';
 import RedisClient from '../utils/redisClient.js';
+import LevelDBClient from '../utils/levelDBClient.js';
 import gDriveConfig from '../utils/googleClient-config.js';
 import NodeMailer from '../utils/nodeMailer.js';
 
@@ -20,6 +21,7 @@ const tstampPosInFilename = 1; // where filename is "dev01-18908-uiServer-out.lo
 class MaintainLogsAndBackups {
     constructor() {
         const self = this;
+
         self.googleDriveClient = null;
         self.nodeMailer = new NodeMailer('joeATmeanwhile');
 
@@ -66,18 +68,20 @@ class MaintainLogsAndBackups {
         }, self.rotateLogsIntervalTime*3.5); // maintain an offset interval from rotateLogsIntervalTime and rotateRDBIntervalTime
 
         self.initRedisClient(() => {
-            self.initGoogleDriveClient(() => {
-                self.initDbHealthLogInterval();
-                self.initPm2HealthLogInterval();
-                self.initArchiveDbHealthLogInterval();
-                self.initRotateLogsInterval();
-                self.initRotateRDBInterval();
-                self.initMaintenaceStatusEmailInterval();
-                if (self.archiveLogsAndRdbForEnvnames.indexOf(argv.envname) !== -1) {
-                    self.initArchiveLogsInterval();
-                    self.initArchiveRDBInterval();
-                    self.initCloudArchiveCleanupInterval();
-                }
+            self.initLevelDbClient(() => {
+                self.initGoogleDriveClient(() => {
+                    self.initDbHealthLogInterval();
+                    self.initPm2HealthLogInterval();
+                    self.initArchiveDbHealthLogInterval();
+                    self.initRotateLogsInterval();
+                    self.initRotateRDBInterval();
+                    self.initMaintenaceStatusEmailInterval();
+                    if (self.archiveLogsAndRdbForEnvnames.indexOf(argv.envname) !== -1) {
+                        self.initArchiveLogsInterval();
+                        self.initArchiveRDBInterval();
+                        self.initCloudArchiveCleanupInterval();
+                    }
+                });
             });
         });
     }
@@ -87,6 +91,17 @@ class MaintainLogsAndBackups {
         this.redisClient = new RedisClient({
             onConnect: () => {
                 console.log('Connected new redis sub client for MaintainLogsAndBackups class.');
+                if(cback) cback();
+            }
+        });
+    }
+
+    initLevelDbClient(cback) {
+        const self = this;
+        self.levelDbClient = new LevelDBClient({
+            redisClient: self.redisClient,
+            onConnect: () => {
+                console.log('Connected new levelDB client for MaintainLogsAndBackups class.');
                 if(cback) cback();
             }
         });

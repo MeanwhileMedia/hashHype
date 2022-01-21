@@ -1,5 +1,4 @@
 import redis from 'redis';
-import yargs from 'yargs';
 import redisClientConfig from './redisClient-config.js';
 import commentModel from './objectModels/comment.js';
 import wordModel from './objectModels/word.js';
@@ -66,11 +65,22 @@ class RedisClient {
                 });
             }));
             clientConnectPromises.push(new Promise( (resolve, reject) => {
-                self.initClientConnection(clientOpts, 'pubsub', (node_redis_client) => {
+                self.initClientConnection(clientOpts, 'pub', (node_redis_client) => {
                     if (node_redis_client) {
                         self.clients[thisDbName] = self.clients[thisDbName] || {};
-                        self.clients[thisDbName].pubsub = node_redis_client;
-                        resolve(self.clients[thisDbName].pubsub);
+                        self.clients[thisDbName].pub = node_redis_client;
+                        resolve(self.clients[thisDbName].pub);
+                    } else {
+                        reject(null);
+                    }
+                });
+            }));
+            clientConnectPromises.push(new Promise( (resolve, reject) => {
+                self.initClientConnection(clientOpts, 'sub', (node_redis_client) => {
+                    if (node_redis_client) {
+                        self.clients[thisDbName] = self.clients[thisDbName] || {};
+                        self.clients[thisDbName].sub = node_redis_client;
+                        resolve(self.clients[thisDbName].sub);
                     } else {
                         reject(null);
                     }
@@ -788,17 +798,31 @@ class RedisClient {
     // Below are extended pubsub functions. NOT YET normalized or routed through "determineTargetDb"
     on(msgChannel, cback, dbName = 'short') {
         const self = this;
-        self.clients[dbName].pubsub.on(msgChannel, cback);
+        self.clients[dbName].sub.on(msgChannel, cback);
     }
 
     subscribe(msgChannel, dbName = 'short') {
         const self = this;
-        self.clients[dbName].pubsub.subscribe(msgChannel);
+        self.clients[dbName].sub.subscribe(msgChannel);
+    }
+
+    unsubscribe(msgChannel, dbName = 'short') {
+        const self = this;
+        self.clients[dbName].sub.unsubscribe(msgChannel);
     }
 
     psubscribe(msgChannel, dbName = 'short') {
         const self = this;
-        self.clients[dbName].pubsub.psubscribe(msgChannel);
+        self.clients[dbName].sub.psubscribe(msgChannel);
+    }
+
+    publish(msgChannel, message, dbName = 'short') {
+        const self = this;
+        if (typeof message !== 'object') {
+            console.warn(`Redis publish command requires message to be an object. Will not publish message: ${message}`);
+            return;
+        }
+        self.clients[dbName].pub.publish(msgChannel, JSON.stringify(message));
     }
 
     ////////

@@ -54,6 +54,7 @@ const genConfigs = {
             }, {
                 name: 'Fetch Reddit Comments',
                 script: './processes/fetchRedditComments.js',
+                args: `--envname=${genConfigs.cliArgs.envname}`,
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('fetchReddit', 'err'),
                 out_file: genConfigs.getLogPath('fetchReddit', 'out'),
@@ -61,6 +62,7 @@ const genConfigs = {
             }, {
                 name: 'Fetch Stock Symbols',
                 script: './processes/fetchCoinAndStockSymbols.js',
+                args: `--envname=${genConfigs.cliArgs.envname}`,
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('stockSymbols', 'err'),
                 out_file: genConfigs.getLogPath('stockSymbols', 'out'),
@@ -68,6 +70,7 @@ const genConfigs = {
             }, {
                 name: 'Extract Words From Comments',
                 script: './processes/extractWordsFromComments.js',
+                args: `--envname=${genConfigs.cliArgs.envname}`,
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('wordExtractor', 'err'),
                 out_file: genConfigs.getLogPath('wordExtractor', 'out'),
@@ -75,6 +78,7 @@ const genConfigs = {
             }, {
                 name: 'Top Comment Stats',
                 script: './processes/topCommentStats.js',
+                args: `--envname=${genConfigs.cliArgs.envname}`,
                 interpreter_args: `-r esm ${inspect}`,
                 error_file: genConfigs.getLogPath('topComments', 'err'),
                 out_file: genConfigs.getLogPath('topComments', 'out'),
@@ -90,7 +94,7 @@ const genConfigs = {
             }, {
                 name: 'Archive Keys To Disk',
                 script: './processes/archiveKeysToDisk.js',
-                args: `--envname=${genConfigs.cliArgs.envname}`,
+                args: `--envname=${genConfigs.cliArgs.envname} --levelDBMaster=true`,
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('archiveKeys', 'err'),
                 out_file: genConfigs.getLogPath('archiveKeys', 'out'),

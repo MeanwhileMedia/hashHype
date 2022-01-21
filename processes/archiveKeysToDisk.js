@@ -1,7 +1,7 @@
 import path from 'path';
 import yargs from 'yargs';
-import level from 'level'; // https://github.com/Level/leveldown#api
 import RedisClient from '../utils/redisClient.js';
+import LevelDBClient from '../utils/levelDBClient.js';
 
 const argv = yargs(process.argv.slice(2)).argv;
 
@@ -13,9 +13,7 @@ class ArchiveKeysToDisk {
         const self = this;
 
         self.redisClient = null;
-        self.levelDbClient = null; // DOES NOT automatically perform json stringify/parse during get/set like our redisClient.
-        self.levelDbDir = path.resolve(process.cwd(), '..', 'hashHypeArchive'); // IMPORTANT - this directory must be above our main hashHype app directory or it will be nuked during our deploy process
-        self.leveDbOptions = {}; // anything not defined here will inherit defaults through level
+        self.levelDbClient = null;
 
         self.lastSnapshotTstamp = null;
         self.redisKeyspaceSubscriptions = { // obj where key defines specific redis key to be transferred to long term archive, and where value is the function run for each redis change message for that key.
@@ -39,8 +37,8 @@ class ArchiveKeysToDisk {
                     const levelDBArchiveKey = `${thisRedisObjKey}:${thisTstamp}`;
                     self.redisClient.get(thisRedisObjKey, (topCommentsObj) => {
                         console.log(`Saving new ${levelDBArchiveKey} snapshot to key archive DB...`);
-                        self.levelDbClient.set(levelDBArchiveKey, JSON.stringify(topCommentsObj), (err) => {
-                            if (err) {
+                        self.levelDbClient.set(levelDBArchiveKey, topCommentsObj, (success) => {
+                            if (!success) {
                                 console.error(`Failed to snapshot a key to levelDB archive (${levelDBArchiveKey})`, err);
                                 return;
                             }
@@ -74,14 +72,12 @@ class ArchiveKeysToDisk {
 
     initLevelDbClient(cback) {
         const self = this;
-        level(self.levelDbDir, self.leveDbOptions, (err, db) => {
-            if (err) {
-                console.error(`ERR! Could not connect to "${self.levelDbName}" levelDb. Will not archive any redis key snapshots!`);
-                return;
+        self.levelDbClient = new LevelDBClient({
+            redisClient: self.redisClient,
+            onConnect: () => {
+                console.log('Connected new levelDB client for ArchiveKeysToDisk class.');
+                if(cback) cback();
             }
-            self.levelDbClient = db;
-            self.levelDbClient.set = self.levelDbClient.put; // to make uniform with our redisClient
-            if (cback) cback();
         });
     }
 
@@ -114,23 +110,11 @@ class ArchiveKeysToDisk {
         // be easily browsed, or deleted later (if the archive DB gets to big).
         const self = this;
         const tstampIndexKey = `index:snapshotTstamps:${thisArchivedObjKey}`;
-        self.levelDbClient.get(tstampIndexKey, (err, archiveIndexJson) => { // archiveIndex is array
-            if (err && err.notFound) {
-                archiveIndexJson = '[]';
-            } else if (err) {
-                console.error(`Failed to get ${thisArchiveIndexKey}`, err);
-                return;
-            }
-            const thisArchiveIndex = JSON.parse(archiveIndexJson);
-            thisArchiveIndex.push(tstamp);
-            // console.log(`${tstampIndexKey.split(':').slice(2).join(':')} has been archived to LevelDb ${thisArchiveIndex.length} times:`, thisArchiveIndex);
-            self.levelDbClient.set(tstampIndexKey, JSON.stringify(thisArchiveIndex), (err) => {
-                if (err) {
-                    console.error(`Failed to set ${levelDBArchiveKey}`);
-                } else {
-                    if (cback) cback();
-                }
-            });
+        self.levelDbClient.get(tstampIndexKey, (archiveIndex) => { // archiveIndex is array
+            if (!archiveIndex) archiveIndex = [];
+            archiveIndex.push(tstamp);
+            // console.log(`${tstampIndexKey.split(':').slice(2).join(':')} has been archived to LevelDb ${archiveIndex.length} times:`, archiveIndex);
+            self.levelDbClient.set(tstampIndexKey, archiveIndex);
         });
     }
 
@@ -139,33 +123,24 @@ class ArchiveKeysToDisk {
         // up `index:snapshotTstamps:${thisArchivedObjKey}` arrays.
         const self = this;
         const indexKey = `index:snapshotObjKeys`;
-        self.levelDbClient.get(indexKey, (err, snapshotObjKeysJson) => { // snapshotObjKeysJson is array
-            if (err && err.notFound) {
-                snapshotObjKeysJson = '[]';
-            } else if (err) {
-                console.error(`Failed to get ${indexKey}`, err);
-                return;
-            }
-            const thisArchiveIndex = JSON.parse(snapshotObjKeysJson);
-            if (thisArchiveIndex.indexOf(thisArchivedObjKey) !== -1) {
+        self.levelDbClient.get(indexKey, (snapshotObjKeys) => { // snapshotObjKeys is array
+            if (!snapshotObjKeys) snapshotObjKeys = [];
+            if (snapshotObjKeys.indexOf(thisArchivedObjKey) !== -1) {
                 if (cback) cback();
                 return;
             }
-            thisArchiveIndex.push(thisArchivedObjKey);
-            console.log(`${thisArchivedObjKey} has been added to LevelDb ${indexKey}. All redis objects being snapshotted:`, thisArchiveIndex);
-            self.levelDbClient.set(indexKey, JSON.stringify(thisArchiveIndex), (err) => {
-                if (err) {
-                    console.error(`Failed to set ${indexKey}`);
-                } else {
-                    if (cback) cback();
+            snapshotObjKeys.push(thisArchivedObjKey);
+            console.log(`${thisArchivedObjKey} has been added to LevelDb ${indexKey}. All redis objects being snapshotted:`, snapshotObjKeys);
+            self.levelDbClient.set(indexKey, snapshotObjKeys, (success) => {
+                if (!success) {
+                    console.error(`Failed to set ${indexKey}`, err);
                 }
+                if (cback) cback();
             });
         });
     }
 
 }
-
-
 
 const thisArchiveKeysToDisk = new ArchiveKeysToDisk();
 export default ArchiveKeysToDisk;
