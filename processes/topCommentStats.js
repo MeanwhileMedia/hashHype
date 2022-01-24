@@ -659,7 +659,7 @@ class TopCommentsStats {
 
                 if (nonOutlierTotalPoints !== null && nonOutlierTotalPoints.indexOf(thisComment.totalPoints['1Hr']) === -1) {
                     const stDevCount = Math.abs(thisComment.totalPoints['1Hr'] - pointsMedian) / pointsStdDev;
-                    console.warn(`An outlier totalPoints (${thisComment.totalPoints['1Hr']}) was found on comment:${thisComment.id} (${stDevCount} stdDevs from median ${pointsMedian}). This comment will be discarded from ${thisSymbolKey} group (${pendingTopCommentsForThisSymbol.length} comments). comment.points['1Hr']:`, thisComment.points['1Hr']);
+                    console.warn(`An outlier totalPoints (${thisComment.totalPoints['1Hr']}) was found on comment:${thisComment.id} (${stDevCount} stdDevs from median ${pointsMedian}). This comment will be discarded from ${thisSymbolKey} group (${pendingTopCommentsForThisSymbol.length} comments).`); // comment.points['1Hr']:`, thisComment.points['1Hr']);
                     if (stDevCount > stdDevCountExtreme) {
                         console.warn(`An extreme outlier totalPoints (${thisComment.totalPoints['1Hr']}) was found on comment:${thisComment.id} (${stDevCount} stdDevs from median ${pointsMedian}). This comment will be DELETED from redis. comment.points['1Hr']:`, thisComment.points['1Hr']);
                         self.removeCommentFromAll({comment: thisComment});

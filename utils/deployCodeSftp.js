@@ -184,9 +184,11 @@ class DeployCodeSftp {
     watchForChangesToDeploy(watchDirectory) {
         const self = this;
         // watching all files individually (to support linux) - see https://nodejs.org/docs/latest/api/fs.html#fs_caveats
-        const ignore = [ // can be files or dirs
+        const ignore = [ // can be files or dirs (must be full name not blobs)
             'node_modules',
-            '.git'
+            '.git',
+            '.tmp.drivedownload',
+            '.tmp.driveupload'
         ];
         console.log(`Watching for changes to files in dir: ${watchDirectory}`)
         fs.readdir(watchDirectory, {withFileTypes: true}, (err, files) => {

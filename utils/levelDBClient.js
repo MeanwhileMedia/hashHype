@@ -1,4 +1,7 @@
 import path from 'path';
+import {exec} from 'child_process';
+import {nextTick} from 'process';
+import diskUsage from 'diskusage';
 import yargs from 'yargs';
 import level from 'level'; // https://github.com/Level/leveldown#api
 import { v4 as uuidv4 } from 'uuid';
@@ -20,16 +23,32 @@ class LevelDBClient {
         self.redisClient = opts.redisClient;
 
         self.levelDbDir = path.resolve(process.cwd(), '..', 'hashHypeArchive'); // IMPORTANT - this directory must be above our main hashHype app directory or it will be nuked during our deploy process
-
+        self.levelDbConnectionStatus =
         // pubSubUidSubscriptions is used as a temporary record for getViaPubSub requests. The levelDBMaster is instructed to publish the value fetched from levelDB
         // to a unique one-time-use channel that the requesting process is waiting to hear back on.
         self.pubSubUidSubscriptions = {}; // {uid123: {channel: 'uid123', cback: func, key: 'foo:bar:absKey', action: 'getORset'}, etc...}
 
+        // This process will also check how much disk this level DB uses in intervals. It will begin deleting the oldest keys once we approach our max disk usage setting.
+        self.diskCheckInterval = null;
+        self.diskCheckIntervalTime = 60000; // once per minute.
+        // self.diskCheckMaxDiskUsage = 0.8; // percentage of disk that this DB uses
+        // self.diskCheckCorrectionDiskUsage = 0.7; // target percentage of disk that this DB uses AFTER ensureDBDiskUsageIsWithinBounds has looped and deleted
+        // JWW temp testing
+        self.diskCheckMaxDiskUsage = 0.08;
+        self.diskCheckCorrectionDiskUsage = 0.04;
+
+        self.diskCheckCorrectionDeletesArchivedKey = 'stats:topComments'; // when ensureDBDiskUsageIsWithinBounds is loop deleting, this is the key that will have it's oldest snapshots deleted.
+
         // argv.levelDBMaster is passed via a cli arg (see machine config single.config.js) and specifies which process
         // will be the one to open a connection to our levelDB and respond to pubsub requests for a archive values. Only one process can be designated levelDBMaster.
         if (argv.levelDBMaster) {
-            self.openLevelDB(() => {
+            self.openLevelDB((success) => {
+                if (!success) {
+                    console.error(`ERR! levelDBMaster failed to open LevelDB ${self.levelDbDir}. All archive db logic is blocked!`);
+                    return;
+                }
                 self.subscribeToRedisPubSubRequests();
+                self.initDiskCheckInterval();
                 if (opts.onConnect) opts.onConnect();
             });
         } else {
@@ -38,15 +57,57 @@ class LevelDBClient {
         }
     }
 
-    openLevelDB(cback) {
+    openLevelDB(cback, retryCount = 0) {
         const self = this;
-        level(self.levelDbDir, {}, (err, db) => {
+
+        const maxRetries = 3;
+        const retryWait = 2000;
+        const retry = () => {
+            if (retryCount < maxRetries) {
+                ++retryCount;
+                console.warn(`Will retry to open ${self.levelDbDir} levelDb (attempt #${retryCount})...`);
+                setTimeout(() => {
+                    self.openLevelDB(cback, retryCount);
+                }, retryWait);
+            } else {
+                console.error(`Failed to openLevelDB after ${retryCount} retries. Will not try anymore.`)
+                if (cback) cback(false);
+            }
+        };
+
+        if (self.openedLevelDB) {
+            console.warn(`Can't open the levelDB when another client already holds it in ${self.openedLevelDB.status} state...`);
+            self.closeLevelDB(() => {
+                retry();
+            })
+            return;
+        }
+
+        self.openedLevelDB = level(self.levelDbDir, {}, (err, db) => {
             if (err) {
-                console.error(`ERR! Could not connect to "${self.levelDbName}" levelDb. Will not archive any redis key snapshots!`);
+                console.error(`ERR! Could not connect to "${self.levelDbDir}" levelDb.`, err);
+                retry();
                 return;
             }
-            self.openedLevelDB = db;
-            if (cback) cback();
+            if (cback) cback(true);
+        });
+    }
+
+    closeLevelDB(cback) {
+        const self = this;
+        if (!self.openedLevelDB || !self.openedLevelDB.close) {
+            console.warn(`Can't close a levelDB client because it is not open.`);
+            if (cback) cback(false);
+            return;
+        }
+        self.openedLevelDB.close((err) => {
+            if (err) {
+                console.error(`ERR! Could not close "${self.levelDbName}" levelDb.`);
+                if (cback) cback(false);
+                return;
+            }
+            self.openedLevelDB = null;
+            if (cback) cback(true);
         });
     }
 
@@ -121,9 +182,9 @@ class LevelDBClient {
         self.openedLevelDB.get(key, (err, valJson) => {
             if (err && err.notFound) {
                 if (cback) cback(null);
-                return
+                return;
             } else if (err) {
-                console.error(`LevelDB error when attempting to get ${thisArchiveIndexKey}`, err);
+                console.error(`LevelDB error when attempting to get ${key}`, err);
                 if (cback) cback(null);
                 return;
             }
@@ -139,7 +200,6 @@ class LevelDBClient {
             if (cback) cback(val);
         });
     }
-
     getViaPubSub(key, cback) {
         const self = this;
         const thisGetReqUid = uuidv4();
@@ -167,13 +227,176 @@ class LevelDBClient {
             }
         });
     }
-
     setViaPubSub(key, valObj, cback) {
         const self = this;
         const thisGetReqUid = uuidv4();
         self.pubSubUidSubscriptions[thisGetReqUid] = {channel: thisGetReqUid, cback: cback, key: key, action: 'set'};
         self.redisClient.subscribe(thisGetReqUid);
         self.redisClient.publish('levelDBClient:set', {key: key, value: valObj, responseChannel: thisGetReqUid});
+    }
+
+    delete(key, cback) {
+        // JWW todo - support deletes from non master processes?
+        const self = this;
+        self.openedLevelDB.del(key, (err) => {
+            if (err) {
+                console.error('LevelDB delete error:', err);
+                if (cback) cback(false, curKeyIndex);
+            } else {
+                if (cback) cback(true, curKeyIndex);
+            }
+        });
+    }
+
+    batch(batchCmds, cback) {
+        const self = this;
+        self.openedLevelDB.batch(batchCmds, (err) => {
+            if (err) {
+                console.error('LevelDB batch error:', err);
+                if (cback) cback(false);
+            } else {
+                if (cback) cback(true);
+            }
+        });
+    }
+
+    compactRange(start, end, cback) {
+        const self = this;
+        self.openedLevelDB.compactRange(start, end, (err) => {
+            if (err) {
+                console.error('LevelDB compactRange error:', err);
+                if (cback) cback(false);
+            } else {
+                if (cback) cback(true);
+            }
+        });
+    }
+
+    initDiskCheckInterval() {
+        const self = this;
+        if (self.isCheckingDisk) {
+            console.warn(`Detected overlapping calls to initDiskCheckInterval...`);
+            return;
+        }
+        self.isCheckingDisk = true;
+
+        self.ensureDBDiskUsageIsWithinBounds(() => {
+            self.isCheckingDisk = false;
+        });
+
+        if (self.diskCheckInterval) return;
+        self.diskCheckInterval = setInterval(() => {
+            self.initDiskCheckInterval();
+        }, self.diskCheckIntervalTime);
+    }
+
+    ensureDBDiskUsageIsWithinBounds(cback, evictingKey, snapshotTstampIndex, deleteBatchSize) {
+        const self = this;
+        evictingKey = evictingKey || self.diskCheckCorrectionDeletesArchivedKey;
+        const minDeleteBatchSize = 10;
+        const maxDeleteBatchSize = 1000;
+
+        self.getDbDiskUsage((startingDiskUsageObj) => {
+            let percDiskUsageByDb = Math.floor((startingDiskUsageObj.dbDiskUsage / startingDiskUsageObj.diskSize) * 1000000) / 1000000;
+            if (percDiskUsageByDb < self.diskCheckMaxDiskUsage && !deleteBatchSize) {
+                console.warn(`LevelDB ${self.levelDbDir} is within acceptable disk usage: ${percDiskUsageByDb*100}%`);
+                if (cback) cback(); // disk usage is OK
+                return;
+            }
+
+            if (!snapshotTstampIndex) {
+                // this must be the first iteration an we have not yet established an array of snapshot keys to be deleted in loop. Do now.
+                self.get(`index:snapshotTstamps:${evictingKey}`, (gotSnapshotTstampIndex) => {
+                    console.warn(`At start of ensureDBDiskUsageIsWithinBounds, there were ${gotSnapshotTstampIndex.length} snapshots of ${evictingKey}`);
+                    self.ensureDBDiskUsageIsWithinBounds(cback, evictingKey, gotSnapshotTstampIndex, minDeleteBatchSize);
+                });
+                return;
+            }
+
+            const batchCmds = [];
+            for (let batchCmdCount = 0; batchCmdCount < deleteBatchSize; batchCmdCount++) {
+                batchCmds.push({ type: 'del', key: `${evictingKey}:${snapshotTstampIndex.shift()}` });
+            }
+            self.batch(batchCmds, (success) => {
+                if (!success) {
+                    console.warn(`ensureDBDiskUsageIsWithinBounds failed to delete a batch of ${batchCmds.length} snapshot keys.`);
+                    if (cback) cback();
+                    return;
+                }
+                console.warn(`ensureDBDiskUsageIsWithinBounds deleted ${batchCmds.length} keys.`);
+
+                // Must now re-save the index:snapshotTstamps array to levelDB (with the deleted tstamps removed)
+                self.set(`index:snapshotTstamps:${evictingKey}`, snapshotTstampIndex, () => {
+                    // compactRange must be run so that levelDB will permanently delete the files which hold the vals for the now deleted keys (before we take our getDbDiskUsage measurement)
+                    self.compactRange(batchCmds[0].key, batchCmds[batchCmds.length-1].key, () => {
+
+                        self.getDbDiskUsage((endingDiskUsageObj) => {
+                            let percDiskUsageByDb = Math.floor((endingDiskUsageObj.dbDiskUsage / endingDiskUsageObj.diskSize) * 1000000) / 1000000;
+                            if (percDiskUsageByDb < self.diskCheckCorrectionDiskUsage) {
+                                console.warn(`SUCCESS! LevelDB ${self.levelDbDir} has been corrected to acceptable disk usage: ${percDiskUsageByDb*100}%`);
+                                if (cback) cback();
+                                return;
+                            }
+
+                            const bytesDifference = startingDiskUsageObj.dbDiskUsage - endingDiskUsageObj.dbDiskUsage;
+                            const estBytesPerKey = bytesDifference / deleteBatchSize;
+                            const bytesUsedOverflowPerc = (endingDiskUsageObj.dbDiskUsage / endingDiskUsageObj.diskSize) - self.diskCheckCorrectionDiskUsage;
+                            const bytesStillNeedToBeDeleted = endingDiskUsageObj.diskSize * bytesUsedOverflowPerc;
+                            console.warn(`ensureDBDiskUsageIsWithinBounds estimates that the previous delete batch (${batchCmds.length}) freed ${bytesDifference}bytes. Each ${evictingKey} snapshot is approximately ${estBytesPerKey}bytes.`)
+
+                            if (bytesDifference <= 0) {
+                                console.warn(`Detected that a levelDB delete command did not result in any freed bytes. There may be an error in our disk space measurement, or other unknown issue. Will stop the ensureDBDiskUsageIsWithinBounds loop at risk of deleting all keys.`);
+                                if (cback) cback();
+                                return;
+                            }
+
+                            let estNextDeleteBatchSize = (bytesStillNeedToBeDeleted / estBytesPerKey) / 2; // we cut this estimated number in half because better to loop more times than accidentally delete too much data in a single loop.
+                            estNextDeleteBatchSize = Math.floor(Math.max(estNextDeleteBatchSize, minDeleteBatchSize));
+                            estNextDeleteBatchSize = Math.min(estNextDeleteBatchSize, maxDeleteBatchSize);
+
+                            // Loop this function again to check diskUsage readings and continue deletions if necc.
+                            console.warn(`LevelDB ${self.levelDbDir} is still too large (${percDiskUsageByDb*100}% of disk). Will delete ${estNextDeleteBatchSize} ${evictingKey} snapshot keys...`);
+                            self.ensureDBDiskUsageIsWithinBounds(cback, evictingKey, snapshotTstampIndex, estNextDeleteBatchSize);
+                        });
+
+                    }); // end self.compactRange
+                }); // end self.set(`index:snapshotTstamps
+            }); // end self.batch(
+
+        }); // end self.getDbDiskUsage
+    } // end ensureDBDiskUsageIsWithinBounds
+
+    getDbDiskUsage(cback) {
+        const self = this;
+        const archiveDbHealthLogObj = {
+            envname: argv.envname,
+            dir: self.levelDbDir,
+            dbDiskUsage: null, // int, bytes
+            diskSize: null, // int, bytes
+            diskLeft: null // int, bytes
+        }
+        exec(`du -b ${self.levelDbDir}`, (error, stdout, stderr) => {
+            if (error || stderr) {
+                console.error(`du -b ${self.levelDbDir} error.`, error, stderr);
+                // Disk may have been busy, or changing. Wait 10s and try again.
+                console.warn(`Will attempt to getDbDiskUsage again after 10s...`);
+                setTimeout(() => {
+                    self.getDbDiskUsage(cback);
+                }, 10000);
+                return;
+            }
+            archiveDbHealthLogObj.dbDiskUsage = parseInt(stdout);
+
+            diskUsage.check('/', function(err, diskInfo) {
+                if (err) {
+                    console.log('Could not check disk usage', err);
+                } else {
+                    archiveDbHealthLogObj.diskSize = diskInfo.total;
+                    archiveDbHealthLogObj.diskLeft = diskInfo.available;
+                }
+                if (cback) cback(archiveDbHealthLogObj);
+            });
+        });
     }
 
 }

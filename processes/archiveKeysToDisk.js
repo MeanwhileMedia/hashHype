@@ -21,9 +21,9 @@ class ArchiveKeysToDisk {
             '__keyspace@0__:stats:topComments': {
                 genTstamp: () => {
                     // Each redis key that is defined here (to be snapshotted to levelDB) is saved to archive key ${objectKey}:${tstampRoundedToDenomination}
-                    // 'stats:topComments' has snapshots saved in 5s denominations
+                    // 'stats:topComments' has snapshots saved in 10s denominations
                     const now = Date.now();
-                    const thisTstamp = now - (now % 5000);
+                    const thisTstamp = now - (now % 10000);
 
                     this.lastUsedTstamp = this.lastUsedTstamp || 0;
                     if (thisTstamp === this.lastUsedTstamp) return null;
@@ -36,12 +36,12 @@ class ArchiveKeysToDisk {
                     if (!thisTstamp) return;
                     const levelDBArchiveKey = `${thisRedisObjKey}:${thisTstamp}`;
                     self.redisClient.get(thisRedisObjKey, (topCommentsObj) => {
-                        console.log(`Saving new ${levelDBArchiveKey} snapshot to key archive DB...`);
                         self.levelDbClient.set(levelDBArchiveKey, topCommentsObj, (success) => {
                             if (!success) {
-                                console.error(`Failed to snapshot a key to levelDB archive (${levelDBArchiveKey})`, err);
+                                console.error(`Failed to snapshot a key to levelDB archive (${levelDBArchiveKey})`);
                                 return;
                             }
+                            console.log(`Saved new ${levelDBArchiveKey} snapshot to key archive DB.`);
                             self.saveTstampToIndex(thisRedisObjKey, thisTstamp);
                         });
                     });
@@ -50,7 +50,7 @@ class ArchiveKeysToDisk {
 
         };
 
-        self.changeEventThrottle = 1000; //ms, maximum for how often this process will run redisKeyspaceSubscriptions actions on any given channel
+        self.changeEventThrottle = 5000; //ms, maximum for how often this process will run redisKeyspaceSubscriptions actions on any given channel
         self.changeEventTstamps = {}; // a record used below in subscribeToRedisKeyspaceEvents when determining if our changeEventThrottle time has elapsed yet.
 
         self.initRedisClient(() => {
@@ -106,7 +106,7 @@ class ArchiveKeysToDisk {
     }
 
     saveTstampToIndex(thisArchivedObjKey, tstamp, cback) {
-        // We must also save all archive snapshot tstamps to the ${redisObjectKey}:index:tstamps object which is used later as a record of all snapshot tstamps so they can
+        // We must also save all archive snapshot tstamps to the index:snapshotTstamps:${redisObjectKey} object which is used later as a record of all snapshot tstamps so they can
         // be easily browsed, or deleted later (if the archive DB gets to big).
         const self = this;
         const tstampIndexKey = `index:snapshotTstamps:${thisArchivedObjKey}`;
@@ -114,7 +114,10 @@ class ArchiveKeysToDisk {
             if (!archiveIndex) archiveIndex = [];
             archiveIndex.push(tstamp);
             // console.log(`${tstampIndexKey.split(':').slice(2).join(':')} has been archived to LevelDb ${archiveIndex.length} times:`, archiveIndex);
-            self.levelDbClient.set(tstampIndexKey, archiveIndex);
+            self.levelDbClient.set(tstampIndexKey, archiveIndex, (success) => {
+                if (!success) console.warn(`Failed to set ${tstampIndexKey} to levelDB.`);
+                if (cback) cback(success);
+            });
         });
     }
 
