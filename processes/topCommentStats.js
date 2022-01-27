@@ -43,8 +43,10 @@ class TopCommentsStats {
         this.minAvgPercentTopWords = 20; // If the rolling average of percent of words which are deemed top words falls below this number, topWordsMinCount will be adjust down in increments until we start hitting our min percent.
         this.groupSizeForAvgPercentTopWords = 5; // We will store the percentage of words which were topWords for this many topWordsRefreshIntervals. After, the averaged percentage becomes part of the logic to update topWordsMinCount.
 
-        this.redisClient = null;
+
+        this.topCommentsMustHaveSymbol = true; // set to true and highly pointed comments that do NOT have a symbol will be excluded from topComments (though they will still be pointed for their reocurring words).
         this.minTopCommentsWithSymbols = 20;
+        this.minTopCommentsWithSymbolsType = 'stock'; // when collecting the minTopCommentsWithSymbols, only count comments who's top symbol is of type 'stock' (minTopCommentsWithSymbolsType)
         this.trackCommentsFor = 3600000; // ms (1hr) How long will we keep updating redis comment objects with recurring word points
 
         this.storeNewTopCommentsStatsThrottleTime = 5000;
@@ -52,6 +54,7 @@ class TopCommentsStats {
             storeNewTopCommentsStats: throttle(this.storeNewTopCommentsStatsThrottleTime, this.storeNewTopCommentsStats).bind(this),
         };
 
+        this.redisClient = null;
         self.initRedisClient(() => {
             self.persistProcessState(() => {
                 self.redisClient.get(self.topCommentsStatsKey, (topCommentStatsObj) => {
@@ -605,7 +608,7 @@ class TopCommentsStats {
             let nonOutlierTotalPoints = null; // array of ints which represent only valid totalPoints['1Hr'] found in this comment group.
             let pointsMedian;
             let pointsStdDev;
-            if (thisSymbolKey !== 'noSymbols' && pendingTopCommentsForThisSymbol.length >= 5) { // we can't assume any outliers with data sets smaller than 5
+            if (thisSymbolKey !== 'noSymbols' && pendingTopCommentsForThisSymbol.length >= 5) { // we can't assume any outliers with data sets smaller than 5, or within comments that don't belong to a common (symbol) group.
                 let allTotalPoints = [];
                 pendingTopCommentsForThisSymbol.forEach(thisComment => {
                     if (thisComment.totalPoints['1Hr']) allTotalPoints.push(thisComment.totalPoints['1Hr']);
@@ -637,13 +640,13 @@ class TopCommentsStats {
                     allChangedTopComments.push(thisComment);
                 }
 
-                if (thisSymbolKey === 'noSymbols') return; // HashHype won't surface any topComments which contain 0 symbols (though these comments still play a part in word reuse)
-                // if (thisSymbolKey === 'noSymbols' && finalTopCommentIds.indexOf(thisComment.id) === -1) {
-                //     // console.log(`Will add comment:${highestScoredSymbolComment.id} (no symbols) to our final selection of topCommentStats.comments.`)
-                //     finalTopCommentIds.push(thisComment.id);
-                //     finalTopComments.push(thisComment);
-                //     return;
-                // }
+                if (thisSymbolKey === 'noSymbols' && self.topCommentsMustHaveSymbol) return; // HashHype won't surface any topComments which contain 0 symbols (though these comments still play a part in word reuse)
+                if (thisSymbolKey === 'noSymbols' && finalTopCommentIds.indexOf(thisComment.id) === -1) {
+                    // console.log(`Will add comment:${highestScoredSymbolComment.id} (no symbols) to our final selection of topCommentStats.comments.`)
+                    finalTopCommentIds.push(thisComment.id);
+                    finalTopComments.push(thisComment);
+                    return;
+                }
 
                 // HashHype rule - when a comment has been assigned a topSymbolHigh, that symbol must have earned points for this comment to be selected as a topComment (and potentially surfacing it's symbol as a trend).
                 // This rule is required so that if a comment scores very high because of good word combos and/or 2dGrams, BUT has a topSymbolHigh that isn't trending, we won't present it's symbol in the trending UI.
@@ -702,10 +705,29 @@ class TopCommentsStats {
         // 3. And trim off the lowest scoring comments (until we have the minimum required comments with symbols)
         let topCommentsWithSymbolsCount = 0;
         finalTopComments.some((thisTopComment) => {
-            topCommentsClone.comments.push(thisTopComment);
-            if (thisTopComment.topSymbolHigh['1Hr']) ++topCommentsWithSymbolsCount;
+
+            // Before choosing to keep this comment in the final selection, take a look at some config flags re: symbol requirements in topComments
+            let commentMeetsSymbolRequirements = false;
+            if (self.minTopCommentsWithSymbolsType) {
+                if (thisTopComment.topSymbolHigh['1Hr']) {
+                    const topSymbolType = thisTopComment.topSymbolHigh['1Hr'].split(':')[1];
+                    if (topSymbolType === self.minTopCommentsWithSymbolsType) commentMeetsSymbolRequirements = true;
+                }
+            } else {
+                if (thisTopComment.topSymbolHigh['1Hr']) commentMeetsSymbolRequirements = true; // any symbol type will do
+            }
+
+            // Now proceed to update topCommentsClone.comments if this comment meets requirements
+            if (commentMeetsSymbolRequirements) {
+                topCommentsClone.comments.push(thisTopComment);
+                ++topCommentsWithSymbolsCount;
+            }
+            if (!self.topCommentsMustHaveSymbol && !thisTopComment.topSymbolHigh['1Hr']) { // our current config allows non-symbol comments. Add it now.
+                topCommentsClone.comments.push(thisTopComment);
+            }
+
             if (topCommentsWithSymbolsCount >= self.minTopCommentsWithSymbols) return true; // we have all we need break loop
-        });
+        }); // end finalTopComments.some
 
         self.topComments.comments = topCommentsClone.comments;
         return allChangedTopComments;

@@ -46,7 +46,7 @@ class MaintainLogsAndBackups {
             'prod02'
         ];
         self.archiveLogsInterval = null;
-        self.archiveLogsIntervalTime = 60000*5; // backup today's log file to cloud once per 5 minutes
+        self.archiveLogsIntervalTime = 60000*10; // backup today's log file to cloud once per 10 minutes
         self.archiveRDBInterval = null;
         self.archiveRDBIntervalTime = 60000*30; // backup all redis rdb files to cloud twice/hr. Uses day tstamp naming pattern.
 

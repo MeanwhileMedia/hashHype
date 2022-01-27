@@ -267,6 +267,7 @@ class LevelDBClient {
                 console.error('LevelDB compactRange error:', err);
                 if (cback) cback(false);
             } else {
+                console.warn('LevelDB compactRange garbage collection.')
                 if (cback) cback(true);
             }
         });
@@ -299,7 +300,7 @@ class LevelDBClient {
         self.getDbDiskUsage((startingDiskUsageObj) => {
             let percDiskUsageByDb = Math.floor((startingDiskUsageObj.dbDiskUsage / startingDiskUsageObj.diskSize) * 1000000) / 1000000;
             if (percDiskUsageByDb < self.diskCheckMaxDiskUsage && !deleteBatchSize) {
-                console.warn(`LevelDB ${self.levelDbDir} is within acceptable disk usage: ${percDiskUsageByDb*100}%`);
+                console.log(`LevelDB ${self.levelDbDir} is within acceptable disk usage: ${percDiskUsageByDb*100}%`);
                 if (cback) cback(); // disk usage is OK
                 return;
             }
