@@ -5,6 +5,7 @@ import diskUsage from 'diskusage';
 import yargs from 'yargs';
 import level from 'level'; // https://github.com/Level/leveldown#api
 import { v4 as uuidv4 } from 'uuid';
+import { mean } from 'mathjs';
 
 const argv = yargs(process.argv.slice(2)).argv;
 
@@ -23,19 +24,24 @@ class LevelDBClient {
         self.redisClient = opts.redisClient;
 
         self.levelDbDir = path.resolve(process.cwd(), '..', 'hashHypeArchive'); // IMPORTANT - this directory must be above our main hashHype app directory or it will be nuked during our deploy process
-        self.levelDbConnectionStatus =
+
         // pubSubUidSubscriptions is used as a temporary record for getViaPubSub requests. The levelDBMaster is instructed to publish the value fetched from levelDB
         // to a unique one-time-use channel that the requesting process is waiting to hear back on.
         self.pubSubUidSubscriptions = {}; // {uid123: {channel: 'uid123', cback: func, key: 'foo:bar:absKey', action: 'getORset'}, etc...}
 
+        // The get command will stall our system if we let them stack up indefinitely (on levelDBMaster). We create a get queue and only allow
+        // one read command to be executed at a time. When it returns, we move through the queue, calling get in batch if queue has more than one read command waiting.
+        self.pendingReadCmd = false;
+        self.readQueue = []; // array objects {key: string, cback: func}
+        self.readQueueRetryInterval = null;
+        self.readQueueRetryIntervalTime = 1000; //ms - how long to wait before re-checking if pendingReadCmd has set to false, and next queue cmd can execute
+        self.readQueueMaxExecBatchSize = 100; // the maximum number of keys that will be sent to a single getMany request.
+
         // This process will also check how much disk this level DB uses in intervals. It will begin deleting the oldest keys once we approach our max disk usage setting.
         self.diskCheckInterval = null;
         self.diskCheckIntervalTime = 60000; // once per minute.
-        // self.diskCheckMaxDiskUsage = 0.8; // percentage of disk that this DB uses
-        // self.diskCheckCorrectionDiskUsage = 0.7; // target percentage of disk that this DB uses AFTER ensureDBDiskUsageIsWithinBounds has looped and deleted
-        // JWW temp testing
-        self.diskCheckMaxDiskUsage = 0.08;
-        self.diskCheckCorrectionDiskUsage = 0.04;
+        self.diskCheckMaxDiskUsage = 0.6; // percentage of disk that this DB uses
+        self.diskCheckCorrectionDiskUsage = 0.5; // target percentage of disk that this DB uses AFTER ensureDBDiskUsageIsWithinBounds has looped and deleted
 
         self.diskCheckCorrectionDeletesArchivedKey = 'stats:topComments'; // when ensureDBDiskUsageIsWithinBounds is loop deleting, this is the key that will have it's oldest snapshots deleted.
 
@@ -83,12 +89,14 @@ class LevelDBClient {
             return;
         }
 
+        console.log(`levelDBMaster will now attempt to open levelDB ${self.levelDbDir} ...`);
         self.openedLevelDB = level(self.levelDbDir, {}, (err, db) => {
             if (err) {
                 console.error(`ERR! Could not connect to "${self.levelDbDir}" levelDb.`, err);
                 retry();
                 return;
             }
+            console.log(`levelDBMaster has finished opening levelDB ${self.levelDbDir}`);
             if (cback) cback(true);
         });
     }
@@ -127,13 +135,13 @@ class LevelDBClient {
             }
 
             if (channel === 'levelDBClient:get') {
-                console.log(`Another process has requested to get LevelDB key ${message.key}. levelDBMaster will get it and return it as a pubsub message...`);
+                // console.log(`Another process has requested to get LevelDB key ${message.key}. levelDBMaster will get it and return it as a pubsub message...`);
                 self.get(message.key, (dbObj) => {
                     self.redisClient.publish(message.responseChannel, dbObj);
-                });
+                }, false); // send false for "parseJson" arg because the data fetched from levelDB is going to be immediately sent through pubsub as JSON. Save CPU.
             }
             else if (channel === 'levelDBClient:set') {
-                console.log(`Another process has requested to set LevelDB key ${message.key}. levelDBMaster will put the value...`);
+                // console.log(`Another process has requested to set LevelDB key ${message.key}. levelDBMaster will put the value...`);
                 self.set(message.key, message.value, (success) => {
                     self.redisClient.publish(message.responseChannel, {success: success});
                 });
@@ -160,10 +168,10 @@ class LevelDBClient {
             }
 
             if (uniqueChannelSubInfo.action === 'get') {
-                console.log(`levelDBMaster has responded to this processes request to get archived data at key ${uniqueChannelSubInfo.key}`);
+                // console.log(`levelDBMaster has responded to this processes request to get archived data at key ${uniqueChannelSubInfo.key}`);
                 uniqueChannelSubInfo.cback(resObj);
             } else if (uniqueChannelSubInfo.action === 'set') {
-                console.log(`levelDBMaster has responded to this processes request to set archived data at key ${uniqueChannelSubInfo.key}`);
+                // console.log(`levelDBMaster has responded to this processes request to set archived data at key ${uniqueChannelSubInfo.key}`);
                 uniqueChannelSubInfo.cback(resObj.success);
             }
 
@@ -173,13 +181,19 @@ class LevelDBClient {
         });
     }
 
-    get(key, cback) {
+    get(key, cback, parseJson = true) { // pass parseJson as false and this function will return the JSON string to the cback
         const self = this;
         if (!argv.levelDBMaster) {
             self.getViaPubSub(key, cback);
             return;
         }
+        if (self.pendingReadCmd) {
+            self.queueReadCmd(key, cback, parseJson);
+            return;
+        }
+        self.pendingReadCmd = true;
         self.openedLevelDB.get(key, (err, valJson) => {
+            self.pendingReadCmd = false;
             if (err && err.notFound) {
                 if (cback) cback(null);
                 return;
@@ -190,12 +204,16 @@ class LevelDBClient {
             }
 
             let val;
-            try {
-                val = JSON.parse(valJson);
-            } catch (error) {
-                console.warn(`Failed to parse invalid JSON for levelDB key: ${key}`, error);
-                if (cback) cback(null);
-                return;
+            if (parseJson) {
+                try {
+                    val = JSON.parse(valJson);
+                } catch (error) {
+                    console.warn(`LevelDBClient get failed to parse invalid JSON for levelDB key: ${key}`, error);
+                    if (cback) cback(null);
+                    return;
+                }
+            } else {
+                val = valJson;
             }
             if (cback) cback(val);
         });
@@ -206,6 +224,66 @@ class LevelDBClient {
         self.pubSubUidSubscriptions[thisGetReqUid] = {channel: thisGetReqUid, cback: cback, key: key, action: 'get'};
         self.redisClient.subscribe(thisGetReqUid);
         self.redisClient.publish('levelDBClient:get', {key: key, responseChannel: thisGetReqUid});
+    }
+
+    queueReadCmd(key, cback, parseJson) {
+        const self = this;
+        self.readQueue.push({key: key, cback: cback, parseJson: parseJson});
+        self.executeReadQueue();
+        self.initReadQueueRetryInterval();
+    }
+    executeReadQueue() {
+        const self = this;
+        if (self.pendingReadCmd || !self.readQueue.length) return;
+
+        self.pendingReadCmd = true;
+        const pendingReadQueue = self.readQueue.splice(0, self.readQueueMaxExecBatchSize);
+        console.log(`Will now execute ${pendingReadQueue.length} of ${self.readQueue.length + pendingReadQueue.length} queued levelDb read commands...`);
+
+        const startTime = Date.now();
+        const getKeys = pendingReadQueue.map(thisQueued => thisQueued.key);
+        self.openedLevelDB.getMany(getKeys, (err, allValsJson) => {
+            self.pendingReadCmd = false;
+            if (err) {
+                console.error(`LevelDB error when attempting to getMany`, err);
+                pendingReadQueue.forEach((thisQueued) => {
+                    if (thisQueued.cback) thisQueued.cback(null);
+                });
+                return;
+            }
+
+            const endTime = Date.now();
+            console.log(`Successfully ran levelDb getMany command for ${pendingReadQueue.length} keys. ${self.readQueue.length} queued commands remain...`);
+            const readSpeed = Math.ceil(pendingReadQueue.length / ((endTime-startTime)/1000));
+            self.readSpeedHistory = self.readSpeedHistory || [];
+            self.readSpeedHistory.splice(500);
+            self.readSpeedHistory.push(readSpeed);
+            console.warn(`LevelDBClient just ran ${readSpeed} read commands per second (rps). The average is ${Math.ceil(mean(self.readSpeedHistory))}rps.`);
+
+            allValsJson.forEach((thisValJson, thisValIndex) => {
+                let val;
+                if (pendingReadQueue[thisValIndex].parseJson) {
+                    try {
+                        val = JSON.parse(thisValJson);
+                    } catch (error) {
+                        console.warn(`LevelDBClient getMany failed to parse invalid JSON for levelDB key: ${pendingReadQueue[thisValIndex].key}`, error);
+                        if (pendingReadQueue[thisValIndex].cback) pendingReadQueue[thisValIndex].cback(null);
+                        return;
+                    }
+                } else {
+                    val = thisValJson;
+                }
+                if (pendingReadQueue[thisValIndex].cback) pendingReadQueue[thisValIndex].cback(val);
+            });
+        });
+    } // end executeReadQueue
+    initReadQueueRetryInterval() {
+        const self = this;
+        if (!self.readQueueRetryInterval) {
+            self.readQueueRetryInterval = setInterval(() => {
+                self.executeReadQueue();
+            }, self.readQueueRetryIntervalTime);
+        }
     }
 
     set(key, valObj, cback) { // levelDB only uses objects (json). valObj must be an array/object

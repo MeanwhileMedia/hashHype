@@ -15,7 +15,7 @@ class DeployCodeSftp {
         this.deployConfig = deployCodeSftpConfig.targets[this.cliArgs.target]();
         this.initSftpClient(this.deployConfig, () => {
             self.npmRunScriptsOnTarget(self.deployConfig.firstNpmRun, () => {
-                self.deployToTarget(() => {
+                self.deployAllToTarget(() => {
                     self.npmInstallOnTarget(() => {
                         self.npmRunScriptsOnTarget(self.deployConfig.lastNpmRun, () => {
                             if (self.deployConfig.watch) {
@@ -43,7 +43,7 @@ class DeployCodeSftp {
         });
     }
 
-    deployToTarget(cback) {
+    deployAllToTarget(cback) {
         const self = this;
         const targetDir = `${this.deployConfig.targetDir}/${this.deployConfig.projectName}`;
         this.sftpClient.exists(targetDir).then((exists) => {
@@ -65,6 +65,19 @@ class DeployCodeSftp {
             return self.sftpClient.uploadDir(this.localProjectDir, targetDir, exludeRegEx);
         }).then(() => {
             if (cback) cback();
+        }).catch(err => {
+            console.error(err);
+        });
+    }
+
+    deployFileToTarget(srcFilePath, cback) {
+        const self = this;
+        const filePathInAppDir = srcFilePath.split(this.deployConfig.projectName).slice(-1);
+        const targetFilePath = `${this.deployConfig.targetDir}/${this.deployConfig.projectName}${filePathInAppDir}`;
+        console.log(`Deploying... ${srcFilePath} -> ${targetFilePath}`);
+        this.sftpClient.put(srcFilePath, targetFilePath).then(() => {
+            if (cback) cback();
+            console.log(`Deployed: ${srcFilePath} -> ${targetFilePath}`);
         }).catch(err => {
             console.error(err);
         });
@@ -139,7 +152,7 @@ class DeployCodeSftp {
         if (!confirmedAppDirExists) {
             self.checkTargetAppDirExists((doesExist) => {
                 if (!doesExist) {
-                    console.warn(`WARN! Can't run undefined NPM scripts because the app directory does not yet exist, and there is no package.json. Could not run:`, runTheseScripts);
+                    console.warn(`WARN! Can't run NPM scripts because the app directory does not yet exist, and there is no package.json. Could not run:`, runTheseScripts);
                     if (cback) cback();
                     return;
                 }
@@ -201,7 +214,8 @@ class DeployCodeSftp {
                     return;
                 }
                 fs.watchFile(thisFilePath, (eventType, filename) => {
-                    self.deployToTarget();
+                    // self.deployAllToTarget();
+                    self.deployFileToTarget(thisFilePath);
                 });
             });
         });

@@ -19,11 +19,12 @@ class ArchiveKeysToDisk {
         self.redisKeyspaceSubscriptions = { // obj where key defines specific redis key to be transferred to long term archive, and where value is the function run for each redis change message for that key.
 
             '__keyspace@0__:stats:topComments': {
+                snapshotTstampInterval: 10000, // how long between each snapshot. The snapshot tstamps are generated as denominations of this num.
                 genTstamp: () => {
                     // Each redis key that is defined here (to be snapshotted to levelDB) is saved to archive key ${objectKey}:${tstampRoundedToDenomination}
                     // 'stats:topComments' has snapshots saved in 10s denominations
                     const now = Date.now();
-                    const thisTstamp = now - (now % 10000);
+                    const thisTstamp = now - (now % self.redisKeyspaceSubscriptions['__keyspace@0__:stats:topComments'].snapshotTstampInterval);
 
                     this.lastUsedTstamp = this.lastUsedTstamp || 0;
                     if (thisTstamp === this.lastUsedTstamp) return null;
@@ -107,7 +108,7 @@ class ArchiveKeysToDisk {
 
     saveTstampToIndex(thisArchivedObjKey, tstamp, cback) {
         // We must also save all archive snapshot tstamps to the index:snapshotTstamps:${redisObjectKey} object which is used later as a record of all snapshot tstamps so they can
-        // be easily browsed, or deleted later (if the archive DB gets to big).
+        // be easily browsed, or deleted later (if the archive DB gets to big). Sorted chronologically ascending
         const self = this;
         const tstampIndexKey = `index:snapshotTstamps:${thisArchivedObjKey}`;
         self.levelDbClient.get(tstampIndexKey, (archiveIndex) => { // archiveIndex is array

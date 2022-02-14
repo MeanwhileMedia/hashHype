@@ -36,6 +36,7 @@ const commentObjModel = {
                 '12Hr': null,
                 '24Hr': null,
             },
+            symbols: props.symbols || [], // array of symbol objects. Not saved to DB as part of a comment:id object (see minimizeForDb), but will remain on comments that become part of a parent stat object.
             // deleted: bool // this flag is sometimes used locally but is never saved to redis (it's set to true when a live copy must be blocked from any future saves)
             // see createAuxiliaryDataDefaults for additional properties that will be available to comment objects when required (via restoreAuxiliaryData)
         }

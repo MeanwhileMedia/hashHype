@@ -44,6 +44,14 @@ const genConfigs = {
 
         return [
             {
+                name: 'Archive Keys To Disk',
+                script: './processes/archiveKeysToDisk.js',
+                args: `--envname=${genConfigs.cliArgs.envname} --levelDBMaster=true`,
+                interpreter_args: `-r esm`,
+                error_file: genConfigs.getLogPath('archiveKeys', 'err'),
+                out_file: genConfigs.getLogPath('archiveKeys', 'out'),
+                log_date_format: 'MM/DD HH:mm:ss'
+            }, {
                 name: 'UI Server',
                 script: './processes/uiServer.js',
                 args: `--envname=${genConfigs.cliArgs.envname}`,
@@ -84,20 +92,20 @@ const genConfigs = {
                 out_file: genConfigs.getLogPath('topComments', 'out'),
                 log_date_format: 'MM/DD HH:mm:ss'
             }, {
+                name: 'Top Trend Stats',
+                script: './processes/topTrendStats.js',
+                args: `--envname=${genConfigs.cliArgs.envname}`,
+                interpreter_args: `-r esm ${inspect}`,
+                error_file: genConfigs.getLogPath('topTrends', 'err'),
+                out_file: genConfigs.getLogPath('topTrends', 'out'),
+                log_date_format: 'MM/DD HH:mm:ss'
+            }, {
                 name: 'Maintain Logs And Backups',
                 script: './processes/maintainLogsAndBackups.js',
                 args: `--envname=${genConfigs.cliArgs.envname}`,
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('maintenance', 'err'),
                 out_file: genConfigs.getLogPath('maintenance', 'out'),
-                log_date_format: 'MM/DD HH:mm:ss'
-            }, {
-                name: 'Archive Keys To Disk',
-                script: './processes/archiveKeysToDisk.js',
-                args: `--envname=${genConfigs.cliArgs.envname} --levelDBMaster=true`,
-                interpreter_args: `-r esm`,
-                error_file: genConfigs.getLogPath('archiveKeys', 'err'),
-                out_file: genConfigs.getLogPath('archiveKeys', 'out'),
                 log_date_format: 'MM/DD HH:mm:ss'
             }
         ];

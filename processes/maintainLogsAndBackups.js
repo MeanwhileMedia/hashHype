@@ -34,6 +34,9 @@ class MaintainLogsAndBackups {
         self.archiveDbHealthLogIntervalTime = 60000*4; // once per 4 minutes.
         self.levelDbDir = path.resolve(process.cwd(), '..', 'hashHypeArchive'); // make sure this matches var by same name in ArchiveKeysToDisk
 
+        self.rdbAndLogsLocalBackupDayCount = 3; // how many previous days of RDB snapshots and log copies should be saved on local machine
+        self.rdbAndLogsCloudBackupDayCount = 3; // how many previous days of RDB snapshots and log copies should be saved on cloud drive
+
         self.rotateLogsInterval = null;
         self.rotateLogsIntervalTime = 60000*10; // check every 10mins. Confirm all required local log files exist according to our day tstamp naming pattern. Create a new log file when the day turns. Check logs directory for expired logs to delete from local machine.
         self.rotateRDBInterval = null;
@@ -215,7 +218,7 @@ class MaintainLogsAndBackups {
         // PM2 logs all processes to a log file starting with day tstamp "00000" e.g. 00000-wordExtractor-out.log.
         // The 0 day id denotes that this is an actively writing log file. In intervals, we copy the active log to a new file
         // which is prepended with today's real day tstamp, and that file is synced to google drive.
-        const notExpiredDayTstamps = self.getDayTstamps(7); // Keep daily log files on local machine for 1 week
+        const notExpiredDayTstamps = self.getDayTstamps(self.rdbAndLogsLocalBackupDayCount); // Keep daily log files on local machine for this long
         const todayTstamp = notExpiredDayTstamps[0];
         const yestTstamp = notExpiredDayTstamps[1];
         self.getAllLogFileNames((localLogFileNames) => {
@@ -282,7 +285,7 @@ class MaintainLogsAndBackups {
 
     initRotateRDBInterval() {
         const self = this;
-        const notExpiredDayTstamps = self.getDayTstamps(7); // Keep rdb backups on local machine for 1 week
+        const notExpiredDayTstamps = self.getDayTstamps(self.rdbAndLogsLocalBackupDayCount); // how long to Keep rdb backups on local machine
         const todayTstamp = notExpiredDayTstamps[0];
         self.getAllRDBFileNames((localRDBFileNames) => {
             // Determine if this local rdb file should be deleted (expired).
@@ -386,7 +389,7 @@ class MaintainLogsAndBackups {
             console.warn(`Skipping initCloudArchiveCleanupInterval because isCleaningArchive == true...`);
             return; // in case this interval elapses before the previous one finished uploading, don't allow overlap.
         }
-        const notExpiredDayTstamps = self.getDayTstamps(3); // Keep daily log files and daily RDB backupes in cloud for 3 days
+        const notExpiredDayTstamps = self.getDayTstamps(self.rdbAndLogsCloudBackupDayCount); // Keep daily log files and daily RDB backupes in cloud for this long
         const oldestNotExpiredTstamp = notExpiredDayTstamps.pop();
         console.log(`Now checking google drive for expired archived log/db files which should be deleted...`)
         self.googleDriveClient.files.list({pageSize: 1000}, (err, res) => {

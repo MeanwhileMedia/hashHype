@@ -119,6 +119,10 @@ return isMatch;`,
         symbolObj[funcName] = defaultFuncStings[funcName];
     },
 
+    generateRedisKey: function(symbolObj){
+        return `symbol:${symbolObj.type}:${symbolObj.symbol}`;
+    },
+
     minimizeForDb: function(symbolObj){
         // Run this function on a symbol object before db.set and all props that arent required for persistence will be deleted.
         // RETURNS A SHALLOW COPY! This function will not alter the original symbol obj. First it clones, then returns the clone object.

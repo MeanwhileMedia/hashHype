@@ -816,13 +816,10 @@ class RedisClient {
         self.clients[dbName].sub.psubscribe(msgChannel);
     }
 
-    publish(msgChannel, message, dbName = 'short') {
+    publish(msgChannel, message, dbName = 'short') { // if message is typeof != string, then this function will automatically JSON stringify before publishing message.
         const self = this;
-        if (typeof message !== 'object') {
-            console.warn(`Redis publish command requires message to be an object. Will not publish message: ${message}`);
-            return;
-        }
-        self.clients[dbName].pub.publish(msgChannel, JSON.stringify(message));
+        if (typeof message !== 'string') message = JSON.stringify(message);
+        self.clients[dbName].pub.publish(msgChannel, message);
     }
 
     ////////
