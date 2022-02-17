@@ -340,7 +340,7 @@ class TopCommentBodyAndPoints extends React.Component {
         if (self.state.activePointsInfoWordIndex === -1) {
             thisPointsExplanation = (
                 <p style={css.topCommentBodyAndPoints_pointsInfo_body}>This comment is ranked
-                    {' '}<b>{commentFormatter.getNumberOrdinal(self.props.topComment.rank)}</b>
+                    {' '}<b>{commentFormatter.getNumberOrdinal(self.props.topComment.rankRender)}</b>
                     {' '}because it contains
                     {' '}<b>{pointedWordCount}</b>
                     {' '}<span style={{'border-bottom': '4px solid rgba(0,0,0,0.1)'}}>phrases</span>

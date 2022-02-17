@@ -159,7 +159,7 @@ class SetTrendAction extends React.Component {
                 <div style={css.setTrendAction_section}>
                     <h2>
                         <span className="noBreakTextGroup">The next time<TextInput placeholder={renderSymbolText} minWidth="6rem" /></span>
-                        <span className="noBreakTextGroup">trends <TextInput placeholder="up" type="keySet" keySetMap={directionalInputKeySetMap} minWidth="3rem" /> to <TextInput placeholder={this.props.activeTopComment.rank} type="ordinal" minWidth="4rem" />place:</span>
+                        <span className="noBreakTextGroup">trends <TextInput placeholder="up" type="keySet" keySetMap={directionalInputKeySetMap} minWidth="3rem" /> to <TextInput placeholder={this.props.activeTopComment.rankRender} type="ordinal" minWidth="4rem" />place:</span>
                     </h2>
                 </div>
                 <div style={css.setTrendAction_section}>

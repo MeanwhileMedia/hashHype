@@ -10,7 +10,7 @@ class BarRaceBar extends React.Component {
 
         this.state = {
             topComment: props.topComment,
-            rankOnePoints: props.rankOnePoints, // the point count for the topComment (bar) which scored the highest and is rank one. May or may not be this bar.
+            maxPointsScale: props.maxPointsScale, // the point count for the rendered topComment (bar) which scored the highest. May or may not be this bar.
             activeTopComment: props.activeTopComment || null,
             renderTextOutside: false // set to true when the bar width is too small to fit the symbolText. Test will then render outside bar (to the right)
         }
@@ -43,10 +43,10 @@ class BarRaceBar extends React.Component {
             self.symbolText = hasTopSymbol.symbol;
         }
 
-        const zBasedRank = this.state.topComment.rank - 1;
+        const zBasedRank = this.state.topComment.rankRender - 1;
         let barStyles = Object.assign({}, css.topCommentStats_barRace_bar, {
             'top': `${(css.barHeight*zBasedRank)+(css.barSpaceBetween*zBasedRank)}rem`,
-            'width': `${(thisCommentPoints/self.state.rankOnePoints)*100}%`,
+            'width': `${(thisCommentPoints/self.state.maxPointsScale)*100}%`,
             'background-color': self.barColorPallette[zBasedRank]
         });
         let barLabelStyles = css.topCommentStats_barRace_bar_label;
@@ -56,7 +56,7 @@ class BarRaceBar extends React.Component {
         }
 
         return (
-            <li className={`topCommentStats_barRace_bar topCommentStats_barRace_bar__${this.state.topComment.rank}`} style={barStyles} onClick={(e) => { self.props.focusTopComment(this.state.topComment) } }>
+            <li className={`topCommentStats_barRace_bar topCommentStats_barRace_bar__${this.state.topComment.rankRender}`} style={barStyles} onClick={(e) => { self.props.focusTopComment(this.state.topComment) } }>
                 <h2 className="topCommentStats_barRace_bar_label" style={barLabelStyles}>
                     <span ref={this.barTextElRef} className="topCommentStats_barRace_bar_label_text" style={css.topCommentStats_barRace_bar_label_text}>{self.symbolText}</span>
                 </h2>

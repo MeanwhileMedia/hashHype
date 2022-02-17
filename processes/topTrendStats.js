@@ -1,6 +1,7 @@
 import util from 'util';
 import { throttle } from 'throttle-debounce';
 import yargs from 'yargs';
+import { std, mean } from 'mathjs';
 import RedisClient from '../utils/redisClient.js';
 import LevelDBClient from '../utils/levelDBClient.js';
 import trendModel from '../utils/objectModels/trend.js';
@@ -16,13 +17,14 @@ class TopTrendStats {
         this.topTrendsMustHaveSymbol = true;
         this.rankHistoryTstampInterval = 60000*10; // ms, when generating rankHistory for a trend object, how long between each record. NOTE: MUST be greater than AND divisble by stats:topComments snapshotTstampInterval (see archiveKeysToDisk.js)
         this.rankHistoryTotalDuration = 604800000; // ms, what span of time is represented in rankHistory. 604800000 is one week.
+        this.totalRankPlaces = 20; // IMPORTANT keep this synced with topCommentStats.minTopCommentsWithSymbols. How many comments are held in topCommentStats.comments (ranks 1 through 20)
         // end settings
 
         this.topTrendsStatsKey = 'stats:topTrends'; // The resulting computed data produced by this process
         this.topCommentsStatsKey = 'stats:topComments'; // this process listens for changes to this object in initKeyspaceSubscriptions
         this.topCommentsStatsSnapshotIndexKey = 'index:snapshotTstamps:stats:topComments';
 
-        this.topTrends = this.newTopTrendsEntity();
+        // this.topTrends = this.newTopTrendsEntity();
 
         this.computeNewTopTrendsStatsThrottleTime = 60000*10; //ms - only run the heavy compute tasks once per this time interval
         this.throttle = {
@@ -33,10 +35,7 @@ class TopTrendStats {
         this.levelDbClient = null;
         self.initRedisClient(() => {
             self.initLevelDbClient(() => {
-                self.redisClient.get(self.topTrendsStatsKey, (topTrendsStatsObj) => {
-                    if (topTrendsStatsObj) self.topTrends = topTrendsStatsObj;
-                    self.initKeyspaceSubscriptions();
-                });
+                self.initKeyspaceSubscriptions();
             });
         });
     }
@@ -81,50 +80,29 @@ class TopTrendStats {
     computeNewTopTrendsStats() {
         const self = this;
         console.log(`Now running computeNewTopTrendsStats...`);
-        self.redisClient.get(self.topCommentsStatsKey, (topCommentsStatsObj) => {
-            self.topTrends.trends = []; // reset so we can refill now
-            topCommentsStatsObj.comments.forEach((thisTopComment, thisCommentIndex) => {
-                if (self.topTrendsMustHaveSymbol && !thisTopComment.topSymbolHigh['1Hr']) return;
 
-                const topSymbol = thisTopComment.symbols.find((symbol) => {
-                    return symbolModel.generateRedisKey(symbol) === thisTopComment.topSymbolHigh['1Hr'];
-                });
-
-                const thisTrend = trendModel.createTrendObject({
-                    word: topSymbol.symbol,
-                    wordKey: `word:${topSymbol.symbol}`,
-                    symbolKey: thisTopComment.topSymbolHigh['1Hr'],
-                    rank: thisCommentIndex+1
-                });
-
-
-                self.computeRankHistory(thisTrend, (rankHistory) => {
-                    thisTrend.rankHistory = rankHistory;
-                    // JWW stopping point - generate volatility, and decay props
-
-                    self.topTrends.trends.push(thisTrend);
-                    console.log(self.topTrends)
-                });
-
-
-
+        self.getAllTopCommentStatsSnapshots((topCommentStatsSnapshots) => {
+            const topTrends = self.newTopTrendsEntity();
+            self.computeAllTrendHistories(topCommentStatsSnapshots, topTrends, () => {
+                console.log(`Completed computeNewTopTrendsStats for ${topTrends.trends.length} trends.`); //:`, util.inspect(topTrends, {depth: 5, colors: true}));
+                self.redisClient.set(self.topTrendsStatsKey, topTrends);
             });
         });
     }
 
-    computeRankHistory(trend, cback) {
+    getAllTopCommentStatsSnapshots(cback) {
         const self = this;
-
-        // JWW stopping now add the rank to each tstamp already in rankHistory array (levelDB snapshots)
-        const rankHistory = [];
         self.levelDbClient.get(this.topCommentsStatsSnapshotIndexKey, (snapshotTstampIndex) => {
             if (!snapshotTstampIndex) {
-                console.warn(`Can't compute rankHistory for trend ${trend.word} because no snapshot index was found in levelDB.`);
+                console.warn(`Can't getAllTopCommentStatsSnapshots because no snapshot index was found in levelDB.`);
                 if (cback) cback(null);
                 return;
             }
 
-            snapshotTstampIndex.reverse(); // snapshotTstampIndex is sorted chronologically ascending
+            snapshotTstampIndex.reverse(); // in levelDB snapshotTstampIndex is sorted chronologically ascending. We will reverse to descending (newest first) right now.
+
+            // Look at snapshotTstampIndex and loop through it, extracting only the tstamps that match our settings self.rankHistoryTstampInterval and self.rankHistoryTotalDuration
+            const allTargetSnapshotTstamps = [];
 
             const now = Date.now();
             const oldestSearchingForTstamp = now - self.rankHistoryTotalDuration;
@@ -137,50 +115,157 @@ class TopTrendStats {
                     curSearchingForTstamp = curSearchingForTstamp - self.rankHistoryTstampInterval; // we could not find the last tstamp we were searching for. Skip to the next one.
                 }
                 if (thisSnapTstamp === curSearchingForTstamp) {
-                    rankHistory.push([thisSnapTstamp]);
+                    allTargetSnapshotTstamps.push(thisSnapTstamp);
                     curSearchingForTstamp = curSearchingForTstamp - self.rankHistoryTstampInterval;
                 }
             });
-            console.log(`Will now attempt to get ${rankHistory.length} ${self.topCommentsStatsKey} snapshots from levelDB...`);
+            console.log(`Will now attempt to get ${allTargetSnapshotTstamps.length} ${self.topCommentsStatsKey} snapshots from levelDB...`);
 
-            const rankLookupPromises = [];
-            rankHistory.forEach((thisRankHistory, thisRankHistoryIndex) => {
-                const thisSnapTstamp = thisRankHistory[0];
-
-                rankLookupPromises.push(new Promise( (resolve, reject) => {
+            const snapshotGetPromises = []; // array of arrays [[snapshotTStamp, topCommentsStatsObj], [1644086644348, topCommentsStatsObj], etc...]
+            allTargetSnapshotTstamps.forEach((thisSnapTstamp, thisRankHistoryIndex) => {
+                snapshotGetPromises.push(new Promise( (resolve, reject) => {
                     const snapShotKey = `${self.topCommentsStatsKey}:${thisSnapTstamp}`;
                     self.levelDbClient.get(snapShotKey, (thisTopCommentsSnapshot) => {
                         if (!thisTopCommentsSnapshot) {
-                            console.warn(`Could not find ${snapShotKey} snapshot. Will not include rank for trend ${trend.word} at that tstamp.`);
-                            rankHistory.splice(thisRankHistoryIndex, 1);
-                            resolve();
+                            console.warn(`getAllTopCommentStatsSnapshots could not find ${snapShotKey} snapshot.`);
+                            allTargetSnapshotTstamps.splice(thisRankHistoryIndex, 1);
+                            resolve([thisSnapTstamp, null]);
                             return;
                         }
-
-                        thisRankHistory[1] = null;
-                        thisTopCommentsSnapshot.comments.some((thisTopComment) => {
-                            if (self.topTrendsMustHaveSymbol && !thisTopComment.topSymbolHigh['1Hr']) return;
-                            const topSymbol = thisTopComment.symbols.find((symbol) => {
-                                return symbolModel.generateRedisKey(symbol) === thisTopComment.topSymbolHigh['1Hr'];
-                            });
-                            if (topSymbol && topSymbol.symbol === trend.word) {
-                                thisRankHistory[1] = thisTopComment.rank;
-                                return true; // found matching comment. break loop
-                            }
-                        });
-                        resolve();
+                        resolve([thisSnapTstamp, thisTopCommentsSnapshot]);
                     });
                 }));
 
-            }); //end rankHistory.forEach
+            }); //end allTargetSnapshotTstamps.forEach
 
-            Promise.all(rankLookupPromises).then(() => {
-                console.log(`Found ${rankHistory.length} rank histories for trend ${trend.word}. Expected ${self.rankHistoryTotalDuration/self.rankHistoryTstampInterval}.`);
-                if (cback) cback(rankHistory);
+            Promise.all(snapshotGetPromises).then((gotSnapshots) => {
+                console.log(`Found ${gotSnapshots.length} ${self.topCommentsStatsKey} snapshots. Expected ${self.rankHistoryTotalDuration/self.rankHistoryTstampInterval}.`);
+                if (cback) cback(gotSnapshots);
             });
         }); //end self.levelDbClient.get(this.topCommentsStatsSnapshotIndexKey
+    } // end getAllTopCommentStatsSnapshots
 
-    } // end computeRankHistory
+    computeAllTrendHistories(topCommentStatsSnapshots, topTrends, cback) { // updates topTrends.trends in-place
+        // topCommentStatsSnapshots is array of arrays [[snapshotTStamp, topCommentsStatsObj], [1644086644348, topCommentsStatsObj], etc...]
+        const self = this;
+        self.redisClient.get(self.topCommentsStatsKey, (topCommentsStatsObj) => {
+            topCommentsStatsObj.comments.forEach((thisTopComment) => {
+                if (self.topTrendsMustHaveSymbol && !thisTopComment.topSymbolHigh['1Hr']) return;
+
+                const topSymbol = thisTopComment.symbols.find((symbol) => {
+                    return symbolModel.generateRedisKey(symbol) === thisTopComment.topSymbolHigh['1Hr'];
+                });
+
+                const thisTrend = trendModel.createTrendObject({
+                    word: topSymbol.symbol,
+                    wordKey: `word:${topSymbol.symbol}`,
+                    symbolKey: thisTopComment.topSymbolHigh['1Hr'],
+                    rank: thisTopComment.rank,
+                    histDur: self.rankHistoryTotalDuration
+                });
+
+                const rankHistory = [];
+                topCommentStatsSnapshots.forEach((thisTopCommentStatsSnapshot) => {
+
+                    const thisRankHistoryRecord = [thisTopCommentStatsSnapshot[0], null];
+                    thisTopCommentStatsSnapshot[1].comments.some((thisTopComment, thisTopCommentIndex) => {
+                        if (self.topTrendsMustHaveSymbol && !thisTopComment.topSymbolHigh['1Hr']) return;
+                        const topSymbol = thisTopComment.symbols.find((symbol) => {
+                            return symbolModel.generateRedisKey(symbol) === thisTopComment.topSymbolHigh['1Hr'];
+                        });
+                        if (topSymbol && topSymbol.symbol === thisTrend.word) {
+                            const thisTopCommentRank = thisTopCommentIndex+1;  // thisTopCommentStatsSnapshot[1].comments is already sorted by rank ascending (rank 1 first)
+                            thisRankHistoryRecord[1] = thisTopCommentRank;
+                            return true; // found matching comment. break loop
+                        }
+                    });
+
+                    rankHistory.push(thisRankHistoryRecord);
+                });
+
+                // 1. We persist the rankHistory on the trend object, saved to db.
+                thisTrend.rankHistory = rankHistory;
+
+                // 2. Use the rankHistory to determine the 'volatility' prop. int 0-1.
+                self.computeTrendVolatility(thisTrend); // alters thisTrend in-place
+
+                // 3. Combine above props to determine the 'decay' prop. in 0-1
+                self.computeTrendDecay(thisTrend); // alters thisTrend in-place
+
+                // We have now set all trend props which are related to historical data. Update topTrends.trends in-place
+                topTrends.trends.push(thisTrend);
+            }); // end topCommentsStatsObj.comments.forEach
+
+            if (cback) cback();
+        }); // end self.redisClient.get(self.topCommentsStatsKey
+    } // end computeAllTrendHistories
+
+    computeTrendVolatility(trend) { // alters trend in-place
+        const self = this;
+        // Use the trends rankHistory to determine the 'volatility' prop. int 0-1.
+        // Volatility of 1 means that this trend's rank has changed consistently with no reoccurance pattern detected. This implies that the trend is valuable.
+        // Volatility of 0 means that this trend has been ranked the same over all history checked. This implies that even though this trend is consistently talked about, it has little value as a time based trend indicator.
+
+        // historiesNotRankedCount is how many entries in rankHistory are null, or, in how many stats:topComments snapshats was this trend not present (not ranked).
+        let historiesNotRankedCount = 0;
+
+        // nullCountToSeparateRankClusters setting dictates how many "null" ratings in a row have to occur to isolate a "rank cluster" - or - a chunk of time where this trend held any rank.
+        const nullCountToSeparateRankClusters = (self.rankHistoryTotalDuration * .006) / self.rankHistoryTstampInterval; // if self.rankHistoryTotalDuration is 1 week, .006 is approx 1hr.
+        // rankClusterMaxLength is a way to manually set when a cluster should be forced to end. This is used to allow our cluster stdDev measurement to be more useful
+        // in cases where a trend has super long clusters that could last over multiple days (because clusters are averaged before computing the stdDev across clusters).
+        const rankClusterMaxLength = 43200000 / self.rankHistoryTstampInterval; // 43200000 is 12hrs. With a self.rankHistoryTstampInterval of 10mins, no rank cluster will be longer than 72 rankings.
+
+        // consider rank history [[ 1644861000000, 8 ], [ 1644860400000, 9 ], [ 1644859800000, null ], [ 1644858600000, null ], [ 1644857400000, null ], [ 1644850200000, 13 ], [ 1644849600000, 12 ], [ 1644849600000, 7 ]]
+        // rankClusters would become [[8,9], [13,12,7]] - BUT, only if nullCountToSeparateRankClusters is <= 3
+        const rankClusters = [];
+        let curNullCount = 0;
+        let curRankCluster = [];
+        trend.rankHistory.forEach((thisRankHistory) => {
+            if (thisRankHistory[1] === null) {
+                ++historiesNotRankedCount;
+                ++curNullCount;
+            } else {
+                curRankCluster.push(thisRankHistory[1]);
+                if (curNullCount >= nullCountToSeparateRankClusters) {
+                    rankClusters.push(curRankCluster);
+                    curRankCluster = [];
+                }
+                curNullCount = 0;
+            }
+
+            if (curRankCluster.length >= rankClusterMaxLength) {
+                // console.warn(`Ending rank cluster of ${curRankCluster.length} length for trend ${trend.word}`);
+                rankClusters.push(curRankCluster);
+                curRankCluster = [];
+                curNullCount = 0;
+            }
+        });
+        if (curRankCluster.length) rankClusters.push(curRankCluster);
+        trend.rankClusterCount = rankClusters.length; // we save this to DB for use later
+
+        // Now compute the average rank of every cluster. We will use those averages to form a final standard deviation
+        const rankClusterAvgs = [];
+        rankClusters.forEach((thisRankCluster) => {
+            rankClusterAvgs.push(mean(thisRankCluster));
+        });
+        let clusterRankStdDev = 0;
+        if (rankClusterAvgs.length) clusterRankStdDev = Math.round(std(rankClusterAvgs)*1000)/1000;
+        trend.rankClusterStdDev = clusterRankStdDev;
+
+        const percOfTimeWasRanked = 1 - (historiesNotRankedCount / trend.rankHistory.length);
+        const percUnusedStdDeviation = 1 - (clusterRankStdDev / (this.totalRankPlaces/2)); // if totalRankPlaces is 20, the maximum standard deviation is 10. percUnusedStdDeviation = 1 - what percentage of 10 is this trends own ranking stdDev.
+
+        const volatility = 1 - (percOfTimeWasRanked * percUnusedStdDeviation);
+        trend.volatility = Math.round(volatility*1000)/1000;
+    }
+
+    computeTrendDecay(trend) {
+        // Determine the 'decay' prop, usable in different context. I.e. It can be a rank penalty, so
+        // a decay of 0.6 on a trend who's points earned it 2nd rank, would be corrected to 14th rank. 2 - (this.totalRankPlaces * decay)
+
+        // For now, we are only using the volatility prop to calculate decay, but the decay calcualtion may include other metrics later.
+        trend.decay = 1 - trend.volatility; // for example, SPY had a low volatility of only .13 and therefore it's decay becomes .87. It would rightly take a big hit in rank because it's movement is stale.
+    }
 
 }
 

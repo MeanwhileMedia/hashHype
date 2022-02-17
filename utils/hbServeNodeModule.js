@@ -6,8 +6,8 @@ var hbServeNodeModule = {
 
     init(opts) {
         const self = hbServeNodeModule;
-        self.redisClient = opts.redisClient;
-        self.nodeModulesPath = opts.nodeModulesPath;
+        self.nodeModulesPath = opts.nodeModulesPath; // the path to our apps node_modules directory.
+        self.compiledFilesDirPath = opts.compiledFilesDirPath; // the temp directory that webpack outputs to. This directory is cleared during a deploy routine (non dev).
 
         // Return the generator as koa middleware
         return async function (ctx, next) {
@@ -25,46 +25,43 @@ var hbServeNodeModule = {
         };
     },
 
-    packNodeModuleToEsModule(bareModulePath, requestedPath){ //requestedPath is the exact string declared in the import statement: import react from "node_modules/react"
+    packNodeModuleToEsModule(bareModulePath, requestedPath){ //requestedPath is the exact string declared in the import statement: import react from "/node_modules/react"
         const self = hbServeNodeModule;
         const snakeToCamel = (str) => str.replace(/([-_][a-z])/g, (group) => {
             return group.toUpperCase().replace('-', '').replace('_', '')
         });
-        const requestedLibName = snakeToCamel(requestedPath.split('/').pop());
+        const requestedLibName = snakeToCamel(requestedPath.replace('/node_modules/', '').replace('/', '__')); // make a safe name for saving the compiles JS src as a new file to disk.
 
         return new Promise( (resolve, reject) => {
-            // First check our FE js modules that have been cached to redis DB. This really only applies to dev environment because on prod everything is CDN cached.
-            const clientAssetCacheKey = `clientAssetCache:${bareModulePath}`;
-            self.redisClient.get(clientAssetCacheKey, (cachedAssetObj) => {
-                if(cachedAssetObj) {
+
+            // First check if this is a request for a css of svg asset that lives within node_modules. They are not webpacked or cached to local disk.
+            if(requestedPath.search(/\.css$/) !== -1) {
+                self.packNodeModuleCssToEsModule(bareModulePath, (esModuleText) => {
+                    resolve(esModuleText);
+                });
+                // We do not cache packed css modules to disk
+                return;
+            }
+            if(requestedPath.search(/\.svg$/) !== -1) {
+                self.packNodeModuleSvgToEsModule(bareModulePath, (esModuleText) => {
+                    resolve(esModuleText);
+                });
+                // We do not cache packed svg modules to disk
+                return;
+            }
+
+            // Next check our local disk for this JS module. May have already been compiled and cached to disk. These files get cleared out during any (non dev) deploy routine.
+            const compiledDirPath = path.resolve(self.compiledFilesDirPath);
+            const compiledFilename = `${requestedLibName}.js`;
+            const compiledFilePath = path.resolve(compiledDirPath, compiledFilename);
+            self.readCompiledLocalFile(compiledFilePath, (cachedFileCodeStr) => {
+                if(cachedFileCodeStr) {
                     console.log(`Found a cached version of requested node_module: ${bareModulePath}`);
-                    resolve(cachedAssetObj.code);
+                    resolve(cachedFileCodeStr);
                     return;
                 }
 
-                const cachedAssetPending = {path: bareModulePath, code: ''};
-                const compiledPath = path.resolve(self.nodeModulesPath);
-                const compiledFilename = `bareModule_${Date.now()}.js`;
                 console.log(`Now attempting to serve request for a node_module: ${bareModulePath}`);
-
-                if(requestedPath.search(/\.css$/) !== -1) {
-                    self.packNodeModuleCssToEsModule(bareModulePath, (esModuleText) => {
-                        cachedAssetPending.code = esModuleText;
-                        resolve(cachedAssetPending.code);
-                        self.redisClient.set(clientAssetCacheKey, cachedAssetPending);
-                    });
-                    return;
-                }
-
-                if(requestedPath.search(/\.svg$/) !== -1) {
-                    self.packNodeModuleSvgToEsModule(bareModulePath, (esModuleText) => {
-                        cachedAssetPending.code = esModuleText;
-                        resolve(cachedAssetPending.code);
-                        self.redisClient.set(clientAssetCacheKey, cachedAssetPending);
-                    });
-                    return;
-                }
-
                 const wpCompiler = webpack({
                     mode: 'production',
                     entry: bareModulePath,
@@ -73,35 +70,46 @@ var hbServeNodeModule = {
                         react: 'react',
                     },
                     output: {
-                        path: compiledPath,
+                        path: compiledDirPath,
                         filename: compiledFilename,
                         libraryTarget: 'window',
                         library: requestedLibName,
                     },
                 }, (err, stats) => {
                     if (err || stats.hasErrors() ) {
-                        console.log(`Error while webpacking requested node_modules library: ${err} ${stats}`); //${stats.toJson("minimal")}`);
+                        console.error(`Error while webpacking requested node_modules library: ${err} ${stats}`); //${stats.toJson("minimal")}`);
                     }
-                    //read local file to send back as text, then delete the local output file(s)
-                    const compiledFilePath = path.resolve(compiledPath, compiledFilename);
-                    fs.readFile(compiledFilePath, (err, compiledText) => {
-                        if(err) console.log(err);
-                        const esModuleText = `${compiledText} \n \n export default ${requestedLibName};`;
-                        console.log(`Compiled node_modules asset into ES module format: ${bareModulePath}`); // -> ${esModuleText}`);
-                        cachedAssetPending.code = esModuleText;
-                        resolve(cachedAssetPending.code);
-                        self.redisClient.set(clientAssetCacheKey, cachedAssetPending);
 
-                        fs.unlink(compiledFilePath, (err) => {
-                            if(err) console.log(err);
-                            fs.unlink(compiledFilePath.replace('.js', '.js.LICENSE.txt'), () => {});
+                    self.readCompiledLocalFile(compiledFilePath, (compiledFileCodeStr) => {
+                        // At this point, compiledFileCodeStr will be the exact output from webpack. We have not yet manually wrapped it in ES module export statement.
+                        // Alter the compiledFileCodeStr now, then save changes back to disk file. That file is served directly as a cached asset for future requests.
+                        const esModuleText = `${compiledFileCodeStr} \n \n export default ${requestedLibName};`;
+                        console.log(`Compiled node_modules asset into ES module format: ${bareModulePath}`); // -> ${esModuleText}`);
+                        resolve(esModuleText);
+
+                        fs.writeFile(compiledFilePath, esModuleText, (err) => {
+                            console.log(`Cached compiled node module to local disk: ${compiledFilePath}`);
+                            if (err) console.log(err);
                         });
                     });
+
                 }); // end webpack
-            }); // end self.redisClient.get(clientAssetCacheKey
+            }); // end self.readCompiledLocalFile
         }); // end return new Promise
 
     }, // end packNodeModuleToEsModule
+
+    readCompiledLocalFile(compiledFilePath, cback) {
+        // will return code string if found, null otherwise (which will then trigger a webpack to compile from node_modules)
+        fs.readFile(compiledFilePath, (err, compiledText) => {
+           if(err || !compiledText) {
+               console.log(err);
+               if (cback) cback(null);
+               return;
+           }
+           if (cback) cback(compiledText);
+       });
+    },
 
     packNodeModuleCssToEsModule(bareModulePath, cback) {
         // Looks like this was an ES module request for a CSS file inside a node module - wrap the css content in JS that will auto inject it to the page

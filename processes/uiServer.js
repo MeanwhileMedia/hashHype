@@ -25,7 +25,7 @@ const pathToSslCert = path.resolve(process.cwd(), 'utils/certs/MeanwhileMedia.cr
 const uiServer = {
 
     serverConfig: {
-        rootDir: process.cwd(), //the project root 
+        rootDir: process.cwd(), //the project root
         httpsPort: 8080, // this will be the exposed server port regardless of what machine the uiServer is run on
 
         // We let browsers cache files for 10 minutes and CDN cache indefinitely - CDN cache is cleared during a prod deploy.
@@ -228,7 +228,7 @@ const uiServer = {
         self.server.use(hbServeNodeModule({
             nodeModulesPath: path.join(self.serverConfig.rootDir, 'node_modules'),
             bareModuleMap: self.bareModuleMap,
-            redisClient: self.redisClient,
+            compiledFilesDirPath: path.join(self.serverConfig.rootDir, 'ui', 'dist'),
             resOpts: { maxage: self.serverConfig.responseCacheMaxAge }
         }));
 

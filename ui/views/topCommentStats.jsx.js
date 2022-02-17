@@ -168,21 +168,21 @@ class TopCommentStats extends React.Component {
     focusNextTopComment() {
         const self = this;
         if (!this.state.focusedTopComment) return;
-        const curRank = this.state.focusedTopComment.rank;
-        let nextTopComment = this.state.comments.find(thisTopComment => thisTopComment.rank === curRank + 1);
-        if (!nextTopComment) nextTopComment = this.state.comments.find(thisTopComment => thisTopComment.rank === 1);
+        const curRank = this.state.focusedTopComment.rankRender;
+        let nextTopComment = this.state.comments.find(thisTopComment => thisTopComment.rankRender === curRank + 1);
+        if (!nextTopComment) nextTopComment = this.state.comments.find(thisTopComment => thisTopComment.rankRender === 1);
         setTimeout(() => self.focusTopComment(nextTopComment), 0); // when passing functions into input event listeners (keyboard controls) should wait until next tick so all registered events have time to process.
     }
     focusPrevTopComment() {
         const self = this;
         if (!self.state.focusedTopComment) return;
-        const curRank = self.state.focusedTopComment.rank;
+        const curRank = self.state.focusedTopComment.rankRender;
         const targetRank = curRank - 1;
         let prevTopComment;
         if (targetRank < 1) {
-            self.state.comments.forEach(thisTopComment => { if (thisTopComment.rank > targetRank) prevTopComment = thisTopComment });
+            self.state.comments.forEach(thisTopComment => { if (thisTopComment.rankRender > targetRank) prevTopComment = thisTopComment });
         } else {
-            prevTopComment = self.state.comments.find(thisTopComment => thisTopComment.rank === targetRank);
+            prevTopComment = self.state.comments.find(thisTopComment => thisTopComment.rankRender === targetRank);
         }
         setTimeout(() => self.focusTopComment(prevTopComment), 0);
     }

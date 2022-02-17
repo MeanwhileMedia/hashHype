@@ -137,7 +137,7 @@ const wordObjModel = {
         const now = Date.now();
         redisClient.zrange(wordToUsersIndexKey, now - self.wordUseInterval, now, (commentIdsInRange) => {
             if (commentIdsInRange && commentIdsInRange.length > 0) {
-                console.warn(`Will not store a foundAt tstamp for word:${wordString} because this user (${hostComment.author.name}) already used it within the last ${self.wordUseInterval/3600000}hrs.`)
+                // console.warn(`Will not store a foundAt tstamp for word:${wordString} because this user (${hostComment.author.name}) already used it within the last ${self.wordUseInterval/3600000}hrs.`)
                 if (cback) cback();
                 return;
             }

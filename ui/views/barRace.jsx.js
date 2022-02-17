@@ -20,7 +20,7 @@ class BarRace extends React.Component {
         };
 
         this.reducedTopComments = []; // the comments after passing through above state filters
-        this.rankOnePoints = null; // set to the highest scoring topComment, but only when that topComment points exceeds this.rankOnePoints. This makes for a more stable graph that doesn't rerender the scale of all bars based on the top scoring bar.
+        this.maxPointsScale = null; // set to the highest scoring topComment, but only when that topComment points exceeds this.maxPointsScale. This makes for a more stable graph that doesn't rerender the scale of all bars based on the top scoring bar.
 
         this.barEls = []; // We maintain the same child react components across state changes so that we can animate their style changes (rather than re-instantiation a new child (bar) component during every rerender of this parent)
         this.barElRefs = []; // so this parent can set state to it's children
@@ -81,21 +81,18 @@ class BarRace extends React.Component {
 
         if (reducedTopComments.length === 0) { return []; }
 
-        reducedTopComments.sort((a, b) => b.totalPoints['1Hr'] - a.totalPoints['1Hr']);
-        reducedTopComments = reducedTopComments.slice(0, this.state.topCommentCount);
-        reducedTopComments.forEach( (topComment, index) => {
-            topComment.rank = index+1;
-            const getUniquePointCount = (lastTriedUniqueCount) => {
-                if (allPointCounts.indexOf(lastTriedUniqueCount) !== -1) { // Because we use this array to rank trends, we cannot use tie scores. If a tie is found, increment the dup by 1 until it's no longer a dup.
-                    lastTriedUniqueCount++;
-                    getUniquePointCount(lastTriedUniqueCount);
-                    return;
-                }
-                allPointCounts.push(lastTriedUniqueCount);
-                topComment.totalPoints['1Hr'] = lastTriedUniqueCount;
-            };
-            getUniquePointCount(topComment.totalPoints['1Hr']);
+        reducedTopComments.sort((a, b) => {
+            let sortBy = 'rankAdjust';
+            if (a.rankAdjust === b.rankAdjust) sortBy = 'rank';
+            return a[sortBy] - b[sortBy];
         });
+
+        // Since we have sorted the bars by rankAdjust, we need to set a UI only prop called "rankRender" which is simply based on the comments index within reducedTopComments
+        reducedTopComments.forEach((thisTopComment, thisTopCommentIndex) => {
+            thisTopComment.rankRender = thisTopCommentIndex + 1;
+        });
+
+        reducedTopComments = reducedTopComments.slice(0, this.state.topCommentCount);
 
         return reducedTopComments;
     }
@@ -106,14 +103,14 @@ class BarRace extends React.Component {
         const barElRefs = [];
         if (!self.reducedTopComments.length) return barEls;
 
-        self.getRankOnePointScale();
+        self.getMaxPointsScale();
 
         self.reducedTopComments.forEach((thisTopComment) => { // reducedTopComment is already sorted descending
             const thisBarElRef = React.createRef();
             barEls.push(
                 <BarRaceBar
                     topComment={thisTopComment}
-                    rankOnePoints={self.rankOnePoints}
+                    maxPointsScale={self.maxPointsScale}
                     focusTopComment={self.props.focusTopComment}
                     activeTopComment={self.props.focusedTopComment}
                     ref={thisBarElRef}
@@ -128,7 +125,7 @@ class BarRace extends React.Component {
             barEls.push(
                 <BarRaceBar
                     topComment={null}
-                    rankOnePoints={self.rankOnePoints}
+                    maxPointsScale={self.maxPointsScale}
                     focusTopComment={self.props.focusTopComment}
                     activeTopComment={self.props.focusedTopComment}
                     ref={thisBarElRef}
@@ -147,7 +144,7 @@ class BarRace extends React.Component {
         const orphanBarEls = [];
         const orphanTopComments = [];
 
-        self.getRankOnePointScale();
+        self.getMaxPointsScale();
 
         self.reducedTopComments.forEach((thisTopComment) => { // reducedTopComment is already sorted ascending
             let matchedExistingBarEl = self.barElRefs.find(thisBarRef => {
@@ -157,7 +154,7 @@ class BarRace extends React.Component {
             if (matchedExistingBarEl) {
                 matchedExistingBarEl.current.setState({
                     topComment: thisTopComment,
-                    rankOnePoints: self.rankOnePoints,
+                    maxPointsScale: self.maxPointsScale,
                     activeTopComment: self.props.focusedTopComment
                 });
                 updatedBarEls.push(matchedExistingBarEl);
@@ -170,7 +167,7 @@ class BarRace extends React.Component {
             if (updatedBarEls.indexOf(thisBarElRef) === -1) {
                 thisBarElRef.current.setState({
                     topComment: orphanTopComments.shift(),
-                    rankOnePoints: self.rankOnePoints,
+                    maxPointsScale: self.maxPointsScale,
                     activeTopComment: self.props.focusedTopComment
                 });
                 updatedBarEls.push(thisBarElRef);
@@ -192,9 +189,9 @@ class BarRace extends React.Component {
             }
 
             const barState = thisBarElRef.current.state;
-            if (!barState.topComment || !barState.topComment.rank) return;
-            const barLabelEl = document.querySelector(`.topCommentStats_barRace_bar__${barState.topComment.rank} .topCommentStats_barRace_bar_label`);
-            const textWrapperEl = document.querySelector(`.topCommentStats_barRace_bar__${barState.topComment.rank} .topCommentStats_barRace_bar_label_text`);
+            if (!barState.topComment || !barState.topComment.rankRender) return;
+            const barLabelEl = document.querySelector(`.topCommentStats_barRace_bar__${barState.topComment.rankRender} .topCommentStats_barRace_bar_label`);
+            const textWrapperEl = document.querySelector(`.topCommentStats_barRace_bar__${barState.topComment.rankRender} .topCommentStats_barRace_bar_label_text`);
             if (!barLabelEl || !textWrapperEl) return;
 
             if (textWrapperEl.getBoundingClientRect().width + utils.curMagicScreenMeasure*3 > barLabelEl.getBoundingClientRect().width) {
@@ -212,24 +209,30 @@ class BarRace extends React.Component {
         self.barElRefs.sort((barRefA, barRefB) => {
             let barARank = self.barElRefs.length + 1;
             let barBRank = self.barElRefs.length + 1;
-            if (barRefA.current.state.topComment) barARank = barRefA.current.state.topComment.rank;
-            if (barRefB.current.state.topComment) barBRank = barRefB.current.state.topComment.rank;
+            if (barRefA.current.state.topComment) barARank = barRefA.current.state.topComment.rankRender;
+            if (barRefB.current.state.topComment) barBRank = barRefB.current.state.topComment.rankRender;
             return barARank - barBRank;
         });
     }
 
-    getRankOnePointScale() {
+    getMaxPointsScale() {
         const self = this;
-        if (!self.reducedTopComments[0]) {
-            self.rankOnePoints = 0;
+        // This function finds the rendered comment with the highest point count (not necessarily rank 1).
+        // This highest count "maxPointsScale" is used to set bar widths.
+        let topCommentWithHighestPoints = null;
+        self.reducedTopComments.forEach((thisTopComment, thisTopCommentIndex) => {
+            if (!topCommentWithHighestPoints || thisTopComment.totalPoints['1Hr'] > topCommentWithHighestPoints.totalPoints['1Hr']) topCommentWithHighestPoints = thisTopComment;
+        });
+        if (!topCommentWithHighestPoints) {
+            self.maxPointsScale = 0;
             return;
         }
         const minSpaceUsageForRankOneBar = 0.9; // min percent of parent container the bar must fill. We let it fluctuate within this margin to allow for a more stable chart that isn't constantly scaling based on rank one point changes.
-        const newRankOnePoints = self.reducedTopComments[0].totalPoints['1Hr'];
-        if (self.rankOnePoints && newRankOnePoints / self.rankOnePoints <= minSpaceUsageForRankOneBar) {
-            self.rankOnePoints = newRankOnePoints;
+        const newMaxPointsScale = topCommentWithHighestPoints.totalPoints['1Hr'];
+        if (self.maxPointsScale && newMaxPointsScale / self.maxPointsScale <= minSpaceUsageForRankOneBar) {
+            self.maxPointsScale = newMaxPointsScale;
         } else {
-            self.rankOnePoints = Math.max(newRankOnePoints, self.rankOnePoints);
+            self.maxPointsScale = Math.max(newMaxPointsScale, self.maxPointsScale);
         }
     }
 
@@ -275,7 +278,7 @@ class BarRace extends React.Component {
 
         return (
             <div className="topCommentStats_barRace_activeComment" style={css.topCommentStats_barRace_activeCommentInfo}>
-                <h6><span style={{'opacity': '0.25'}}>Rank:</span> {commentFormatter.getNumberOrdinal(self.props.focusedTopComment.rank)}</h6>
+                <h6><span style={{'opacity': '0.25'}}>Rank:</span> {commentFormatter.getNumberOrdinal(self.props.focusedTopComment.rankRender)}</h6>
                 <h2 style={css.topCommentStats_barRace_activeCommentInfo_symbolTitle} dangerouslySetInnerHTML={{ __html: topSymbolName }}></h2>
                 <h6 style={{'opacity': '0.25'}}>Top Comment:</h6>
                 <TopCommentBodyAndPoints

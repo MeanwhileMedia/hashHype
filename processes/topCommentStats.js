@@ -21,6 +21,7 @@ class TopCommentsStats {
     constructor() {
         const self = this;
         this.topCommentsStatsKey = 'stats:topComments'; // The resulting computed data produced by this process
+        this.topTrendsStatsKey = 'stats:topTrends';
         this.trainingNotRelevantKey = 'training:notRelevant';
 
         this.processPersistKey = 'process:topCommentStats:persistedState'; // see persistProcessState function
@@ -726,6 +727,10 @@ class TopCommentsStats {
                 topCommentsClone.comments.push(thisTopComment);
             }
 
+            // this comment has found it's place as a topComment. Because finalTopComments was already sorted descending (totalPoints), the topComment's rank is also
+            // it's index in the topCommentsClone.comments array. Set the rank property now.
+            thisTopComment.rank = topCommentsClone.comments.length;
+
             if (topCommentsWithSymbolsCount >= self.minTopCommentsWithSymbols) return true; // we have all we need break loop
         }); // end finalTopComments.some
 
@@ -1061,6 +1066,42 @@ class TopCommentsStats {
         });
     }
 
+    applyTopCommentsTrendHistory(cback) { // alters this.topComments in-place.
+        const self = this;
+        // This function gets stats:topTrends from redis (see topTrendStats.js) and checks for matching trends in any of our topComments. If found,
+        // we use historical properties like trend.decay to penalize the comment's ranking.
+
+        // Each topComments.comments object must maintain it's point based ranking (comment.rank) to ensure accurate historical data.
+        // We instead hold a seperate property (comment.rankAdjust) which can be used in rendering logic to supress comments with high decay/low volatility.
+        self.redisClient.get(self.topTrendsStatsKey, (topTrendsStats) => {
+            self.topComments.comments.forEach((thisTopComment) => {
+
+                // First check if this comment matches on of our topTrends
+                if (!thisTopComment.topSymbolHigh['1Hr']) return;
+                const topSymbol = thisTopComment.symbols.find((symbol) => {
+                    return symbolModel.generateRedisKey(symbol) === thisTopComment.topSymbolHigh['1Hr'];
+                });
+                if (!topSymbol) return;
+                let matchedTopTrend = null;
+                topTrendsStats.trends.some((thisTopTrend) => {
+                    if (thisTopTrend.word === topSymbol.symbol) {
+                        matchedTopTrend = thisTopTrend;
+                        return true; // break some loop
+                    }
+                });
+                if (!matchedTopTrend) return;
+
+                // We found a match, now apply changes to thisTopComment based on historical props on matchedTopTrend
+                if (matchedTopTrend.decay) {
+                    thisTopComment.rankAdjust = thisTopComment.rank + Math.round(matchedTopTrend.decay * self.minTopCommentsWithSymbols);
+                    thisTopComment.rankAdjust = Math.max(thisTopComment.rankAdjust, 0);
+                    // console.log(`The comment:${thisTopComment.id} rank was adjusted from ${thisTopComment.rank} to ${thisTopComment.rankAdjust} because it's topSymbol (${matchedTopTrend.word}) contained a decay of ${matchedTopTrend.decay}`);
+                }
+            });
+            if (cback) cback();
+        });
+    }
+
     isDiscardComment(comment) {
         // This process includes rules around which comments should be excluded in trend analysis. Ie: comments that are from not relevant users
         let shouldDiscard = false;
@@ -1287,11 +1328,13 @@ class TopCommentsStats {
         }
         self.storeNewTopCommentsStatsIsPending = true;
         self.refreshTopComments(() => {
-            self.redisClient.set(self.topCommentsStatsKey, self.topComments, () => {
-                self.storeNewTopCommentsStatsIsPending = false;
-                clearTimeout(self.storeNewTopCommentsStatsIsPendingTimeout);
-                self.storeNewTopCommentsStatsIsPendingTimeout = null;
-                console.log('Updated stats:topComments at time:', Date.now());
+            self.applyTopCommentsTrendHistory(() => {
+                self.redisClient.set(self.topCommentsStatsKey, self.topComments, () => {
+                    self.storeNewTopCommentsStatsIsPending = false;
+                    clearTimeout(self.storeNewTopCommentsStatsIsPendingTimeout);
+                    self.storeNewTopCommentsStatsIsPendingTimeout = null;
+                    console.log('Updated stats:topComments at time:', Date.now());
+                });
             });
         });
     }

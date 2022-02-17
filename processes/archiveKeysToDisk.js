@@ -47,7 +47,38 @@ class ArchiveKeysToDisk {
                         });
                     });
                 }
-            } // end '__keyspace@0__:stats:topComments'
+            }, // end '__keyspace@0__:stats:topComments'
+
+            // '__keyspace@0__:stats:topTrends': { // JWW TODO - if we find a need to archive stats:topTrends, levelDB client DB eviction logic will need to be updated. See "diskCheckCorrectionDeletesArchivedKey"
+            //     snapshotTstampInterval: 10000, // how long between each snapshot. The snapshot tstamps are generated as denominations of this num.
+            //     genTstamp: () => {
+            //         // Each redis key that is defined here (to be snapshotted to levelDB) is saved to archive key ${objectKey}:${tstampRoundedToDenomination}
+            //         // 'stats:topComments' has snapshots saved in 10s denominations
+            //         const now = Date.now();
+            //         const thisTstamp = now - (now % self.redisKeyspaceSubscriptions['__keyspace@0__:stats:topTrends'].snapshotTstampInterval);
+            //
+            //         this.lastUsedTstamp = this.lastUsedTstamp || 0;
+            //         if (thisTstamp === this.lastUsedTstamp) return null;
+            //         this.lastUsedTstamp = thisTstamp;
+            //         return thisTstamp;
+            //     },
+            //     action: () => {
+            //         const thisRedisObjKey = 'stats:topTrends';
+            //         const thisTstamp = self.redisKeyspaceSubscriptions['__keyspace@0__:stats:topTrends'].genTstamp();
+            //         if (!thisTstamp) return;
+            //         const levelDBArchiveKey = `${thisRedisObjKey}:${thisTstamp}`;
+            //         self.redisClient.get(thisRedisObjKey, (topTrendsObj) => {
+            //             self.levelDbClient.set(levelDBArchiveKey, topTrendsObj, (success) => {
+            //                 if (!success) {
+            //                     console.error(`Failed to snapshot a key to levelDB archive (${levelDBArchiveKey})`);
+            //                     return;
+            //                 }
+            //                 console.log(`Saved new ${levelDBArchiveKey} snapshot to key archive DB.`);
+            //                 self.saveTstampToIndex(thisRedisObjKey, thisTstamp);
+            //             });
+            //         });
+            //     }
+            // } // end '__keyspace@0__:stats:topTrends'
 
         };
 
