@@ -63,10 +63,8 @@ const styles = {
                 'display': 'flex', // is magicScaled
                 'align-items': 'center',
             },
-            GNav_bottom_right_ctrls_vizCtrl_toggle: {
-                'display': 'inline-block', // is magicScale
-                'margin-left': '1rem',
-                'margin-right': '0.8rem'
+            GNav_bottom_right_ctrls_vizCtrl_icon: {
+                'margin-left': '0.6rem'
             },
             GNav_bottom_right_ctrls_vizCtrl_icon__leaderboard: {
                 'display': 'inline-block',

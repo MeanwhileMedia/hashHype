@@ -124,21 +124,21 @@ class AdminTrain extends React.Component {
             <div className="adminTrain" style={css.adminTrain}>
                 <div style={css.adminTrain_section}>
                     <div style={{position: 'relative'}}>
-                        <h6 style={{cursor: 'ns-resize'}} onClick={this.toggleAccord.bind(this)}>Comment</h6>
+                        <h6 style={css.adminTrain_section_title} onClick={this.toggleAccord.bind(this)}>Comment</h6>
                         <p style={{position: 'absolute', right: 0, top: '-1.2rem'}}>Points: <b>{thisView.props.topComment.totalPoints['1Hr']}</b></p>
                     </div>
                     {commentSection}
                 </div>
                 <div style={css.adminTrain_section}>
-                    <h6 style={{cursor: 'ns-resize'}} onClick={this.toggleAccord.bind(this)}>Username</h6>
+                    <h6 style={css.adminTrain_section_title} onClick={this.toggleAccord.bind(this)}>Username</h6>
                     {usernameSection}
                 </div>
                 <div style={css.adminTrain_section}>
-                    <h6 style={{cursor: 'ns-resize'}} onClick={this.toggleAccord.bind(this)}>Symbols</h6>
+                    <h6 style={css.adminTrain_section_title} onClick={this.toggleAccord.bind(this)}>Symbols</h6>
                     {symbolsSection}
                 </div>
                 <div style={css.adminTrain_section}>
-                    <h6 style={{cursor: 'ns-resize'}} onClick={this.toggleAccord.bind(this)}>Words</h6>
+                    <h6 style={css.adminTrain_section_title} onClick={this.toggleAccord.bind(this)}>Words</h6>
                     {wordsSection}
                 </div>
         </div>

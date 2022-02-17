@@ -102,7 +102,6 @@ h6, .heading6 {
     /* bust text inflation algorithm */
     display: inline-block;
     max-height: 100%;
-    width: 100%;
     text-size-adjust: none;
     -webkit-text-size-adjust: none;
     -moz-text-size-adjust: none;

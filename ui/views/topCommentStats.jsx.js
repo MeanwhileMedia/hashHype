@@ -93,6 +93,9 @@ class TopCommentStats extends React.Component {
             this.setState({topCommentsVizType: type});
         }
     }
+    getTopCommentsVizType() {
+        return this.state.topCommentsVizType;
+    }
 
     createCommentVisEl() {
         let commentVisEl;
@@ -106,6 +109,7 @@ class TopCommentStats extends React.Component {
                     toggleFreezeState={this.toggleFreezeState.bind(this)}
                     setPageIsReady={this.setPageIsReady.bind(this)}
                     gNav={this.gNavRef.current}
+                    getTopCommentsVizType={this.getTopCommentsVizType.bind(this)}
                 />
             );
         } else {
@@ -118,6 +122,7 @@ class TopCommentStats extends React.Component {
                     toggleFreezeState={this.toggleFreezeState.bind(this)}
                     setPageIsReady={this.setPageIsReady.bind(this)}
                     gNav={this.gNavRef.current}
+                    getTopCommentsVizType={this.getTopCommentsVizType.bind(this)}
                 />
             );
         }

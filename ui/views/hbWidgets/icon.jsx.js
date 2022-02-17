@@ -125,8 +125,12 @@ class Icon extends React.Component {
         let interactiveClass = 'icon--interactive';
         if (this.props.interactive === 'false') interactiveClass = '';
 
+        let activeClass = '';
+        if (this.props.active === true) activeClass = 'icon--active';
+        if (this.props.active === false) activeClass = 'icon--inactive';
+
         return (
-            <span class={`hbWidgets icon ${interactiveClass}`} dangerouslySetInnerHTML={{__html: tempIconEl.innerHTML}}></span>
+            <span class={`hbWidgets icon ${interactiveClass} ${activeClass}`} dangerouslySetInnerHTML={{__html: tempIconEl.innerHTML}}></span>
         );
     }
 }

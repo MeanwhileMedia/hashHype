@@ -179,6 +179,8 @@ class BarRace extends React.Component {
 
     checkBarElsForTextSpace() {
         const self = this;
+        if (this.props.getTopCommentsVizType() !== 'barRace') return;
+
         self.sortBarElRefs();
         // This function checks every bar el and determines if the bar isn't wide enough to fit symbol text. If so, text will be place just to the right of the bar.
         let foundShortBar = false; // If a single bar is found to be short, then all lower bars will also put text outside (for uniformity)
@@ -280,15 +282,17 @@ class BarRace extends React.Component {
             <div className="topCommentStats_barRace_activeComment" style={css.topCommentStats_barRace_activeCommentInfo}>
                 <h6><span style={{'opacity': '0.25'}}>Rank:</span> {commentFormatter.getNumberOrdinal(self.props.focusedTopComment.rankRender)}</h6>
                 <h2 style={css.topCommentStats_barRace_activeCommentInfo_symbolTitle} dangerouslySetInnerHTML={{ __html: topSymbolName }}></h2>
-                <h6 style={{'opacity': '0.25'}}>Top Comment:</h6>
+                <span style={{'display': 'inline-flex'}}>
+                    <span style={css.topCommentStats_barRace_activeCommentInfo_infoBtn} onClick={self.togglePointsInfo.bind(self)}>
+                        <Icon iconName="info" height="100%" />
+                    </span>
+                    <h6 style={{'opacity': '0.25'}}>Top Comment:</h6>
+                </span>
                 <TopCommentBodyAndPoints
                     ref={this.topCommentBodyAndPointsRef}
                     topComment={self.props.focusedTopComment}
                 />
                 <div style={css.topCommentStats_barRace_activeCommentInfo_btns}>
-                    <span style={css.topCommentStats_barRace_activeCommentInfo_infoBtn} onClick={self.togglePointsInfo.bind(self)}>
-                        <Icon iconName="info" height="100%" />
-                    </span>
                     <span style={css.topCommentStats_barRace_activeCommentInfo_actionBtn}>
                         <button className="button__sev1 button__light" onClick={self.props.gNav.showSetTrendActionModal.bind(self.props.gNav)}>
                             <Icon iconName="data_saver_on" height="100%" />

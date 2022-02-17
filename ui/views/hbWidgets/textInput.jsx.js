@@ -77,6 +77,10 @@ class TextInput extends React.Component {
             renderVal: this.determineRenderedVal(newVal),
             curSelection: {focusOffset: focusOffset}
         });
+
+        if (typeof this.props.onInputChange === 'function') {
+            this.props.onInputChange(newVal, e);
+        }
     }
 
     onInputFocus(e) {

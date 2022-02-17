@@ -28,6 +28,10 @@ const styles = {
                 'text-align': 'left',
                 'margin-bottom': '2rem'
             },
+            adminTrain_section_title: {
+                'cursor': 'ns-resize',
+                'width': '100%'
+            },
             adminTrain_section_rows: {
                 'display': 'flex',
                 'flex-direction': 'row',

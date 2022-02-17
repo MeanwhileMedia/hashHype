@@ -297,6 +297,12 @@ button .hbWidgets.icon {
     display: inline-flex;
     align-items: center;
 }
+.hbWidgets.icon--active {
+    fill: #000;
+}
+.hbWidgets.icon--inactive {
+    fill: #c0c0c0;
+}
 .hbWidgets.icon--interactive {
     cursor: pointer;
 }

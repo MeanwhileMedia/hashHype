@@ -49,7 +49,7 @@ class SpinWheelPart extends React.Component {
                     className="heading3"
                     style={Object.assign({}, css.wheel_part_title, css.wheel_part_title__rank, css.wheel_text__h3)}
                 >
-                    {commentFormatter.getNumberOrdinal(this.props.data.rank)}
+                    {commentFormatter.getNumberOrdinal(this.props.data.rankRender)}
                 </h3>
             </div>
         );
@@ -118,7 +118,6 @@ class SpinWheelPart extends React.Component {
 
     render() {
         const self = this;
-        this.props.data.rank = this.props.allMsgCounts.indexOf(this.props.data.totalPoints['1Hr']) + 1;
 
         const rankSpace = this.props.maxOuterRadius - this.props.minOuterRadius;
         const innerPadding = (rankSpace*.2);

@@ -94,7 +94,7 @@ class SpinWheel extends React.Component {
 
     autoRotateToStart () {
         const self = this;
-        const defaultActiveTopComment = this.props.topComments.find(thisTopComment => thisTopComment.rank === self.defaultActiveRank);
+        const defaultActiveTopComment = this.props.topComments.find(thisTopComment => thisTopComment.rankRender === self.defaultActiveRank);
         this.autoRotateToTopComment(defaultActiveTopComment);
         this.props.focusTopComment(defaultActiveTopComment);
         this.props.setPageIsReady();
@@ -223,7 +223,16 @@ class SpinWheel extends React.Component {
         let hierarchyData = { name: 'topComments', children: this.props.topComments };
         let allMsgCounts = []; // for setting color and width of spinWheelParts
 
-        hierarchyData.children.sort((a, b) => b.totalPoints['1Hr'] - a.totalPoints['1Hr']);
+        hierarchyData.children.sort((a, b) => {
+            let sortBy = 'rankAdjust';
+            if (a.rankAdjust === b.rankAdjust) sortBy = 'rank';
+            return a[sortBy] - b[sortBy];
+        });
+
+        // Since we have sorted the bars by rankAdjust, we need to set a UI only prop called "rankRender" which is simply based on the comments index within reducedTopComments
+        hierarchyData.children.forEach((thisTopComment, thisTopCommentIndex) => {
+            thisTopComment.rankRender = thisTopCommentIndex + 1;
+        });
 
         if (this.state.showOnlyTopCommentsWithSymbols) {
             let reducedTopComments = [];

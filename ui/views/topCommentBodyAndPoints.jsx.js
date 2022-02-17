@@ -14,7 +14,8 @@ class TopCommentBodyAndPoints extends React.Component {
 
         this.state = {
             expandPointsInfo: false, //whether or not the points info msgBox is visible. Same prop name can also be passed to this component as a prop.
-            activePointsInfoWordIndex: -1 // set to -1 and the pointsInfo el will show summary text. Otherwise it shows info for the wordRef at this index in this.pointedWordRefs
+            activePointsInfoWordIndex: -1, // set to -1 and the pointsInfo el will show summary text. Otherwise it shows info for the wordRef at this index in this.pointedWordRefs
+            prevActivePointsInfoWordIndex: null // we track this so we can determine when the msgBox was newly opened
         };
         this.pointedWordRefs = [];
 
@@ -35,7 +36,8 @@ class TopCommentBodyAndPoints extends React.Component {
         document.querySelectorAll('.topCommentBodyAndPoints_bodyLayer .topCommentBodyAndPoints_bodyLayer_word').forEach(el => el.classList.add('font__heavy__noExpand__black'));
         if (this.state.activePointsInfoWordIndex !== -1) {
             this.setState({
-                activePointsInfoWordIndex: -1
+                activePointsInfoWordIndex: -1,
+                prevActivePointsInfoWordIndex: null
             }); // reset to start anytime the infoEl is re-hidden
         }
     }
@@ -67,7 +69,10 @@ class TopCommentBodyAndPoints extends React.Component {
 
             const thisWordRefIndex = self.pointedWordRefs.findIndex((thisWordRef) => thisWordRef.bodyElUid === targetBodyLayerUid);
             if (thisWordRefIndex === -1) return;
-            self.setState({activePointsInfoWordIndex: thisWordRefIndex});
+            self.setState({
+                activePointsInfoWordIndex: thisWordRefIndex,
+                prevActivePointsInfoWordIndex: this.state.activePointsInfoWordIndex
+            });
             self.togglePointsInfo(true);
         };
 
@@ -100,7 +105,10 @@ class TopCommentBodyAndPoints extends React.Component {
                 self.resetActivePointsInfoWordIndex();
             }
         }
-        this.setState({activePointsInfoWordIndex: newActivePointsInfoWordIndex})
+        this.setState({
+            activePointsInfoWordIndex: newActivePointsInfoWordIndex,
+            prevActivePointsInfoWordIndex: this.state.activePointsInfoWordIndex
+        })
     }
 
     getOrderedPointedWordRefs() {
@@ -336,19 +344,21 @@ class TopCommentBodyAndPoints extends React.Component {
             totalOtherUserCount = totalOtherUserCount + (points/self.props.topComment.words[pointedWordStr].pointVal);
         }
 
+        const overallPointsSummary = (
+            <p style={css.topCommentBodyAndPoints_pointsInfo_body}>This comment is ranked
+                {' '}<b>{commentFormatter.getNumberOrdinal(self.props.topComment.rankRender)}</b>
+                {' '}because it contains
+                {' '}<b>{pointedWordCount}</b>
+                {' '}<span style={{'border-bottom': '4px solid rgba(0,0,0,0.1)'}}>phrases</span>
+                {' '}which were recently commented by
+                {' '}<b>{totalOtherUserCount}</b>
+                {' '}other users.
+            </p>
+        );
+
         let thisPointsExplanation = null;
         if (self.state.activePointsInfoWordIndex === -1) {
-            thisPointsExplanation = (
-                <p style={css.topCommentBodyAndPoints_pointsInfo_body}>This comment is ranked
-                    {' '}<b>{commentFormatter.getNumberOrdinal(self.props.topComment.rankRender)}</b>
-                    {' '}because it contains
-                    {' '}<b>{pointedWordCount}</b>
-                    {' '}<span style={{'border-bottom': '4px solid rgba(0,0,0,0.1)'}}>phrases</span>
-                    {' '}which were recently commented by
-                    {' '}<b>{totalOtherUserCount}</b>
-                    {' '}other users.
-                </p>
-            );
+            thisPointsExplanation = overallPointsSummary;
         } else {
             thisPointedWordRef = self.pointedWordRefs[self.state.activePointsInfoWordIndex];
             if (!thisPointedWordRef) {
@@ -406,6 +416,11 @@ class TopCommentBodyAndPoints extends React.Component {
             document.querySelectorAll('.topCommentBodyAndPoints_bodyLayer .topCommentBodyAndPoints_bodyLayer_word').forEach(el => el.classList.remove('font__heavy__noExpand__black'));
             document.querySelectorAll(`.topCommentBodyAndPoints_bodyLayer__${thisPointedWordRef.bodyElUid} .topCommentBodyAndPoints_bodyLayer_word`).forEach(el => el.classList.add('font__heavy__noExpand__black'));
             document.querySelectorAll('.topCommentBodyAndPoints_bodyLayer__primary').forEach(el => el.style.opacity = '0.4');
+        }
+
+        if (this.state.activePointsInfoWordIndex !== -1 && this.state.prevActivePointsInfoWordIndex == -1) {
+            // Looks like the user clicked directly on a word to newly open the msgBox. Just once, we will show the overall points summary alongside the individual word points explanation.
+            thisPointsExplanation = [overallPointsSummary, thisPointsExplanation];
         }
 
         const pointsInfoEl = (

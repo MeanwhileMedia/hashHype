@@ -43,8 +43,7 @@ const styles = {
             },
             topCommentStats_barRace_activeCommentInfo_infoBtn: {
                 'height': '2rem',
-                'display': 'inline-flex',
-                'margin-left': '0.5rem'
+                'margin-right': '0.5rem'
             },
             topCommentStats_barRace_activeCommentInfo_actionBtn: {
                 'display': 'inline-flex'

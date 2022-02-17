@@ -82,9 +82,12 @@ class GNav extends React.Component {
                 <div className="GNav_bottom_right" style={css.GNav_bottom_right}>
                     <div className="GNav_bottom_right_ctrls" style={css.GNav_bottom_right_ctrls}>
                         <div style={css.GNav_bottom_right_ctrls_vizCtrl} >
-                            <span onClick={ (e) => { if (this.props.topCommentsVizType !== 'barRace') this.props.setTopCommentsVizType('toggle') } } style={css.GNav_bottom_right_ctrls_vizCtrl_icon__leaderboard}><Icon iconName="leaderboard" width="1.6rem" /></span>
-                            <span onClick={ (e) => { this.props.setTopCommentsVizType('toggle') } } className="magicScale" style={css.GNav_bottom_right_ctrls_vizCtrl_toggle}><ToggleSwitch color="dark" checked={spinWheelToggleSelected} /></span>
-                            <span onClick={ (e) => { if (this.props.topCommentsVizType !== 'spinWheel') this.props.setTopCommentsVizType('toggle') } }><Icon iconName="pie_chart" width="1.6rem" /></span>
+                            <span onClick={ (e) => { if (this.props.topCommentsVizType !== 'barRace') this.props.setTopCommentsVizType('toggle') } } style={Object.assign({}, css.GNav_bottom_right_ctrls_vizCtrl_icon, css.GNav_bottom_right_ctrls_vizCtrl_icon__leaderboard)}>
+                                <Icon iconName="leaderboard" width="1.6rem" active={this.props.topCommentsVizType === 'barRace' ? true : false} />
+                            </span>
+                            <span onClick={ (e) => { if (this.props.topCommentsVizType !== 'spinWheel') this.props.setTopCommentsVizType('toggle') } } style={Object.assign({}, css.GNav_bottom_right_ctrls_vizCtrl_icon)}>
+                                <Icon iconName="pie_chart" width="1.6rem" active={this.props.topCommentsVizType === 'spinWheel' ? true : false} />
+                            </span>
                         </div>
                     </div>
                 </div>
