@@ -40,8 +40,8 @@ class LevelDBClient {
         // This process will also check how much disk this level DB uses in intervals. It will begin deleting the oldest keys once we approach our max disk usage setting.
         self.diskCheckInterval = null;
         self.diskCheckIntervalTime = 60000; // once per minute.
-        self.diskCheckMaxDiskUsage = 0.6; // percentage of disk that this DB uses
-        self.diskCheckCorrectionDiskUsage = 0.5; // target percentage of disk that this DB uses AFTER ensureDBDiskUsageIsWithinBounds has looped and deleted
+        self.diskCheckMaxDiskUsage = 4; // max GB of disk that this DB uses
+        self.diskCheckCorrectionDiskUsage = 3; // target GB of disk that this DB uses AFTER ensureDBDiskUsageIsWithinBounds has looped and deleted
 
         self.diskCheckCorrectionDeletesArchivedKey = 'stats:topComments'; // when ensureDBDiskUsageIsWithinBounds is loop deleting, this is the key that will have it's oldest snapshots deleted.
 
@@ -376,9 +376,8 @@ class LevelDBClient {
         const maxDeleteBatchSize = 1000;
 
         self.getDbDiskUsage((startingDiskUsageObj) => {
-            let percDiskUsageByDb = Math.floor((startingDiskUsageObj.dbDiskUsage / startingDiskUsageObj.diskSize) * 1000000) / 1000000;
-            if (percDiskUsageByDb < self.diskCheckMaxDiskUsage && !deleteBatchSize) {
-                console.log(`LevelDB ${self.levelDbDir} is within acceptable disk usage: ${percDiskUsageByDb*100}%`);
+            if (startingDiskUsageObj.dbDiskUsage < self.gbToBytes(self.diskCheckMaxDiskUsage) && !deleteBatchSize) {
+                console.log(`LevelDB ${self.levelDbDir} is within acceptable disk usage: ${Math.round(self.bytesToGb(startingDiskUsageObj.dbDiskUsage)*1000)/1000}GB used of ${self.diskCheckMaxDiskUsage}GB available`);
                 if (cback) cback(); // disk usage is OK
                 return;
             }
@@ -410,17 +409,17 @@ class LevelDBClient {
                     self.compactRange(batchCmds[0].key, batchCmds[batchCmds.length-1].key, () => {
 
                         self.getDbDiskUsage((endingDiskUsageObj) => {
-                            let percDiskUsageByDb = Math.floor((endingDiskUsageObj.dbDiskUsage / endingDiskUsageObj.diskSize) * 1000000) / 1000000;
-                            if (percDiskUsageByDb < self.diskCheckCorrectionDiskUsage) {
-                                console.warn(`SUCCESS! LevelDB ${self.levelDbDir} has been corrected to acceptable disk usage: ${percDiskUsageByDb*100}%`);
+                            const dbDiskUsageGb = Math.round(self.bytesToGb(startingDiskUsageObj.dbDiskUsage)*1000)/1000; // just for logging
+                            const dbCorrectionDiskUsageBytes = self.gbToBytes(self.diskCheckCorrectionDiskUsage);
+                            if (endingDiskUsageObj.dbDiskUsage < dbCorrectionDiskUsageBytes) {
+                                console.warn(`SUCCESS! LevelDB ${self.levelDbDir} has been corrected to acceptable disk usage: ${dbDiskUsageGb}GB`);
                                 if (cback) cback();
                                 return;
                             }
 
                             const bytesDifference = startingDiskUsageObj.dbDiskUsage - endingDiskUsageObj.dbDiskUsage;
                             const estBytesPerKey = bytesDifference / deleteBatchSize;
-                            const bytesUsedOverflowPerc = (endingDiskUsageObj.dbDiskUsage / endingDiskUsageObj.diskSize) - self.diskCheckCorrectionDiskUsage;
-                            const bytesStillNeedToBeDeleted = endingDiskUsageObj.diskSize * bytesUsedOverflowPerc;
+                            const bytesStillNeedToBeDeleted = endingDiskUsageObj.diskSize - dbCorrectionDiskUsageBytes;
                             console.warn(`ensureDBDiskUsageIsWithinBounds estimates that the previous delete batch (${batchCmds.length}) freed ${bytesDifference}bytes. Each ${evictingKey} snapshot is approximately ${estBytesPerKey}bytes.`)
 
                             if (bytesDifference <= 0) {
@@ -434,7 +433,7 @@ class LevelDBClient {
                             estNextDeleteBatchSize = Math.min(estNextDeleteBatchSize, maxDeleteBatchSize);
 
                             // Loop this function again to check diskUsage readings and continue deletions if necc.
-                            console.warn(`LevelDB ${self.levelDbDir} is still too large (${percDiskUsageByDb*100}% of disk). Will delete ${estNextDeleteBatchSize} ${evictingKey} snapshot keys...`);
+                            console.warn(`LevelDB ${self.levelDbDir} is still too large (${dbDiskUsageGb}GB). Will delete ${estNextDeleteBatchSize} ${evictingKey} snapshot keys...`);
                             self.ensureDBDiskUsageIsWithinBounds(cback, evictingKey, snapshotTstampIndex, estNextDeleteBatchSize);
                         });
 
@@ -476,6 +475,13 @@ class LevelDBClient {
                 if (cback) cback(archiveDbHealthLogObj);
             });
         });
+    }
+
+    gbToBytes(gb) {
+        return gb * 1073741824; // using binary conversion
+    }
+    bytesToGb(bytes) {
+        return bytes / 1073741824; // using binary conversion
     }
 
 }

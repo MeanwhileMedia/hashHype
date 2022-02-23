@@ -163,6 +163,7 @@ class TopCommentsStats {
         console.log(`Total top words in last ${self.topWordsRefreshIntervalTime}ms: ${self.lastIntervalTopWordsCount}/${self.lastIntervalTotalWordsCount} (${percentTopWords}%)`);
         self.lastIntervalTotalWordsCount = 0; // reset counters now
         self.lastIntervalTopWordsCount = 0;
+        self.pendingWordFoundAtKeyspaceChannels = {};
 
         // Next try to calculate a rolling average percent of words which were deeemed topWords (if we have enough data). We use that number to adjust our new topWordsMinCount.
         self.pendingTopWordsPercentsForAvg = self.pendingTopWordsPercentsForAvg || [];
@@ -364,30 +365,28 @@ class TopCommentsStats {
             return wordRef.pointVal; // remember that we cache this calculation on the comment's wordRef objects.
         }
 
-        //(0 points for words), 5 points when word is symbol
-        //(5 for bigrams) x 2 when a symbol was in bigram (only multiplies max once)
-        //(10 for trigrams) x 3 when a symbol(s) was in bigram (only multiplies max twice)
         let points = 0;
-        let isSymbolMultiplier = 2;
-        // let maxSymbols = 1;
         let ignoreTokenCount = 0;
-        if (wordRef.type === 'word'){
-            points = 5; // we ONLY store word:word objects when they matched a symbol in extractWOrdsFromComments process
+
+        if (wordRef.type === 'word'){ // aka symbol. we ONLY store word:word objects when they matched a symbol in extractWOrdsFromComments process
+            points = 5;
+            if (wordRef.hasSymbols[0]) { // not all word symbol types get the same points
+                if (wordRef.hasSymbols[0].indexOf(':stock:') !== -1) points = 10;
+            }
         }
         if (wordRef.type === 'bigram') {
             const theseTokens = wordRef.word.split('_!!_');
             theseTokens.forEach((thisToken) => {
                 if (stopWords.ignore.indexOf(thisToken) !== -1) ++ignoreTokenCount;
             });
-            points = 2 - ignoreTokenCount;
+            points = 1 - ignoreTokenCount;
         }
         if (wordRef.type === 'trigram') {
             const theseTokens = wordRef.word.split('_!!_');
             theseTokens.forEach((thisToken) => {
                 if (stopWords.ignore.indexOf(thisToken) !== -1) ++ignoreTokenCount;
             });
-            points = 6 - (ignoreTokenCount*2);
-            // maxSymbols = 2; // A word sequence must have at least ONE token that is not a symbol to be pointed for contextful meaning.
+            points = 2 - ignoreTokenCount;
         }
         if (wordRef.type === '2dGram') {
             const theseTokens = wordRef.word.split('_!!_')
@@ -399,14 +398,8 @@ class TopCommentsStats {
                 if (stopWords.ignore.indexOf(thisToken) !== -1) distance = distance + thisToken.length;
             });
             // The avg distance measurement penalizes the point count. The higher the distance, the less meaningful this 2dGram.
-            points = (20 * seqCount) - distance;
-            // maxSymbols = seqCount / 2; // For 2dGrams, we only award points for a max of 1 symbol per every other sequence (no GME + APPL)
+            points = (10 * seqCount) - distance;
         }
-
-        // if(wordRef.hasSymbols && wordRef.hasSymbols.length > 0) {
-        //     const multiplyForSymbolCount = Math.min(wordRef.hasSymbols.length, maxSymbols);
-        //     points = points * (isSymbolMultiplier*multiplyForSymbolCount);
-        // }
 
         const wordPointVal = Math.max(0, Math.floor(points));
         wordRef.pointVal = wordPointVal; // update the wordRef so this point tally math is cached on the comment object

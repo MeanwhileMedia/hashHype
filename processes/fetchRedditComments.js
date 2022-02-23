@@ -72,7 +72,7 @@ class Reddit {
             console.log('Must provide subName.');
             return;
         }
-        this.redditApiClient.getNewComments(subName).then(cback).catch((err) => {
+        this.redditApiClient.getNewComments(subName).then(cback).catch((err) => { // https://www.reddit.com/dev/api/#GET_new
             if (err) console.warn('Reddit API getNewComments error...', err.error);
             //if (err.error && err.error.code) console.warn('Error code: ', err.error.code);
         });

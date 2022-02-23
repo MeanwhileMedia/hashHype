@@ -185,16 +185,25 @@ class BarRace extends React.Component {
         // This function checks every bar el and determines if the bar isn't wide enough to fit symbol text. If so, text will be place just to the right of the bar.
         let foundShortBar = false; // If a single bar is found to be short, then all lower bars will also put text outside (for uniformity)
         self.barElRefs.forEach((thisBarElRef) => { // self.barElRefs are already sorted ascending
-            if (foundShortBar) {
-                thisBarElRef.current.setState({renderTextOutside: true});
-                return;
-            }
-
             const barState = thisBarElRef.current.state;
             if (!barState.topComment || !barState.topComment.rankRender) return;
+            const barsUlEl = document.querySelector('.topCommentStats_barRace_bars');
             const barLabelEl = document.querySelector(`.topCommentStats_barRace_bar__${barState.topComment.rankRender} .topCommentStats_barRace_bar_label`);
             const textWrapperEl = document.querySelector(`.topCommentStats_barRace_bar__${barState.topComment.rankRender} .topCommentStats_barRace_bar_label_text`);
-            if (!barLabelEl || !textWrapperEl) return;
+            if (!barsUlEl || !barLabelEl || !textWrapperEl) return;
+
+            if (foundShortBar) { // all bars following the first short one will get the same text treatment (if possible)
+                // Since we attempt to render text outside for all bars below the first that was short, we need to check first
+                // that this bar isn't super long (as it's outside text could overflow parent container and overlap comment text)
+                let thisBarIsTooLong = false;
+                if (textWrapperEl.getBoundingClientRect().width + barLabelEl.getBoundingClientRect().width >= barsUlEl.getBoundingClientRect().width) thisBarIsTooLong = true;
+                if (thisBarIsTooLong) {
+                    thisBarElRef.current.setState({renderTextOutside: false});
+                } else {
+                    thisBarElRef.current.setState({renderTextOutside: true});
+                }
+                return;
+            }
 
             if (textWrapperEl.getBoundingClientRect().width + utils.curMagicScreenMeasure*3 > barLabelEl.getBoundingClientRect().width) {
                 // bar is to small, move text and change color

@@ -98,8 +98,11 @@ class RedisClient {
             console.log(`New node_redis ${clientType} client connected: ${clientOpts.host}:${clientOpts.port}`);
             onConnect(node_redis_client);
         });
-        node_redis_client.on("error", function(err) {
+        node_redis_client.on('error', function(err) {
             console.warn('Error connectiong node_redis client:', err);
+        });
+        node_redis_client.on('reconnecting', function(stats) {
+            console.warn(`Reconnection attempt #${stats.attempt} for node_redis ${clientType} client...`);
         });
     }
 
