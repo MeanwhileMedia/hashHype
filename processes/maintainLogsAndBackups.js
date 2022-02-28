@@ -10,8 +10,8 @@ import NodeMailer from '../utils/nodeMailer.js';
 
 const argv = yargs(process.argv.slice(2)).argv;
 
-const logDir = path.resolve(process.cwd(), 'utils/logs');
-const rdbDir = path.resolve(process.cwd(), 'utils/db');
+const logDir = path.resolve(process.cwd(), '../hashHype_persist/logs');
+const rdbDir = path.resolve(process.cwd(), '../hashHype_persist/db');
 const tstampPosInFilename = 1; // where filename is "dev01-18908-uiServer-out.log", we extract the tstamp portion via fileName.split('-')[tstampPosInFilename];
 
 // This class performs maintenance tasks related to log rotation, DB snapshot backup to cloud, DB health/status

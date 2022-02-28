@@ -4,8 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const redisConfigs = require('../../utils/redisClient-config.js');
 
-const rdbDir = path.resolve(process.cwd(), 'utils/db');
-const logDir = path.resolve(process.cwd(), 'utils/logs');
+const rdbDir = path.resolve(process.cwd(), '../hashHype_persist/db');
+const logDir = path.resolve(process.cwd(), '../hashHype_persist/logs');
 const activeLogDayTstamp = '00000'; // A tstamp of zero is always used for active pm2 logs. MaintainLogsAndBackups will rotate for us into archivable day tstamps (and upload to gdrive).
 
 const processKillTimeout = 240000; //ms. Allow processes 4 minutes to gracefully shutdown before pm2 force kills them.

@@ -7,7 +7,7 @@ const googleConfigs = require('./googleClient-config.js');
 // then dowloads it to the local machine db directory (before the app pm2 start command). The app will load then load the redis data from that external environment.
 
 // Ensure all required directorties exist on local machine
-const rdbDir = path.resolve(process.cwd(), 'utils/db');
+const rdbDir = path.resolve(process.cwd(), '../hashHype_persist/db');
 fs.mkdirSync(rdbDir, {recursive: true}); // recursive will allow this command to not error if dir already exists
 
 class MigrateRDB {
