@@ -50,6 +50,9 @@ class TopCommentsStats {
         this.minTopCommentsWithSymbolsType = 'stock'; // when collecting the minTopCommentsWithSymbols, only count comments who's top symbol is of type 'stock' (minTopCommentsWithSymbolsType)
         this.trackCommentsFor = 3600000; // ms (1hr) How long will we keep updating redis comment objects with recurring word points
 
+        this.minTokenClusterLengthFor2dGram = 4; // this must always be greater than our longest word type (trigrams) otherwise we will have key conflicts in redis over the 2dGram vs trigram version of it.
+        this.maxTokenClusterLengthFor2dGram = 10; // If we don't set a max then some comments which managed to have a high number of pointed tokens could overflow memory while 2dGram logic below tries to compute tens of thousands of combinations. We must assume that a comment with this many pointed words has diluted any potential for useful 2dGrams.
+
         this.storeNewTopCommentsStatsThrottleTime = 5000;
         this.throttle = {
             storeNewTopCommentsStats: throttle(this.storeNewTopCommentsStatsThrottleTime, this.storeNewTopCommentsStats).bind(this),
@@ -119,6 +122,15 @@ class TopCommentsStats {
             } else {
                 if (cback) cback(false);
             }
+            return;
+        }
+
+        // HashHype rule - a foundAt occurance for a 2dGram will ALWAYS trigger a point recalculation for all comments which share it.
+        // This is because 2dGrams have high value, but often low foundAt counts. We want to make sure the comments which hold this 2dGram
+        // are given the chance to become a topComment even if they aren't being called up for one of their other words.
+        if (wordString.split('_!!_').length >= this.minTokenClusterLengthFor2dGram) {
+            // console.warn(`2dGrams are always topWords (${wordString})`)
+            if (cback) cback(true);
             return;
         }
 
@@ -229,7 +241,7 @@ class TopCommentsStats {
                 pendingCommentIdsToWords[commentId] = [...new Set(wordStrings)];
             };
 
-            // Proceed to set comment get promises, and point counting promises. After they all complete we can save the newly calculated self.topComments to redis.
+            // Proceed to comment get promises, and point counting promises. After they all complete we can save the newly calculated self.topComments to redis.
             const allCommentGetPromises = [];
             for (let [thisCommentId, wordsForThisCommentId] of Object.entries(pendingCommentIdsToWords)) {
                 allCommentGetPromises.push(new Promise( (resolve, reject) => {
@@ -398,7 +410,8 @@ class TopCommentsStats {
                 if (stopWords.ignore.indexOf(thisToken) !== -1) distance = distance + thisToken.length;
             });
             // The avg distance measurement penalizes the point count. The higher the distance, the less meaningful this 2dGram.
-            points = (10 * seqCount) - distance;
+            points = (20 * seqCount) - distance;
+            console.log(`A 2dGram just earned ${points} points:`, wordRef);
         }
 
         const wordPointVal = Math.max(0, Math.floor(points));
@@ -634,7 +647,10 @@ class TopCommentsStats {
                     allChangedTopComments.push(thisComment);
                 }
 
-                if (thisSymbolKey === 'noSymbols' && self.topCommentsMustHaveSymbol) return; // HashHype won't surface any topComments which contain 0 symbols (though these comments still play a part in word reuse)
+                if (thisSymbolKey === 'noSymbols' && self.topCommentsMustHaveSymbol) {
+                    // console.warn(`comment:${thisComment.id} contained no symbols and will be excluded from topComments.`)
+                    return; // (though these comments still play a part in word reuse pointing)
+                }
                 if (thisSymbolKey === 'noSymbols' && finalTopCommentIds.indexOf(thisComment.id) === -1) {
                     // console.log(`Will add comment:${highestScoredSymbolComment.id} (no symbols) to our final selection of topCommentStats.comments.`)
                     finalTopCommentIds.push(thisComment.id);
@@ -782,7 +798,7 @@ class TopCommentsStats {
         ///////////
         // Now take all the pointed words for this comment, condense them, and get them in the correct order.
         // We use a charachter index map because some of the pointed word sequences will overlap and we can only count each token once (i.e. "guy_!!_insane" AND "guy_!!_insane_!!_stuff" both earned points)
-        let pointedWordsOrdered = {}; // {'{charIndex11}': 'g', '12': 'u', '13': 'y', '14': '_', '15': 'i', '16': 'n', '17': 's', '18': 'a', '19': 'n', '20': 'e', '28': 'G', '29': 'M', etc...}
+        let pointedCharsOrdered = {}; // {'{charIndex11}': 'g', '12': 'u', '13': 'y', '14': ' ', '15': 'i', '16': 'n', '17': 's', '18': 'a', '19': 'n', '20': 'e', '27': ' ', '28': 'G', '29': 'M', etc...}
         let lowestCharIndex = null;
         let highestCharIndex = 0;
         let totalTokenCount = 0;
@@ -793,13 +809,13 @@ class TopCommentsStats {
             thisWordRef.index.forEach((thisIndex) => { // remember that a word sequence may occur more than once in a single comment
                 const startIndex = thisIndex;
                 for (let curIndex = startIndex; curIndex < startIndex+thisWordString.length; curIndex++) {
-                    if (pointedWordsOrdered[curIndex]) {
+                    if (pointedCharsOrdered[curIndex]) {
                         // we have a word overlap - prob between a bigram/trigram. Make sure we preserve all rawWords from both
-                        pointedWordsOrdered[curIndex].rawWords = pointedWordsOrdered[curIndex].rawWords.concat(thisWordRef.rawWords);
-                        pointedWordsOrdered[curIndex].hasSymbols = pointedWordsOrdered[curIndex].hasSymbols.concat(thisWordRef.hasSymbols);
+                        pointedCharsOrdered[curIndex].rawWords = pointedCharsOrdered[curIndex].rawWords.concat(thisWordRef.rawWords);
+                        pointedCharsOrdered[curIndex].hasSymbols = pointedCharsOrdered[curIndex].hasSymbols.concat(thisWordRef.hasSymbols);
                     } else {
                         const thisChar = thisWordString[curIndex-startIndex];
-                        pointedWordsOrdered[curIndex] = {
+                        pointedCharsOrdered[curIndex] = {
                             index: curIndex,
                             char: thisChar,
                             rawWords: thisWordRef.rawWords,
@@ -810,8 +826,8 @@ class TopCommentsStats {
                     if (curIndex > highestCharIndex) highestCharIndex = curIndex;
                     if (lowestCharIndex === null || curIndex < lowestCharIndex) lowestCharIndex = curIndex;
 
-                    if (typeof pointedWordsOrdered[curIndex-1] === 'undefined' && curIndex !== 0) {
-                        pointedWordsOrdered[curIndex-1] = {index: curIndex-1, char: ' ', rawWords: [], hasSymbols: []}; // Prob just jumped between two words. Make sure we represent the distance between in pointedWordsOrdered via a single space.
+                    if (typeof pointedCharsOrdered[curIndex-1] === 'undefined' && curIndex !== 0) {
+                        pointedCharsOrdered[curIndex-1] = {index: curIndex-1, char: ' ', rawWords: [], hasSymbols: []}; // Prob just jumped between two words. Make sure we represent the distance between in pointedCharsOrdered via a single space.
                         if (lowestCharIndex === null || curIndex-1 < lowestCharIndex) lowestCharIndex = curIndex-1;
                         ++totalTokenCount;
                     }
@@ -819,182 +835,162 @@ class TopCommentsStats {
             });
         });
         if (highestCharIndex) { // make sure the last token also has a trailing space for below logic.
-            pointedWordsOrdered[highestCharIndex+1] = {index: highestCharIndex+1, char: ' ', rawWords: [], hasSymbols: []};
+            pointedCharsOrdered[highestCharIndex+1] = {index: highestCharIndex+1, char: ' ', rawWords: [], hasSymbols: []};
             ++totalTokenCount;
         }
-        if (lowestCharIndex && pointedWordsOrdered[lowestCharIndex].char === ' ') { // make sure the first token does not have a preceding space. If so, we counted one too many tokens above.
-            delete pointedWordsOrdered[lowestCharIndex];
+        if (lowestCharIndex && pointedCharsOrdered[lowestCharIndex].char === ' ') { // make sure the first token does not have a preceding space. If so, we counted one too many tokens above.
+            delete pointedCharsOrdered[lowestCharIndex];
             --totalTokenCount;
         }
         // console.log('comment.stemmedBody', comment.id, comment.stemmedBody);
-        // console.log('pointedWordsOrdered', pointedWordsOrdered);
+        // console.log('pointedCharsOrdered', pointedCharsOrdered);
         // console.log('totalTokenCount', totalTokenCount);
 
-        const extract2dGramParts = (tokenClusterLengthFor2dGramPart) => {
-            // Now go through and extract groups of {tokenClusterLengthFor2dGramPart}, where each group is object {tokens: ['guy', 'insane', 'GME', 'going'], index: 11, distance: 25}
-            const possible2dGramCount = totalTokenCount - tokenClusterLengthFor2dGramPart + 1;
-            const all2dGramParts = [];
-            for (let thisTokenInsetCount = 0; thisTokenInsetCount < possible2dGramCount; thisTokenInsetCount++) {
-                let skippedTokenCount = 0;
-                let extractedTokenCount = 0;
-                let thisTokenSet = [];
-                let thisTokenSetDistance = 0;
-                let thisTokenSetIndex = null;
-                let thisTokenSetRawWords = [];
-                let thisTokenSetHasSymbols = [];
-                let curExtractingToken = '';
-                let curExtractingTokenIndex = 0;
-                let prevCharObj = null;
-                for (let [thisCharObjIndex, thisCharObj] of Object.entries(pointedWordsOrdered)) {
-                    if (extractedTokenCount === tokenClusterLengthFor2dGramPart) continue;
 
-                    if (curExtractingToken === '') {
-                        // just started a new token.
-                        curExtractingTokenIndex = thisCharObj.index;
-                        if (thisTokenSet.length > 0) {
-                            // Account for the distance from the preceding token.
-                            const distanceFromLastToken = thisCharObj.index - prevCharObj.index;
-                            if (distanceFromLastToken > 2) thisTokenSetDistance = thisTokenSetDistance + distanceFromLastToken;
-                        }
-                    }
-
-                    if (thisCharObj.char === ' ' && curExtractingToken.length > 0) {
-                        // just completed a token.
-                        if (skippedTokenCount < thisTokenInsetCount) {
-                            // skipping this token this loop around
-                            ++skippedTokenCount;
-                        } else {
-                            if (thisTokenSetIndex === null) thisTokenSetIndex = curExtractingTokenIndex;
-                            ++extractedTokenCount;
-                            thisTokenSetRawWords = thisTokenSetRawWords.concat(prevCharObj.rawWords); // must use prevCharObj to get rawWords because we are currently positioned over a space which may not have rawWords assigned to it.
-                            thisTokenSetHasSymbols = thisTokenSetHasSymbols.concat(prevCharObj.hasSymbols);
-                            thisTokenSet.push(curExtractingToken);
-                        }
-                        curExtractingToken = '';
-                        continue;
-                    }
-
-                    if (thisCharObj.char !== ' ') {
-                        prevCharObj = thisCharObj;
-                        curExtractingToken = curExtractingToken + thisCharObj.char;
-                    }
-                }
-
-                ///////////
-                // HashHype rule - 2dGrams with a distance of 0 are invalid. The point of a 2dGram is to frame an unpointed portion of a comment between 2 or more pointed portions.
-                // If a 2dGram is back-to-back pointed words, then we simply allow those words to earn their points individually (a smaller sum). This also helps eliminate the potential
-                // for inflated points when a user is simply quoting another user (whether that quote is sincere, or an attempt to game points).
-                if (thisTokenSetDistance === 0) {
-                    // console.warn(`Discarding 2dGram on comment:${comment.id} with a distance of 0:`, thisTokenSet);
-                    continue; // continue loop "for (let thisTokenInsetCount = 0; ..." so this invalid 2dGram isn't pushed to all2dGramParts.
-                }
-
-                //////////
-                // HashHype rule - A word sequence can't earn points if it's length is greater than 70% the length of the entire comment body. This blocks comments from
-                // earning tons of 2dGram points when many users are quoting the same phrase but not adding anything original to it. We only apply this rule to long comments (greater than
-                // minCommentLengthForMaxWordLengthRule) because there are so many short comments that have key phrases which are understandably most of that short comment body.
-                // I.e: "you know you are a redneck when GME" does not deserve to launch GME to rank 1 comment.
-                const minCommentLengthForMaxWordLengthRule = 70;
-                const maxWordSeqLength = 0.7; // a percentage of the length of comment.stemmedBody
-                if (comment.stemmedBody.length >= minCommentLengthForMaxWordLengthRule) {
-                    const thisWordStrSpaced = thisTokenSet.join(' ');
-                    let thisWordStrLength = thisWordStrSpaced.length + thisTokenSetDistance;
-                    const wordStringPercOfBody = thisWordStrLength / comment.stemmedBody.length;
-                    if (wordStringPercOfBody > maxWordSeqLength) {
-                        // console.warn(`2dGram sequence was too long and will not be saved to comment. The 2dGram spanned ${wordStringPercOfBody * 100}% of the entire body comment:${comment.id}`, thisTokenSet);
-                        continue; // continue loop "for (let thisTokenInsetCount = 0; ..." so this invalid 2dGram isn't pushed to all2dGramParts.
-                    }
-                }
-
-                ///////////
-                // HashHype rule - a 2dGram can't have the same token twice in a row. I.e: "I love GME go moon :smile_emoji: :smile_emoji: :smile_emoji: Let's go!"
-                // Now we will loop through thisTokenSet and condense any sequence of the same word into just one occurance: "I love GME go moon :smile_emoji: Let's go!"
-                const dupWordSeqs = []; // array of objects [{word: ":smile_emoji:", dupIndexes: [5, 6, 7]}, etc...] - where 5, 6, 7 are the indexes of the tokens in thisTokenSet
-                let prevToken = null;
-                let curDupSequence = [];
-                thisTokenSet.forEach((thisToken, thisTokenIndex) => {
-                    if (thisToken !== prevToken && prevToken !== null) {
-                        if (curDupSequence.length > 1) {
-                            dupWordSeqs.push({
-                                word: thisTokenSet[curDupSequence[0]],
-                                dupIndexes: curDupSequence
-                            });
-                        }
-                        curDupSequence = [thisToken];
-                        prevToken = thisToken;
-                        return;
-                    }
-                    curDupSequence.push(thisTokenIndex);
-                    prevToken = thisToken;
-                    if (thisTokenIndex === thisTokenSet.length-1 && curDupSequence.length > 1) {
-                        // we reached the end of our loop and have a pending dupWordSeq. Must store it now.
-                        dupWordSeqs.push({
-                            word: thisTokenSet[curDupSequence[0]],
-                            dupIndexes: curDupSequence
-                        });
-                    }
-                });
-                if (dupWordSeqs.length) {
-                    dupWordSeqs.forEach((thisDupWordSeq) => {
-                        // console.warn(`Found a dup word sequence within a 2dGram on comment:${comment.id}`, thisTokenSet);
-                        thisDupWordSeq.dupIndexes.forEach((thisDupIndex) => {
-                            if (thisDupIndex !== 0) thisTokenSet[thisDupIndex] = null;
-                        })
-                    });
-                    thisTokenSet = thisTokenSet.filter(Boolean);
-                    // if (thisTokenSet.length <= 3) continue; // A 2dGram must be at least longer than a trigram. continue loop "for (let thisTokenInsetCount = 0; ..." so this invalid 2dGram isn't pushed to all2dGramParts.
-                    // console.warn(`Corrected 2dGram:`, thisTokenSet);
-                }
-
-                all2dGramParts.push({
-                    word: thisTokenSet.join('_!!_'), // at this point we will also convert the tokens array into a word string ('_!!_' delimeted) that can be used below in creating the wordRef object
-                    tokens: thisTokenSet,
-                    index: thisTokenSetIndex,
-                    distance: thisTokenSetDistance,
-                    rawWords: [...new Set(thisTokenSetRawWords)], // remove dups
-                    hasSymbols: [...new Set(thisTokenSetHasSymbols)]
-                });
+        ///////////////
+        // Now that all charachters from all pointed words have been parsed together in order, and all symbols/raw words are still associated with each charachter (pointedCharsOrdered), let's combine
+        // those charachters back together into an ordered array of wordRefs (pointedWordsOrdered). We can then use that array to run ngrams and get all possible combos, this includes "skip word" combos. i.e:
+        // Given ['guy', 'insane', 'GME', 'going', 'rocket', 'moon', 'happy', 'comment']
+        // 2dgrams would include guy_!!_insane_!!_GME_!!_going_!!_rocket  AND  guy_!!_GME_!!_going_!!_rocket  (and all other permutations that exceed minTokenClusterLengthFor2dGram)
+        const pointedWordsOrdered = []; // array of wordrefs
+        let curExtractingToken = '';
+        let curExtractingTokenIndex = 0;
+        let curExtractingTokenRawWords = [];
+        let curExtractingTokenHasSymbols = [];
+        let prevCharObj = null;
+        for (let [thisCharObjIndex, thisCharObj] of Object.entries(pointedCharsOrdered)) {
+            if (curExtractingToken === '') {
+                // just started a new token.
+                curExtractingTokenIndex = thisCharObj.index;
             }
-            return all2dGramParts;
-        } // end function extract2dGramParts
 
-        const minTokenClusterLengthFor2dGram = 4;
-        const maxTokenClusterLengthFor2dGram = totalTokenCount;
-        let all2dGrams = [];
-        for (let thisN = minTokenClusterLengthFor2dGram; thisN <= maxTokenClusterLengthFor2dGram; thisN++) {
-            all2dGrams = all2dGrams.concat(extract2dGramParts(thisN));
+            if (thisCharObj.char === ' ' && curExtractingToken.length > 0) {
+                // just completed a token.
+                const newWordRefObject = wordModel.createWordRefObject({
+                    type: '2dGram-pending', // this is pseudo type just to assist computations. This wordRef will not be saved to DB, it will be used to construct 2dGrams below.
+                    word: curExtractingToken,
+                    rawWords: prevCharObj.rawWords || [],
+                    hasSymbols: prevCharObj.hasSymbols || [],
+                    index: [curExtractingTokenIndex], // remember that wordRefs use an array for index
+                });
+                pointedWordsOrdered.push(newWordRefObject);
+
+                // reset all loop refs
+                curExtractingToken = '';
+                curExtractingTokenIndex = 0;
+                curExtractingTokenRawWords = [];
+                curExtractingTokenHasSymbols = [];
+                continue;
+            }
+
+            if (thisCharObj.char !== ' ') {
+                prevCharObj = thisCharObj;
+                curExtractingToken = curExtractingToken + thisCharObj.char;
+            }
         }
-        // console.log('all2dGrams', all2dGrams);
+        // console.warn('stemmedBody', comment.stemmedBody);
+        // console.warn('pointedCharsOrdered', pointedCharsOrdered);
+        // console.warn('validWordsFor2dGram', validWordsFor2dGram);
+        // console.warn('pointedWordsOrdered', pointedWordsOrdered);
+        if (pointedWordsOrdered.length < self.minTokenClusterLengthFor2dGram) {
+            // console.warn(`comment:${comment.id} does not have enough pointed tokens to create any 2dGrams (${pointedWordsOrdered.length}/${self.minTokenClusterLengthFor2dGram}).`);
+            if (cback) cback(all2dGramStrings);
+            return;
+        }
+        if (pointedWordsOrdered.length > self.maxTokenClusterLengthFor2dGram) {
+            // console.warn(`comment:${comment.id} has too many pointed tokens to compute all possible 2dGram combinations (${pointedWordsOrdered.length}/${self.maxTokenClusterLengthFor2dGram}).`);
+            if (cback) cback(all2dGramStrings);
+            return;
+        }
+
+        // Now get all possible combinations of above produced pointedWordsOrdered, then form all of those combinations into 2dGram wordRefs.
+        const allWordClusters = self.extractAllWordCombos(pointedWordsOrdered, self.minTokenClusterLengthFor2dGram); // returns array of arrays of objects: [{wordRef: wordRefObj, index: int}, etc...]
+        // console.log(`comment:${comment.id} had ${pointedWordsOrdered.length} pointed words which produced ${allWordClusters.length} possible word combinations to form 2dGrams.`);
+        const all2dGrams = [];
+        allWordClusters.forEach((thisWordCluster) => {
+            // Convert thisWordCluster (array of objects [{wordRef: wordRefObj, index: int}, etc...]) into a single 2dGram wordRef
+            const this2dGram = wordModel.createWordRefObject({
+                type: '2dGram',
+                word: [], // this MUST be a string of wordRef. Will join below after all parts are added.
+                rawWords: [],
+                hasSymbols: [],
+                index: [], // remember that wordRefs use an array for index (even though 2dGrams only ever have one index)
+                rawIndex: [],
+                distance: 0
+            });
+            let prevTokenEndIndex = null; // so we can total the distance between all tokens in this combo
+            thisWordCluster.forEach((thisClusterPart) => { // each thisClusterPart is object {wordRef: wordRefObj, index: int}
+                const thisClusterPartWordRef = thisClusterPart.wordRef;
+                this2dGram.word.push(thisClusterPartWordRef.word);
+                this2dGram.rawWords = this2dGram.rawWords.concat(thisClusterPartWordRef.rawWords);
+                this2dGram.hasSymbols = this2dGram.hasSymbols.concat(thisClusterPartWordRef.hasSymbols);
+                if (!this2dGram.index[0] || thisClusterPartWordRef.index[0] < this2dGram.index[0]) this2dGram.index[0] = thisClusterPartWordRef.index[0];
+                if (prevTokenEndIndex !== null) {
+                    this2dGram.distance = this2dGram.distance + (thisClusterPartWordRef.index[0] - (prevTokenEndIndex+2)); // +2 because we don't count a single space between tokens as distance, nor the first charachter in this current word.
+                }
+                prevTokenEndIndex = thisClusterPartWordRef.index[0]-1 + thisClusterPartWordRef.word.length; // this is the index of the final charachter in the previous token
+            });
+
+
+            ///////////
+            // HashHype rule - 2dGrams with a distance of 0 are invalid. The point of a 2dGram is to frame an unpointed portion of a comment between 2 or more pointed portions.
+            // If a 2dGram is back-to-back pointed words, then we simply allow those words to earn their points individually (a smaller sum). This also helps eliminate the potential
+            // for inflated points when a user is simply quoting another user (whether that quote is sincere, or an attempt to game points).
+            if (this2dGram.distance === 0) {
+                // console.warn(`Discarding 2dGram with a distance of 0 on comment:${comment.id}:`, comment.stemmedBody);
+                // console.warn(`Discarded 2dGram:`, this2dGram);
+                return; // continue allWordClusters.forEach loop so this invalid 2dGram isn't pushed to all2dGrams.
+            }
+
+            //////////
+            // HashHype rule - A word sequence can't earn points if it's length is greater than 70% the length of the entire comment body. This blocks comments from
+            // earning tons of 2dGram points when many users are quoting the same phrase but not adding anything original to it. We only apply this rule to long comments (greater than
+            // minCommentLengthForMaxWordLengthRule) because there are so many short comments that have key phrases which are understandably most of that short comment body.
+            // I.e: "you know you are a redneck when GME" does not deserve to launch GME to rank 1 comment.
+            const minCommentLengthForMaxWordLengthRule = 70;
+            const maxWordSeqLength = 0.7; // a percentage of the length of comment.stemmedBody
+            if (comment.stemmedBody.length >= minCommentLengthForMaxWordLengthRule) {
+                const thisWordStrSpaced = this2dGram.word.join(' ');
+                const thisWordStrLength = thisWordStrSpaced.length + this2dGram.distance;
+                const wordStringPercOfBody = thisWordStrLength / comment.stemmedBody.length;
+                if (wordStringPercOfBody > maxWordSeqLength) {
+                    // console.warn(`2dGram sequence was too long and will not be saved to comment. The 2dGram spanned ${wordStringPercOfBody * 100}% of the entire body comment:${comment.id}`, this2dGram.word);
+                    return; // continue allWordClusters.forEach loop so this invalid 2dGram isn't pushed to all2dGrams.
+                }
+            }
+
+            // remove dups
+            this2dGram.rawWords = [...new Set(this2dGram.rawWords)];
+            this2dGram.hasSymbols = [...new Set(this2dGram.hasSymbols)];
+
+            // Now we must also establish rawIndex for this 2dGram using the combined rawWords
+            let rawIndex = null;
+            this2dGram.rawWords.forEach((thisRawWordSeq) => {
+                const thisRawIndex = comment.body.indexOf(thisRawWordSeq);
+                if (thisRawIndex === -1) return;
+                // For 2dGrams, we will only ever have 1 index and rawIndex. For rawIndex, we are going to take the index of the first rawWord occurance.
+                if (rawIndex === null || rawIndex > thisRawIndex) rawIndex = thisRawIndex;
+            });
+            this2dGram.rawIndex[0] = rawIndex;
+
+            // Finally ready to save this new 2dGram wordRef
+            all2dGrams.push(this2dGram);
+        });
+
 
         ////////////
-        // Last, create word objects for the 2dGrams that we have extracted, and save to redis. We also create wordRef objects to be saved directly on this comment.
+        // Last, save our the above 2dGram wordRef objects to our comment.words object, then also create full word objects for the 2dGrams and save to redis.
         const wordRefSavePromises = [];
         const wordSavePromises = [];
         all2dGrams.forEach((this2dGram) => {
+            const this2dGramTokens = this2dGram.word; // remember that the wordRefs we produced above still hold the word prop as an array.
+            this2dGram.word = this2dGram.word.join('_!!_'); // convert it to it's proper string form now.
+
             const newWordAbsKey = wordModel.generateWordObjectKey(this2dGram.word);
             // add wordRef to comment
             if (!comment.words[this2dGram.word]) { // first check if already exists
-                // console.log(`comment:${comment.id} earned a new 2dGram: ${this2dGram.word}`)
-
-                // Now we must also establish rawIndex for this 2dGram using the combined rawWords
-                let rawIndex = null;
-                this2dGram.rawWords.forEach((thisRawWordSeq) => {
-                    const thisRawIndex = comment.body.indexOf(thisRawWordSeq);
-                    if (thisRawIndex === -1) return;
-                    // For 2dGrams, we will only ever have 1 index and rawIndex. For rawIndex, we are going to take the index of the first rawWord occurance.
-                    if (rawIndex === null || rawIndex > thisRawIndex) rawIndex = thisRawIndex;
-                });
-
-                const newWordRefObject = wordModel.createWordRefObject({
-                    type: '2dGram',
-                    word: this2dGram.word,
-                    rawWords: this2dGram.rawWords,
-                    hasSymbols: this2dGram.hasSymbols,
-                    index: [this2dGram.index], // remember that wordRefs use an array for index
-                    rawIndex: [rawIndex],
-                    distance: this2dGram.distance
-                });
-                comment.words[this2dGram.word] = newWordRefObject; // This comment will be saved at the bottom of refreshTopComments
+                // console.warn(`comment:${comment.id} earned a new 2dGram: ${this2dGram.word}`, this2dGram)
+                comment.words[this2dGram.word] = this2dGram; // This comment will be saved at the bottom of refreshTopComments
                 wordRefSavePromises.push(new Promise( (resolve, reject) => {
                     // Add a foundAt tstamp for this word and save this comment to it's WordToCommentsIndex (creating one if it does not yet exist)
                     wordModel.addFoundAtTstampForWord(this2dGram.word, comment, self.redisClient, () => { // this must be done BEFORE registerWordToCommentsIndex or the foundAt tstamp will be cancelled as dup word by same user.
@@ -1008,7 +1004,7 @@ class TopCommentsStats {
             // add new word object to redis (or merge if exists)
             const newWordObject = wordModel.createWordObject({
                 type: '2dGram',
-                value: this2dGram.tokens,
+                value: this2dGramTokens,
                 rawWords: this2dGram.rawWords,
                 hasSymbols: this2dGram.hasSymbols
             });
@@ -1033,6 +1029,79 @@ class TopCommentsStats {
             });
         });
     }
+    extractAllWordCombos(wordRefs = [], minComboLength = 4) { // returns array of arrays of objects: [[{wordRef: wordRefObj, index: int}, etc...], [{wordRef: wordRefObj, index: int}, etc...], etc...]
+        if (!wordRefs || !wordRefs.length) return [];
+        // This function takes an array of wordRef objects and returns all possible combinations of those words, respecting order.
+        // However, it does allow for "skip words", or, a combination of words which one or more words is omitted from the middle.
+        // When minComboLength is greater than 0, and produced cominations of shorter length will be discarded and not returned.
+        // i.e: given: ['guy', 'insane', 'GME', 'going', 'rocket', 'moon', 'happy', 'comment'] and minComboLength = 4
+        // some possible wordCombos could be: ['guy', 'insane', 'GME', 'going'] AND ['guy', 'GME', 'going', 'rocket'] or ['insane', 'rocket', 'happy', 'comment'], ['insane', 'GME', 'rocket', 'happy', 'comment'] etc...
+
+        // First extract all possible pairs of 2, then they will be extended below in recursive "combineSkipWords" function.
+        const allSkipWordsSets = [];
+        const allPossibleTokenClusters = []; // array of arrays of wordRefs
+        wordRefs.forEach((startingPointedWord, startingWordIndex) => {
+            const thisWordSubset = wordRefs.slice(startingWordIndex);
+            if (thisWordSubset.length < 2) return;
+
+            // thisSkipWordSet is array of arrays. always the first word (thisWordSubset[0]) plus 1 other word which comes later than the first.
+            // Given ['guy', 'insane', 'GME', 'going', 'rocket', 'moon', 'happy', 'comment']
+            // skipWords == [['guy', 'insane'], ['guy', 'GME'], ['guy', 'going'], ['guy', 'rocket'], ['guy', 'moon']]
+            // Note below that our skipword arrays actually hold objects not strings. Above is for explanation only.
+            const thisSkipWordSet = [];
+            const totalPossibleSkipWords = thisWordSubset.length - 1;
+            for (let thisSkipWordCount = 0; thisSkipWordCount < totalPossibleSkipWords; thisSkipWordCount++) {
+                const endIndex = thisSkipWordCount+1;
+                ///////////
+                // HashHype rule - a 2dGram can't have the same token twice in a row. I.e: "I love GME go moon :smile_emoji: :smile_emoji: :smile_emoji: Let's go!"
+                // Now we will loop through thisTokenSet and condense any sequence of the same word into just one occurance: "I love GME go moon :smile_emoji: Let's go!"
+                if (thisWordSubset[0].word === thisWordSubset[endIndex].word) {
+                    // console.log(`Dup sequential words are not allowed:`, thisWordSubset[0].word, thisWordSubset[endIndex].word);
+                    continue;
+                }
+                thisSkipWordSet.push([
+                    {wordRef: thisWordSubset[0], index: startingWordIndex},
+                    {wordRef: thisWordSubset[endIndex], index: startingWordIndex+endIndex}
+                ]);
+            }
+
+            allSkipWordsSets.push(thisSkipWordSet);
+        });
+
+        // This takes all possible pairs of 2 words (from above), then loops over each of them, recursively extending beyond the last word in each set
+        // until we have all possible combinations of all lengths (greater than or equal to minComboLength).
+        const combineSkipWords = (curSkipWordsByWord, allCombinations = []) => {
+            let foundNewCombosThisLoop = false; // once this recursive function has extended all skipWord combos to be as long as possible, this flag remains false and we return the final val from this function.
+            const newSkipWordCombos = [];
+            curSkipWordsByWord.forEach((thisSkipWordsSet, thisSkipWordsSetIndex) => {
+                newSkipWordCombos[thisSkipWordsSetIndex] = newSkipWordCombos[thisSkipWordsSetIndex] || [];
+                thisSkipWordsSet.forEach((thisSkipWords) => {
+                    const appendableSkipWords = curSkipWordsByWord[thisSkipWords[thisSkipWords.length-1].index]; // which skip word combos can possibly follow thisSkipWords[0]
+                    if (!appendableSkipWords || !appendableSkipWords.length) {
+                        newSkipWordCombos[thisSkipWordsSetIndex].push(thisSkipWords);
+                        return;
+                    }
+                    foundNewCombosThisLoop = true;
+                    appendableSkipWords.forEach((thisAppendableSkipWords) => {
+                        const appendThese = thisAppendableSkipWords.slice(1);
+                        const thisCombo = thisSkipWords.concat(appendThese);
+                        newSkipWordCombos[thisSkipWordsSetIndex].push(thisCombo);
+                        if (thisCombo.length >= minComboLength) allCombinations.push(thisCombo);
+                    });
+                });
+            });
+
+            if (!foundNewCombosThisLoop) {
+                return allCombinations;
+            } else {
+                return combineSkipWords(newSkipWordCombos, allCombinations);
+            }
+        }
+
+        const allWordClusters = combineSkipWords(allSkipWordsSets); // the result of combining all possible permutations of skipwords
+        return allWordClusters;
+    } // end extractAllWordCombos
+
 
     addSymbolsDataToComment(comment, cback) { //alters comment in-place
         const self = this;
