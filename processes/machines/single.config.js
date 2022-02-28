@@ -8,6 +8,8 @@ const rdbDir = path.resolve(process.cwd(), 'utils/db');
 const logDir = path.resolve(process.cwd(), 'utils/logs');
 const activeLogDayTstamp = '00000'; // A tstamp of zero is always used for active pm2 logs. MaintainLogsAndBackups will rotate for us into archivable day tstamps (and upload to gdrive).
 
+const processKillTimeout = 240000; //ms. Allow processes 4 minutes to gracefully shutdown before pm2 force kills them.
+
 // Ensure all required directorties exist on local machine
 fs.mkdirSync(rdbDir, {recursive: true}); // recursive will allow this command to not error if dir already exists
 fs.mkdirSync(logDir, {recursive: true});
@@ -28,10 +30,10 @@ const genConfigs = {
                 name: `Redis Server (${thisRedisConfig.dbName})`, // SEE note *1 below
                 script: thisRedisConfig.hostInfo.redisServerPath,
                 args: `${redisServerConfigString}`,
-                kill_timeout : 5000, // give redis time to shutdown when pm2 kills it
-                listen_timeout : 5000, // give redis time to fully start before pm2 thinks something is wrong
                 error_file: genConfigs.getLogPath(`redis-${thisRedisConfig.dbName}`, 'err'),
                 out_file: genConfigs.getLogPath(`redis-${thisRedisConfig.dbName}`, 'out'),
+                kill_timeout : processKillTimeout, // give redis plenty of time to shutdown when pm2 kills it so that it can save a final RDB (4 minutes)
+                listen_timeout : processKillTimeout,
             });
         });
 
@@ -50,7 +52,9 @@ const genConfigs = {
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('archiveKeys', 'err'),
                 out_file: genConfigs.getLogPath('archiveKeys', 'out'),
-                log_date_format: 'MM/DD HH:mm:ss'
+                log_date_format: 'MM/DD HH:mm:ss',
+                kill_timeout : processKillTimeout,
+                listen_timeout : processKillTimeout,
             }, {
                 name: 'UI Server',
                 script: './processes/uiServer.js',
@@ -58,7 +62,9 @@ const genConfigs = {
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('uiServer', 'err'),
                 out_file: genConfigs.getLogPath('uiServer', 'out'),
-                log_date_format: 'MM/DD HH:mm:ss'
+                log_date_format: 'MM/DD HH:mm:ss',
+                kill_timeout : processKillTimeout,
+                listen_timeout : processKillTimeout,
             }, {
                 name: 'Fetch Reddit Comments',
                 script: './processes/fetchRedditComments.js',
@@ -66,7 +72,9 @@ const genConfigs = {
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('fetchReddit', 'err'),
                 out_file: genConfigs.getLogPath('fetchReddit', 'out'),
-                log_date_format: 'MM/DD HH:mm:ss'
+                log_date_format: 'MM/DD HH:mm:ss',
+                kill_timeout : processKillTimeout,
+                listen_timeout : processKillTimeout,
             }, {
                 name: 'Fetch Stock Symbols',
                 script: './processes/fetchCoinAndStockSymbols.js',
@@ -74,7 +82,9 @@ const genConfigs = {
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('stockSymbols', 'err'),
                 out_file: genConfigs.getLogPath('stockSymbols', 'out'),
-                log_date_format: 'MM/DD HH:mm:ss'
+                log_date_format: 'MM/DD HH:mm:ss',
+                kill_timeout : processKillTimeout,
+                listen_timeout : processKillTimeout,
             }, {
                 name: 'Extract Words From Comments',
                 script: './processes/extractWordsFromComments.js',
@@ -82,7 +92,9 @@ const genConfigs = {
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('wordExtractor', 'err'),
                 out_file: genConfigs.getLogPath('wordExtractor', 'out'),
-                log_date_format: 'MM/DD HH:mm:ss'
+                log_date_format: 'MM/DD HH:mm:ss',
+                kill_timeout : processKillTimeout,
+                listen_timeout : processKillTimeout,
             }, {
                 name: 'Top Comment Stats',
                 script: './processes/topCommentStats.js',
@@ -90,7 +102,9 @@ const genConfigs = {
                 interpreter_args: `-r esm ${inspect}`,
                 error_file: genConfigs.getLogPath('topComments', 'err'),
                 out_file: genConfigs.getLogPath('topComments', 'out'),
-                log_date_format: 'MM/DD HH:mm:ss'
+                log_date_format: 'MM/DD HH:mm:ss',
+                kill_timeout : processKillTimeout,
+                listen_timeout : processKillTimeout,
             }, {
                 name: 'Top Trend Stats',
                 script: './processes/topTrendStats.js',
@@ -98,7 +112,9 @@ const genConfigs = {
                 interpreter_args: `-r esm ${inspect}`,
                 error_file: genConfigs.getLogPath('topTrends', 'err'),
                 out_file: genConfigs.getLogPath('topTrends', 'out'),
-                log_date_format: 'MM/DD HH:mm:ss'
+                log_date_format: 'MM/DD HH:mm:ss',
+                kill_timeout : processKillTimeout,
+                listen_timeout : processKillTimeout,
             }, {
                 name: 'Maintain Logs And Backups',
                 script: './processes/maintainLogsAndBackups.js',
@@ -106,7 +122,9 @@ const genConfigs = {
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('maintenance', 'err'),
                 out_file: genConfigs.getLogPath('maintenance', 'out'),
-                log_date_format: 'MM/DD HH:mm:ss'
+                log_date_format: 'MM/DD HH:mm:ss',
+                kill_timeout : 1200000, // this process gets a full 20 minutes before force kill (RDB file uploads take a long time and can't be interupted)
+                listen_timeout : processKillTimeout,
             }
         ];
     }, // end 'apps'

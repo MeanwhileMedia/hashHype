@@ -91,7 +91,7 @@ class ArchiveKeysToDisk {
             });
         });
     }
-
+    
     initRedisClient(cback) {
         const self = this;
         self.redisClient = new RedisClient({

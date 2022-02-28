@@ -411,7 +411,7 @@ class TopCommentsStats {
             });
             // The avg distance measurement penalizes the point count. The higher the distance, the less meaningful this 2dGram.
             points = (20 * seqCount) - distance;
-            console.log(`A 2dGram just earned ${points} points:`, wordRef);
+            // console.log(`A 2dGram just earned ${points} points:`, wordRef);
         }
 
         const wordPointVal = Math.max(0, Math.floor(points));

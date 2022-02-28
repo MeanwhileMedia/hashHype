@@ -68,6 +68,7 @@ class MaintainLogsAndBackups {
             self.isArchivingRDBs = false;
         }, self.rotateLogsIntervalTime*3.5); // maintain an offset interval from rotateLogsIntervalTime and rotateRDBIntervalTime
 
+        self.interceptSigInt();
         self.initRedisClient(() => {
             self.initLevelDbClient(() => {
                 self.initGoogleDriveClient(() => {
@@ -84,6 +85,24 @@ class MaintainLogsAndBackups {
                     }
                 });
             });
+        });
+    }
+
+    interceptSigInt() {
+        const self = this;
+        // By intercepting the SIGINT shutdown signal, this process can make sure all active uploads or long running disk copy commands complete before the process closes. https://pm2.keymetrics.io/docs/usage/signals-clean-restart/
+        process.on('SIGINT', function() {
+            setInterval(() => {
+                if (!self.isCleaningArchive && !self.isArchivingLogs && !self.isArchivingRDBs) {
+                    console.warn(`maintainLogsAndBackups finished active maintenance tasks. Process can now exit.`);
+                    process.exit(0);
+                } else {
+                    console.warn(`Waiting for maintainLogsAndBackups to complete archive routines before killing...`);
+                    console.warn('isArchivingRDBs:', self.isArchivingRDBs);
+                    console.warn('isArchivingLogs:', self.isArchivingLogs);
+                    console.warn('isCleaningArchive:', self.isCleaningArchive);
+                }
+            }, 1000);
         });
     }
 
@@ -340,6 +359,16 @@ class MaintainLogsAndBackups {
 
     initArchiveRDBInterval() {
         const self = this;
+        if (!self.archiveRDBInterval) {
+            // This RDB archive task DOES NOT run immediately upon process start because copying and uploading large RDB files
+            // could interfere with initial redis startup routines (like during a full deploy/restart). We will instead perform a cloud backup
+            // at the next interval. This means that no RDBs are archived until this process has been running for at least 30 minutes (archiveRDBIntervalTime).
+            self.archiveRDBInterval = setInterval(() => {
+                self.initArchiveRDBInterval();
+            }, self.archiveRDBIntervalTime);
+            return;
+        }
+
         if (self.isArchivingRDBs) {
             console.warn(`Skipping initArchiveRDBInterval because isArchivingRDBs == true...`);
             return; // in case this interval elapses before the previous one finished uploading, don't allow overlap.
@@ -375,13 +404,8 @@ class MaintainLogsAndBackups {
                     });
                 });
             });
-        });
-
-        if (self.archiveRDBInterval) return;
-        self.archiveRDBInterval = setInterval(() => {
-            self.initArchiveRDBInterval();
-        }, self.archiveRDBIntervalTime);
-    }
+        }); // end self.getAllRDBFileNames
+    } // end initArchiveRDBInterval
 
     initCloudArchiveCleanupInterval() {
         const self = this;
@@ -511,7 +535,7 @@ class MaintainLogsAndBackups {
     uploadFileToGdrive(fileName, filePath, cback, overwrite = true) {
         const self = this;
         if (overwrite) {
-            self.deleteFileFromGdrive(fileName, () => {
+            self.deleteGdriveFileByName(fileName, () => {
                 self.uploadFileToGdrive(fileName, filePath, cback, false);
             });
             return;
@@ -534,53 +558,16 @@ class MaintainLogsAndBackups {
 
     }
 
-    deleteFileFromGdrive(fileName, cback) {
-        const self = this;
-        console.log(`Now attempting to locate and delete file on google drive... ${fileName}`);
-        self.googleDriveClient.files.list({
-            q: `name = '${fileName}'`
-        }, (err, res) => {
-            if (err || !res.data || !res.data.files) {
-                console.warn(err);
-                if (cback) cback();
-                return;
-            }
-            const deleteTheseFiles = res.data.files;
-            if (deleteTheseFiles.length === 0) {
-                console.log(`Could not locate any google drive file by the following name: ${fileName}`);
-                if (cback) cback();
-                return;
-            }
-            let deletedCount = 0;
-            deleteTheseFiles.forEach((thisFile, index) => {
-                console.log(`Now deleting google drive file ID:${thisFile.id} (${fileName})`);
-                self.googleDriveClient.files.delete({fileId: thisFile.id}, (err, res) => {
-                    if (err) console.warn(err);
-                    // console.log(`Deleted file from google drive: ${thisFile.name}`);
-                    ++deletedCount;
-                    if (deletedCount === deleteTheseFiles.length) {
-                        if (cback) cback();
-                    }
-                });
-            });
-
-        });
-    }
-
     copyFileOnGdrive(copyFileId, destFileName, cback, overwrite = true) {
         const self = this;
         if (overwrite) {
-            self.googleDriveClient.files.list({
-                q: `name = '${destFileName}'`
-            }, (err, res) => {
-                if (err || !res.data || !res.data.files || !res.data.files.length) {
-                    console.error(`ERR! ${destFileName} does not yet exist or could not be found on gdrive.`, err);
+            self.doesFilenameExist(destFileName, (foundFileId) => {
+                if (!foundFileId) {
+                    console.error(`ERR! A Google drive copy command expected to overwrite an old version of ${destFileName}, but that file did not exist.`, err);
                     self.copyFileOnGdrive(copyFileId, destFileName, cback, false);
                     return;
                 }
-                self.googleDriveClient.files.delete({fileId: res.data.files[0].id}, (err, res) => {
-                    if (err) console.error(err);
-                    console.log(`Deleted ${destFileName} before attempting to copy ${copyFileId} to the same name.`);
+                self.deleteGdriveFileByName(destFileName, () => {
                     self.copyFileOnGdrive(copyFileId, destFileName, cback, false);
                 });
             });
@@ -601,6 +588,64 @@ class MaintainLogsAndBackups {
             if (cback) cback(true);
         });
     }
+
+    doesFilenameExist(filename, cback) {
+        // Checks to see if a by name "filename" exists on google drive.
+        // Returns the file ID if found, or false if file does not exist.
+        // NOTE: this function assumes there can only be a single file by an name (always returns res.data.files[0].id)
+        const self = this;
+        self.googleDriveClient.files.list({
+            q: `name = '${filename}'`
+        }, (err, res) => {
+            if (err || !res.data || !res.data.files || !res.data.files.length) {
+                if (cback) cback(false);
+                return;
+            }
+            if (res.data.files.length > 1) {
+                console.warn(`WARNING! Detected more than one files on Google drive by name "${filename}". maintainLogsAndBackups assumes that all gdrive files have unique names...`);
+            }
+            if (cback) cback(res.data.files[0].id);
+        });
+    }
+
+    deleteGdriveFileByName(fileName, cback, confirmDeletion = true) {
+        const self = this;
+        const confirmFileWasDeleted = (confirmedCback) => {
+            self.doesFilenameExist(fileName, (foundFileId) => {
+                if (foundFileId) {
+                    console.error(`Tried to delete Google drive file "${fileName}" but a file by the same name still exists. Please inspect.`);
+                    if (confirmedCback) confirmedCback(false);
+                    return;
+                }
+                if (confirmedCback) confirmedCback(true);
+            });
+        }
+        self.doesFilenameExist(fileName, (foundFileId) => {
+            if (!foundFileId) {
+                console.warn(`Google drive delete command could not find any Google drive file by name "${fileName}". No files were deleted.`);
+                if (cback) cback(false);
+                return;
+            }
+            console.warn(`Now deleting google drive file "${fileName}"...`);
+            self.googleDriveClient.files.delete({fileId: foundFileId}, (err, res) => {
+                if (err) {
+                    console.error(err);
+                    if (cback) cback(false);
+                    return;
+                }
+
+                if (confirmDeletion) {
+                    confirmFileWasDeleted((wasDeleted) => {
+                        console.warn(`Attempted to delete drive file "${fileName}". Success: ${wasDeleted}`);
+                        if (cback) cback(wasDeleted);
+                    });
+                } else {
+                    console.warn(`Deleted google drive file "${fileName}".`);
+                    if (cback) cback(true);
+                }
+            });
+        }); // end self.doesFilenameExist(
+    } // end deleteGdriveFileByName
 
     // deleteAllGdriveFiles() {
     //     const self = this;

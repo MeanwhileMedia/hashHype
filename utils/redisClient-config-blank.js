@@ -31,6 +31,7 @@ module.exports = {
                     // Persistence settings
                     dbfilename: '00000-short.rdb', // To utilize db archive/backup functionality (in maintainLogsAndBackups) the rdb file name MUST always start with the "active day tstamp" 00000. Our maintenance process automatically prepends the envname to the beginning of the filename.
                     dir: path.resolve(process.cwd(), './utils/db/'),
+                    save: '600 1', // save an rdb snapshot every 600 seconds (10 minuites) if there was at least 1 change to db.
                     // appendonly: 'yes',
                     // appendfilename: 'persistDb.aof',
 
@@ -78,6 +79,7 @@ module.exports = {
                     // Persistence settings
                     dbfilename: '00000-long.rdb',
                     dir: path.resolve(process.cwd(), './utils/db/'),
+                    save: '480 1', // save every 8 minutes. Offset from the short db snapshot interval so they aren't both using the disk at the same time.
                     // appendonly: 'yes',
                     // appendfilename: 'persistDb.aof',
 
