@@ -126,7 +126,7 @@ class TopCommentStats extends React.Component {
         if (!this.state.topCommentsVizType || this.state.topCommentsVizType === 'barRace') {
             commentVisEl = (
                 <BarRace
-                    topComments={topComments} activeSymbolTypes
+                    topComments={topComments}
                     topCommentsLastUpdated={this.state.topCommentsLastUpdated}
                     focusTopComment={this.focusTopComment.bind(this)}
                     focusedTopComment={this.state.focusedTopComment}
