@@ -62,10 +62,6 @@ class HbClientSocketDbResponses_admin {
             });
         }
 
-        // 2. delete this word object from redis
-        const wordKey = `word:${removeWord}`;
-        self.redisClient.del(wordKey);
-
         // 3. add a tstamp for this training change and save to redis
         self.trainingNotRelevant.lastAffected = [];
         self.trainingNotRelevant.lastAffected.push({

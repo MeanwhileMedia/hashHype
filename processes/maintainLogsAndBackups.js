@@ -33,6 +33,12 @@ class MaintainLogsAndBackups {
         self.archiveDbHealthLogInterval = null;
         self.archiveDbHealthLogIntervalTime = 60000*4; // once per 4 minutes.
         self.levelDbDir = path.resolve(process.cwd(), '..', 'hashHypeArchive'); // make sure this matches var by same name in ArchiveKeysToDisk
+        self.monitorArchiveDbForEnvnames = [ // only these machines will have a interval based disk usage check (because they are using levelDb to archive data)
+            'dev01',
+            'prod01',
+            //'dev02',
+            'prod02'
+        ];
 
         self.rdbAndLogsLocalBackupDayCount = 3; // how many previous days of RDB snapshots and log copies should be saved on local machine
         self.rdbAndLogsCloudBackupDayCount = 3; // how many previous days of RDB snapshots and log copies should be saved on cloud drive
@@ -68,16 +74,23 @@ class MaintainLogsAndBackups {
             self.isArchivingRDBs = false;
         }, self.rotateLogsIntervalTime*3.5); // maintain an offset interval from rotateLogsIntervalTime and rotateRDBIntervalTime
 
+        self.forceImmediateSigIntForEnvnames = [ // warning: blocking MaintainLogsAndBackups from shutting down gracefully could corrupt rdb and log backups.
+            'dev01' // We don't want to wait for a large RDG upload to complete every time we pm2 kill dev01.
+        ];
         self.interceptSigInt();
+
+        console.log('A new maintainLogsAndBackups process has just started...');
         self.initRedisClient(() => {
             self.initLevelDbClient(() => {
                 self.initGoogleDriveClient(() => {
                     self.initDbHealthLogInterval();
                     self.initPm2HealthLogInterval();
-                    self.initArchiveDbHealthLogInterval();
                     self.initRotateLogsInterval();
                     self.initRotateRDBInterval();
                     self.initMaintenaceStatusEmailInterval();
+                    if (self.monitorArchiveDbForEnvnames.indexOf(argv.envname) !== -1) {
+                        self.initArchiveDbHealthLogInterval();
+                    }
                     if (self.archiveLogsAndRdbForEnvnames.indexOf(argv.envname) !== -1) {
                         self.initArchiveLogsInterval();
                         self.initArchiveRDBInterval();
@@ -92,10 +105,19 @@ class MaintainLogsAndBackups {
         const self = this;
         // By intercepting the SIGINT shutdown signal, this process can make sure all active uploads or long running disk copy commands complete before the process closes. https://pm2.keymetrics.io/docs/usage/signals-clean-restart/
         process.on('SIGINT', function() {
+            if (self.forceImmediateSigIntForEnvnames.indexOf(argv.envname) !== -1) {
+                console.warn(`Will now force kill maintainLogsAndBackups!`);
+                console.warn('isArchivingRDBs:', self.isArchivingRDBs);
+                console.warn('isArchivingLogs:', self.isArchivingLogs);
+                console.warn('isCleaningArchive:', self.isCleaningArchive);
+                process.exit(0);
+                return;
+            }
             setInterval(() => {
                 if (!self.isCleaningArchive && !self.isArchivingLogs && !self.isArchivingRDBs) {
                     console.warn(`maintainLogsAndBackups finished active maintenance tasks. Process can now exit.`);
                     process.exit(0);
+                    return;
                 } else {
                     console.warn(`Waiting for maintainLogsAndBackups to complete archive routines before killing...`);
                     console.warn('isArchivingRDBs:', self.isArchivingRDBs);
@@ -110,7 +132,7 @@ class MaintainLogsAndBackups {
         const self = this;
         this.redisClient = new RedisClient({
             onConnect: () => {
-                console.log('Connected new redis sub client for MaintainLogsAndBackups class.');
+                console.log('Connected to locally hosted redis DBs for MaintainLogsAndBackups class.');
                 if(cback) cback();
             }
         });
@@ -463,20 +485,30 @@ class MaintainLogsAndBackups {
         // Sends an email to contact@meanwhilemedia once per day. This stores db and pm2 health info in email, but ALSO is
         // a health check for your nodemailer. It can never stop working because it's how users request invites.
         const self = this;
-
         self.getPm2HealthLog((pm2HealthObjArray) => {
             self.getDbHealthLog((dbInfoObjArray) => {
-                self.levelDbClient.getDbDiskUsage((archiveDbInfoObj) => {
-                    const statusObj = {
-                        pm2: pm2HealthObjArray,
-                        redis: dbInfoObjArray,
-                        levelDB: archiveDbInfoObj
-                    }
-                    const emailType = 'maintenaceStatus';
-                    const emailMsgObj = self.nodeMailer.emails[emailType];
-                    emailMsgObj.setEmailBody(statusObj, emailMsgObj);
-                    self.nodeMailer.sendEmail(emailMsgObj, emailType);
-                });
+                if (self.monitorArchiveDbForEnvnames.indexOf(argv.envname) !== -1) {
+                    self.levelDbClient.getDbDiskUsage((archiveDbInfoObj) => {
+                        const statusObj = {
+                            pm2: pm2HealthObjArray,
+                            redis: dbInfoObjArray,
+                            levelDB: archiveDbInfoObj
+                        }
+                        const emailType = 'maintenaceStatus';
+                        const emailMsgObj = self.nodeMailer.emails[emailType];
+                        emailMsgObj.setEmailBody(statusObj, emailMsgObj);
+                        self.nodeMailer.sendEmail(emailMsgObj, emailType);
+                    });
+                    return;
+                }
+                const statusObj = {
+                    pm2: pm2HealthObjArray,
+                    redis: dbInfoObjArray,
+                }
+                const emailType = 'maintenaceStatus';
+                const emailMsgObj = self.nodeMailer.emails[emailType];
+                emailMsgObj.setEmailBody(statusObj, emailMsgObj);
+                self.nodeMailer.sendEmail(emailMsgObj, emailType);
             });
         });
 
@@ -561,15 +593,8 @@ class MaintainLogsAndBackups {
     copyFileOnGdrive(copyFileId, destFileName, cback, overwrite = true) {
         const self = this;
         if (overwrite) {
-            self.doesFilenameExist(destFileName, (foundFileId) => {
-                if (!foundFileId) {
-                    console.error(`ERR! A Google drive copy command expected to overwrite an old version of ${destFileName}, but that file did not exist.`, err);
-                    self.copyFileOnGdrive(copyFileId, destFileName, cback, false);
-                    return;
-                }
-                self.deleteGdriveFileByName(destFileName, () => {
-                    self.copyFileOnGdrive(copyFileId, destFileName, cback, false);
-                });
+            self.deleteGdriveFileByName(destFileName, () => {
+                self.copyFileOnGdrive(copyFileId, destFileName, cback, false);
             });
             return;
         }
@@ -591,7 +616,7 @@ class MaintainLogsAndBackups {
 
     doesFilenameExist(filename, cback) {
         // Checks to see if a by name "filename" exists on google drive.
-        // Returns the file ID if found, or false if file does not exist.
+        // Returns array of all file IDs found (gdrive allows dup names), or false if file does not exist.
         // NOTE: this function assumes there can only be a single file by an name (always returns res.data.files[0].id)
         const self = this;
         self.googleDriveClient.files.list({
@@ -601,48 +626,33 @@ class MaintainLogsAndBackups {
                 if (cback) cback(false);
                 return;
             }
-            if (res.data.files.length > 1) {
-                console.warn(`WARNING! Detected more than one files on Google drive by name "${filename}". maintainLogsAndBackups assumes that all gdrive files have unique names...`);
-            }
-            if (cback) cback(res.data.files[0].id);
+            const allFileIds = res.data.files.map(thisFile => thisFile.id);
+            if (cback) cback(allFileIds);
         });
     }
 
     deleteGdriveFileByName(fileName, cback, confirmDeletion = true) {
         const self = this;
-        const confirmFileWasDeleted = (confirmedCback) => {
-            self.doesFilenameExist(fileName, (foundFileId) => {
-                if (foundFileId) {
-                    console.error(`Tried to delete Google drive file "${fileName}" but a file by the same name still exists. Please inspect.`);
-                    if (confirmedCback) confirmedCback(false);
-                    return;
-                }
-                if (confirmedCback) confirmedCback(true);
-            });
-        }
-        self.doesFilenameExist(fileName, (foundFileId) => {
-            if (!foundFileId) {
+        self.doesFilenameExist(fileName, (foundFileIds) => {
+            if (!foundFileIds) {
                 console.warn(`Google drive delete command could not find any Google drive file by name "${fileName}". No files were deleted.`);
                 if (cback) cback(false);
                 return;
             }
-            console.warn(`Now deleting google drive file "${fileName}"...`);
-            self.googleDriveClient.files.delete({fileId: foundFileId}, (err, res) => {
-                if (err) {
-                    console.error(err);
-                    if (cback) cback(false);
-                    return;
-                }
-
-                if (confirmDeletion) {
-                    confirmFileWasDeleted((wasDeleted) => {
-                        console.warn(`Attempted to delete drive file "${fileName}". Success: ${wasDeleted}`);
-                        if (cback) cback(wasDeleted);
-                    });
-                } else {
-                    console.warn(`Deleted google drive file "${fileName}".`);
-                    if (cback) cback(true);
-                }
+            console.warn(`Now deleting ${foundFileIds.length} google drive file(s) with name "${fileName}"...`);
+            let wasSuccess = true;
+            let delCompleteCount = 0;
+            foundFileIds.forEach((thisFileId) => {
+                self.googleDriveClient.files.delete({fileId: thisFileId}, (err, res) => {
+                    ++delCompleteCount;
+                    if (err) {
+                        console.error(err);
+                        wasSuccess = false;
+                    }
+                    if (delCompleteCount === foundFileIds.length) {
+                        if (cback) cback(wasSuccess);
+                    }
+                });
             });
         }); // end self.doesFilenameExist(
     } // end deleteGdriveFileByName

@@ -88,11 +88,11 @@ class AdminTrain extends React.Component {
                 );
             }
             const rowLabel = (
-                <><p>{symbol.name} <b>({symbolText})</b></p></>
+                <><p>{symbol.name} <b>({`${symbol.type}:${symbolText}`})</b></p></>
             );
             const deletePrompt = (
                 <>
-                    <p><i>Customize function:</i>
+                    <p><b>{`${symbol.type}:${symbolText}`} - </b><i>Customize function:</i>
                         <button className="editFuncButton button__sev1" onClick={ (e) => { thisView.initSymbolCodeEdit.call(thisView, e, symbol, 'get', rowRef) } }>get ( )</button>
                         <button className="editFuncButton button__sev1" onClick={ (e) => { thisView.initSymbolCodeEdit.call(thisView, e, symbol, 'match', rowRef) } }>match ( )</button>
                     </p>

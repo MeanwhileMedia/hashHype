@@ -12,13 +12,14 @@ module.exports = {
                 dbName: 'short', // a hashHype app requires one dbName to be "short" as this is the default for redisClient.throttled functions and is used a general purpose memory store
                 hostInfo: {
                     address: '',
+                    remoteAddress: null, // set this ONLY if this DB can be connected to remotely by other machines (see redisClient.initRemoteClient)
                     redisServerPath: '',
                 },
                 storeNamespaces: [
                     // When a .set is called for a redis key, if that key matches any of the configured 'storeNamespaces' patterns, then it is stored to this database AND any other database with matching pattern.
                     {
                         pattern: '.', // This should not be changed for "short. Everything is stored to the "short" term memory store. If our semi aggressive LRU policy nukes the wrong item, redisClient.js will automatically try to recover it from the other databases which have a matching storeNamespaces pattern.
-                        ttl: null // milliseconds. set this to null and no expire will be set for objects matching this pattern
+                        ttl: null // milliseconds. set this to null and no expire will be set for objects matching this pattern. NOTE: if this is set, the pexpire command is run upon every read/write if matched key (cpu/memory overhead)
                     }
                 ],
                 preserveNamespaces: [], // This config is not applicable to the "short" db. See below for docs on how to use "preserveNamespaces".
@@ -53,6 +54,7 @@ module.exports = {
                 dbName: 'long',
                 hostInfo: {
                     address: '',
+                    remoteAddress: null,
                     redisServerPath: '',
                 },
                 storeNamespaces: [],
@@ -89,7 +91,7 @@ module.exports = {
                     'maxmemory-samples': 10,
 
                     // Pubsub settings
-                    'notify-keyspace-events': 'K$l',
+                    // 'notify-keyspace-events': 'K$l',
 
                     // Buffer limits. HashHype sets pubsub higher than default to allow for more data to be sent in messages. (redis default is 'pubsub 32mb 8mb 60')
                     'client-output-buffer-limit': 'pubsub 1024mb 256mb 60'

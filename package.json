@@ -50,11 +50,16 @@
     "deployProd01_recover": "node -r esm ./utils/deployCodeSftp.js -target prod01_recover",
     "deployProd01_flush": "node -r esm ./utils/deployCodeSftp.js -target prod01_flush",
     "deployProd02": "node -r esm ./utils/deployCodeSftp.js -target prod02",
+    "deployAux01": "node -r esm ./utils/deployCodeSftp.js -target aux01",
+    "deployAux01_dev": "node -r esm ./utils/deployCodeSftp.js -target aux01_dev",
     "genSslCerts": "mkdir -p utils/certs && openssl req -newkey rsa:4096 -x509 -sha256 -days 3650 -nodes -out utils/certs/MeanwhileMedia.crt -keyout utils/certs/MeanwhileMedia.key -subj \"/C=US/ST=Maine/L=Portland/O=MeanwhileMedia/OU=Devs/CN=$npm_config_domain\"",
     "migrateRDB": "node -r esm ./utils/migrateRDB.js --from=$npm_config_from --to=$npm_config_to",
     "flushCDNCache": "node -r esm ./utils/flushCDNCache.js",
-    "single": "pm2 start ./processes/machines/single.config.js -- --envname=$npm_config_envname",
-    "pm2": "pm2"
+    "single": "pm2 start ./processes/machines/single.config.js -- --envname=$npm_config_envname --host_redis_dbs=$npm_config_host_redis_dbs",
+    "commentFetcher": "pm2 start ./processes/machines/commentFetcher.config.js -- --envname=$npm_config_envname --host_redis_dbs=$npm_config_host_redis_dbs",
+    "pm2": "pm2",
+    "debug": "node -r esm ./utils/debugProcessSftp.js --target=$npm_config_target --procname=$npm_config_procname",
+    "debugLocal": "pm2 pid $npm_config_procname | xargs kill -SIGUSR1"
   },
   "license": "ISC",
   "readme": "README.md"

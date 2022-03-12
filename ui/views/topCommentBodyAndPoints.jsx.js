@@ -159,7 +159,7 @@ class TopCommentBodyAndPoints extends React.Component {
                 const wordTokenizerRegex = new RegExp(`(${self.tokenBoundaries}|^)(${findWordWithBoundariesNotSpaces})(${self.tokenBoundaries}|$)`, 'gm'); // https://regexr.com/6cmqg
                 let thisCommentBody = comment.body.replaceAll(wordTokenizerRegex, `$1<span class="topCommentBodyAndPoints_bodyLayer_word font__heavy__noExpand__black" style="border-bottom: 4px solid rgba(0,0,0,0.1);">$2</span>$3`)
                 if (thisCommentBody === comment.body) {
-                    console.warn(`Could not find ${thisRawWordSeqStr} in comment body: ${comment.body}`); // JWW stopping - found that when thisRawWordSeqStr 'foo bar' is actually 'foo\nbar' in body, then we have no match.
+                    console.warn(`Could not find ${thisRawWordSeqStr} in comment body: ${comment.body}`);
                     return; // apparently no replacement was made
                 }
                 alreadyBoldedWords.push(thisRawWordSeqStr);

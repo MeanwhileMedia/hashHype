@@ -30,14 +30,27 @@ var hbClient = {
         // Technically, we should be able to swap between useCdnSocket and useRealWebSocket seamlessly.
         hbClient.socket = {
             send: (messageObj) => {
-                hbClient.sendFauxSocketMessage(messageObj);
-                // For certain message channels, we will continue to poll the server for data changes (mimicking how a real server WebSocket would push data to us)
+                // We keep a blacklist of channels which have extra logic involved in this send routine. If this channel doesn't match any of them, just send away immediately and return.
+                if (messageObj.channel !== 'populateView') {
+                    hbClient.sendFauxSocketMessage(messageObj);
+                    return;
+                }
+
                 if (messageObj.channel === 'populateView') { // only if message json channel === 'populateView'
-                    // Keep hitting the fauxSocket endpoint with message channel "change:redis:key" and send through to receiveMessage with same channel
+                    // Send our request for initial render immediately, BUT it should also have a cache tstamp or else we see a flash of very old data replaced by current data after 5 seconds (on prod CDN).
+                    const now = Date.now();
+                    messageObj.tstamp = now - (now % hbClient.fauxSocketPollIntervalLength);
+                    // for this initial landing view, we are actually going to render data that is 10 minutes old for 2 reasons:
+                    // 1. There's a better chance that this data endpoint will already be CDN cached, and we want our page to have meaningful paint asap
+                    // 2. Allowing a slight gap between first data, and second data allows our viz to animate just enough to provide visual representation that this is realtime data.
+                    messageObj.tstamp = messageObj.tstamp - 600000;
+                    hbClient.sendFauxSocketMessage(messageObj);
+
+                    // Keep hitting the fauxSocket endpoint with message channel "change:redis:key" and send through to receiveMessage with same channel (mimicking how a real server WebSocket would push data to us)
                     const dataChangeMessageChannel = `change:${messageObj.data.absKey}`;
                     const dataChangeMessage = {
                         channel: dataChangeMessageChannel,
-                        tstamp: Date.now() // cache buster (set inside interval to a denomination of fauxSocketPollIntervalLength).
+                        tstamp: now // cache buster (set inside interval to a denomination of fauxSocketPollIntervalLength).
                     }
                     if (hbClient.fauxSocketPollIntervals[dataChangeMessage.channel]) return;
                     hbClient.fauxSocketPollIntervals[dataChangeMessage.channel] = setInterval( () => {
@@ -50,8 +63,10 @@ var hbClient = {
                         });
                     }, hbClient.fauxSocketPollIntervalLength);
                 }
-            }
-        };
+
+            } // end send: (messageObj) => {
+        }; // end hbClient.socket
+
         hbClient.loadLandingView();
     },
     sendFauxSocketMessage(messageObj, cback) {
@@ -99,7 +114,7 @@ var hbClient = {
         let landingUrl = window.location.pathname.slice(1); // remove preceding slash
         if (self.clientSideRedirects[landingUrl]) {
             landingUrl = self.clientSideRedirects[landingUrl];
-            history.pushState({}, document.title, landingUrl); // JWW stopping - why for this not show in url bar
+            history.pushState({}, document.title, landingUrl);
         }
 
         let landingAbsKey = landingUrl.replace('.html', '');

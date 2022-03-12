@@ -1,8 +1,12 @@
 import redis from 'redis';
+import yargs from 'yargs';
 import redisClientConfig from './redisClient-config.js';
 import commentModel from './objectModels/comment.js';
 import wordModel from './objectModels/word.js';
 import symbolModel from './objectModels/symbol.js';
+
+const argv = yargs(process.argv.slice(2)).argv;
+argv.host_redis_dbs = JSON.parse(argv.host_redis_dbs);
 
 const objectModels = {
     'comment': commentModel,
@@ -16,18 +20,33 @@ class RedisClient {
         const self = this;
         this.clients = null;
         this.redisDbConfigs = this.getRedisDbConfigs();
+
+        self.restoredKeys = []; // For logging how many redis read/write commands resulted in data being recovered from 'long' db
+        self.restoredKeysLongRecord = []; // This is a record kept for multiple intervals so we can determine restoredKeysLooping. See restoredKeysLooping (restoredKeysLoopingIntervalMaxCount)
+        self.restoredKeysLooping = []; // these are keys that are found to be repeatedly restored within the last 2 intervals (perhaps they are being restored from long, but for some reason not persisting to short?)
+        self.restoredKeyCountIntervalLength = 5000; // ms, how long should we count comments before we log the sum and restart. Set it to same as reddit fetchLoopIntervalTime for easy volume comparison.
+        self.restoredKeyCountInterval = null;
+        self.initRestoredKeyCountInterval();
+
+        let didFirstOnConnect = 0;
         this.initAllClients(() => {
-            self.attachThrottleFuncs();
-            self.throttle.initGetBatchInterval();
-            self.throttle.initLrangeBatchInterval();
+            if (didFirstOnConnect) {
+                console.warn(`RedisClient has unexpectedly called it's opts.onConnect callback ${didFirstOnConnect} times! Please inspect.`)
+            }
+            ++didFirstOnConnect;
             if (opts.onConnect) opts.onConnect();
         });
     }
 
     getRedisDbConfigs() {
         // Extract and normalize just certain properties from our redisClient-config file (the properties needed to connect a new db client).
+        const selectedConfigObjs = [];
+        argv.host_redis_dbs.forEach((thisDbName) => {
+            selectedConfigObjs.push(redisClientConfig.servers[thisDbName]());
+        });
+
         const redisDbConfigs = {};
-        [redisClientConfig.servers.short(), redisClientConfig.servers.long()].forEach((thisRedisConfig) => {
+        selectedConfigObjs.forEach((thisRedisConfig) => {
             redisDbConfigs[thisRedisConfig.dbName] = {
                 dbName: thisRedisConfig.dbName,
                 redisHost: thisRedisConfig.hostInfo.address,
@@ -92,11 +111,64 @@ class RedisClient {
         });
     }
 
-    initClientConnection(clientOpts, clientType, onConnect) {
+    initRemoteClient(dbName, cback) {
+        // A process can connect to a DB defined within redisClient-config.js that isn't a part of this machine's argv.host_redis_dbs config. This type of client is "remote"
+        // because this process is connecting to a DB hosted on another machine. The returned redis client is set to self.clients, and commands can be called just like they would
+        // for our locally hosted DBs BUT with one exception: when running a command against the remote DB, the DB name MUST be specified as an arg to the command function:
+        // self.redisClient.get('key', cback, 'remoteDbName'); // If remoteDbName is not provided, redisClient will attempt to get the key in one of the local host_redis_dbs, or return null for not found.
+        // Important notes:
+        // - This remote db connection will play no part in this machine's local dynamic db logic (determineTargetDb).
+        // - remote connections do not support any publish commands - just db and sub.
+        // - as a rule of thumb, remote connections should be used primarily for reads and subscriptions.
+        const self = this;
+        let remoteDbConfig = redisClientConfig.servers[dbName];
+        if (remoteDbConfig) remoteDbConfig = remoteDbConfig();
+        if (!remoteDbConfig || !remoteDbConfig.hostInfo.remoteAddress) {
+            console.error(`Can't connect to remote redis db "${dbName}" because it's config is missing.`);
+            if (cback) cback(false);
+            return;
+        }
+        const clientOpts = {
+            host: remoteDbConfig.hostInfo.remoteAddress,
+            port: remoteDbConfig.serverArgs.port,
+            password: remoteDbConfig.serverArgs.requirepass
+        };
+        const clientConnectPromises = [];
+        clientConnectPromises.push(new Promise( (resolve, reject) => {
+            self.initClientConnection(clientOpts, 'db', (node_redis_client) => {
+                if (node_redis_client) {
+                    self.clients[dbName] = self.clients[dbName] || {};
+                    self.clients[dbName].db = node_redis_client;
+                    resolve(self.clients[dbName].db);
+                } else {
+                    reject(null);
+                }
+            });
+        }));
+        clientConnectPromises.push(new Promise( (resolve, reject) => {
+            self.initClientConnection(clientOpts, 'sub', (node_redis_client) => {
+                if (node_redis_client) {
+                    self.clients[dbName] = self.clients[dbName] || {};
+                    self.clients[dbName].sub = node_redis_client;
+                    resolve(self.clients[dbName].sub);
+                } else {
+                    reject(null);
+                }
+            });
+        }));
+        Promise.all(clientConnectPromises).then(() => {
+            if (cback) cback();
+        });
+    }
+
+    initClientConnection(clientOpts, clientType, onInitialConnect) {
         const node_redis_client = redis.createClient(clientOpts);
         node_redis_client.on('connect', function() {
             console.log(`New node_redis ${clientType} client connected: ${clientOpts.host}:${clientOpts.port}`);
-            onConnect(node_redis_client);
+            if (onInitialConnect) {  // This connect event fires during reconnects too, but the 'onInitialConnect' cback passed to this function only gets called once
+                onInitialConnect(node_redis_client);
+                onInitialConnect = null;
+            }
         });
         node_redis_client.on('error', function(err) {
             console.warn('Error connectiong node_redis client:', err);
@@ -104,6 +176,26 @@ class RedisClient {
         node_redis_client.on('reconnecting', function(stats) {
             console.warn(`Reconnection attempt #${stats.attempt} for node_redis ${clientType} client...`);
         });
+    }
+
+    initRestoredKeyCountInterval() {
+        const self = this;
+        if (self.restoredKeyCountInterval) return;
+
+        const restoredKeysLongRecordIntervalMaxCount = 12; // how long should we hold self.restoredKeysLongRecord in memory while trying to determine when keys are in a recovery loop.
+        let restoredKeysLongRecordIntervalCount = 0;
+        self.restoredKeyCountInterval = setInterval(() => {
+            if (self.restoredKeys.length) console.warn(`Recovered ${self.restoredKeys.length} redis objects from preserved data in the last ${self.restoredKeyCountIntervalLength/1000} seconds.`);
+            if (self.restoredKeysLooping.length) console.warn(`WARNING: ${self.restoredKeysLooping.length} redis objects appear to be stuck in a recovery loop. Please inspect.`);
+            if (restoredKeysLongRecordIntervalCount >= restoredKeysLongRecordIntervalMaxCount) {
+                self.restoredKeysLongRecord = self.restoredKeysLongRecord.concat(self.restoredKeys);
+                ++restoredKeysLongRecordIntervalCount;
+            } else {
+                self.restoredKeysLongRecord =  [];
+                restoredKeysLongRecordIntervalCount = 0;
+            }
+            self.restoredKeys = [];
+        }, self.restoredKeyCountIntervalLength);
     }
 
     ///////
@@ -115,11 +207,10 @@ class RedisClient {
     determineTargetDb(commandArgs) { // commandArgs is normalized via normalizeRedisCommandArgs. determineTargetDb returns dbName or null (to cancel original command execution)
         const self = this;
 
-        // ONLY non-throttled redisClient functions will follow redisConfig.storeNamespaces patterns.
+        // ONLY non-batched redisClient functions will follow redisConfig.storeNamespaces patterns.
         // Batch commands (mget, mset, batch) don't provide a (single) key. Because of this, we will default to
-        // always save batch commands to the "short" database. These redis commands should only be used by redisClient.throttled functions,
-        // and as they are intented to be most performant, dynamic db logic, async callback masking, etc, would defeat the purpose.
-        if (!commandArgs.key) return 'short'; // this is a throttled, batched command. return immediately
+        // always save batch commands to the "short" database.
+        if (!commandArgs.key) return argv.host_redis_dbs[0]; // this is a batched command. return immediately
 
         /////////////
         // First determine which db(s) this command is configured to execute against. A key may be found to match a "storeNamespaces" pattern for multiple databases.
@@ -177,7 +268,11 @@ class RedisClient {
                 preserveToExecs.push((execCback) => {
                     commandArgs.dbName = thisPreserveConf.dbName;
                     commandArgs.cback = (redisRes) => {
-                        if (redisRes) console.log(`Could not find redis key in primary DB. Recovered ${commandArgs.key} from preserved data in "${thisPreserveConf.dbName}" DB.`);
+                        if (redisRes) {
+                            // console.log(`Could not find redis key in primary DB. Recovered ${commandArgs.key} from preserved data in "${thisPreserveConf.dbName}" DB.`);
+                            if (self.restoredKeys.indexOf(commandArgs.key) !== -1 || self.restoredKeysLongRecord.indexOf(commandArgs.key) !== -1) self.restoredKeysLooping.push(commandArgs.key);
+                            self.restoredKeys.push(commandArgs.key);
+                        }
                         if (execCback) execCback(redisRes);
                         if (thisPreserveConf.ttl) self.pexpire(commandArgs.key, thisPreserveConf.ttl, null, thisPreserveConf.dbName);
                     };
@@ -243,7 +338,9 @@ class RedisClient {
                             self.lrange(commandArgs.key, 0, -1, (resList) => {
                                 if (resList.length <= 1) return; // looks like this actually is a new list. Nothing was found in preserved DB.
                                 self.rpush(commandArgs.key, resList);
-                                console.log(`Restored ${commandArgs.key} redis list (length ${resList.length}) from preserved DB "${usePreserveToConfig.dbName}".`);
+                                // console.log(`Restored ${commandArgs.key} redis list (length ${resList.length}) from preserved DB "${usePreserveToConfig.dbName}".`);
+                                if (self.restoredKeys.indexOf(commandArgs.key) !== -1 || self.restoredKeysLongRecord.indexOf(commandArgs.key) !== -1) self.restoredKeysLooping.push(commandArgs.key);
+                                self.restoredKeys.push(commandArgs.key);
                             }, usePreserveToConfig.dbName);
                         }
                     }
@@ -256,7 +353,9 @@ class RedisClient {
                             self.zrange(commandArgs.key, 0, Infinity, (resSet) => {
                                 if (resSet.length <= 1) return; // looks like this actually is a new list. Nothing was found in preserved DB.
                                 self.zadd(commandArgs.key, resSet.reverse()); // zadd expects the reverse arg sig to what zrange returns [points1, val1, points2, val2]
-                                console.log(`Restored ${commandArgs.key} redis sorted set (length ${resSet.length/2}) from preserved DB "${usePreserveToConfig.dbName}".`);
+                                // console.log(`Restored ${commandArgs.key} redis sorted set (length ${resSet.length/2}) from preserved DB "${usePreserveToConfig.dbName}".`);
+                                if (self.restoredKeys.indexOf(commandArgs.key) !== -1 || self.restoredKeysLongRecord.indexOf(commandArgs.key) !== -1) self.restoredKeysLooping.push(commandArgs.key);
+                                self.restoredKeys.push(commandArgs.key);
                             }, usePreserveToConfig.dbName, 'WITHSCORES');
                         }
                     }
@@ -799,149 +898,36 @@ class RedisClient {
 
     ////////
     // Below are extended pubsub functions. NOT YET normalized or routed through "determineTargetDb"
-    on(msgChannel, cback, dbName = 'short') {
+    on(msgChannel, cback, dbName) {
         const self = this;
+        if (!dbName) dbName = argv.host_redis_dbs[0];
         self.clients[dbName].sub.on(msgChannel, cback);
     }
 
-    subscribe(msgChannel, dbName = 'short') {
+    subscribe(msgChannel, dbName) {
         const self = this;
+        if (!dbName) dbName = argv.host_redis_dbs[0];
         self.clients[dbName].sub.subscribe(msgChannel);
     }
 
-    unsubscribe(msgChannel, dbName = 'short') {
+    unsubscribe(msgChannel, dbName) {
         const self = this;
+        if (!dbName) dbName = argv.host_redis_dbs[0];
         self.clients[dbName].sub.unsubscribe(msgChannel);
     }
 
-    psubscribe(msgChannel, dbName = 'short') {
+    psubscribe(msgChannel, dbName) {
         const self = this;
+        if (!dbName) dbName = argv.host_redis_dbs[0];
         self.clients[dbName].sub.psubscribe(msgChannel);
     }
 
-    publish(msgChannel, message, dbName = 'short') { // if message is typeof != string, then this function will automatically JSON stringify before publishing message.
+    publish(msgChannel, message, dbName) { // if message is typeof != string, then this function will automatically JSON stringify before publishing message.
         const self = this;
+        if (!dbName) dbName = argv.host_redis_dbs[0];
         if (typeof message !== 'string') message = JSON.stringify(message);
         self.clients[dbName].pub.publish(msgChannel, message);
     }
-
-    ////////
-    // Attach our stateful throttle object to this class.
-    attachThrottleFuncs() {
-        const self = this;
-        // Adds client.throttled.set and client.throttled.get, and some list commands. Will batch these redis requests then
-        // fire them as mset and mget in an interval (or when the queue reaches a max size).
-        // ONLY non-throttled redisClient functions will follow redisConfig.storeNamespaces patterns. EVERYTHING run
-        // through these functions is run against the "single" db.
-        this.throttle = {
-            maxSetBatchSize: 100, // total number of callbacks that would need to be registed to all set keys to trigger the redis request
-            getIntervalTime: 900,
-            maxGetBatchSize: 200,
-            lrangeIntervalTime: 1000,
-            maxLrangeBatchSize: 500,
-
-            ////////
-            // GET (batched)
-            pendingGetBatch: {}, // {key: [cback, cback, etc]}
-            pendingGetBatchCount: 0,
-            get: (key, cback) => { // ALWAYS returns a parsed JSON object (unlike standard redis get)
-                if(!self.throttle.pendingGetBatch[key]) self.throttle.pendingGetBatchCount++;
-                self.throttle.pendingGetBatch[key] = self.throttle.pendingGetBatch[key] || [];
-                self.throttle.pendingGetBatch[key].push(cback);
-                if (self.throttle.pendingGetBatchCount === self.throttle.maxGetBatchSize) self.throttle.getBatch();
-            },
-            getBatchInterval: null,
-            initGetBatchInterval: () => {
-                if (self.throttle.getBatchInterval) return;
-                self.throttle.getBatchInterval = setInterval(() => {
-                    self.throttle.getBatch();
-                }, self.throttle.getIntervalTime);
-            },
-            getBatch: () => {
-                self.throttle.pendingGetBatchCount = 0;
-                const mgetArgs = Object.keys(self.throttle.pendingGetBatch);
-                if (mgetArgs.length === 0) return;
-                const mgetCbacks = self.throttle.pendingGetBatch; // Clear out self.throttle.pendingGetBatch asap so we don't get overlap with incoming calls to throttled get
-                self.throttle.pendingGetBatch = {};
-
-                console.log(`Now running batched mget for ${mgetArgs.length} keys...`);
-                self.mget(mgetArgs, (resArray) => {
-                    if(resArray.length === 0) return;
-                    mgetArgs.forEach((key, thisKeyIndex) => {
-                        const mgetResForThisKey = resArray[thisKeyIndex];;
-                        const cbacksForThisKey = mgetCbacks[key];
-                        if (!cbacksForThisKey || cbacksForThisKey.length === 0) return;
-                        const execAllCbacks = (resObj) => {
-                            cbacksForThisKey.forEach((thisCback) => {
-                                if (typeof thisCback !== 'function') return;
-                                thisCback(resObj);
-                            });
-                        };
-                        if (mgetResForThisKey !== null) {
-                            execAllCbacks(mgetResForThisKey);
-                            return;
-                        }
-                        // It looks like this key was not found in "short" db and returned null. For the most part, our throttled functions should never touch any dynamic DB logic, however,
-                        // throttle.get is the one exception. It will attempt to run a normal redisClient.get for any keys which weren't found in a redisClient.throttle.get
-                        // but ONLY after we have returned all non-null responses to passed cbacks and finished/reset our getBatch in a non-blocking way.
-                        // console.log(`A throttled.get (mget) returned a null response for key ${key}. Key will now be passed to dynamic DB logic to check if it was preserved to another DB...`);
-                        self.get(key, (redisRes) => {
-                            execAllCbacks(redisRes);
-                        });
-                    });
-                });
-            },
-
-            ////////
-            // LRANGE (batched)
-            pendingLrangeBatch: {}, // Each key is a JSON stringified representation of the lrange argument signature. Each value is an array of cbacks. { "['word:foo_bar:foundAt',startIndex,endIndex]": [cback, cback, etc], etc... }
-            pendingLrangeBatchCount: 0,
-            lrange: (key, startIndex, endIndex, cback) => { // ALWAYS returns an array of parsed JSON objects (unlike standard redis Lrange)
-                const thisLrangeArgSignature = JSON.stringify([key, startIndex, endIndex]);
-                if(!self.throttle.pendingLrangeBatch[thisLrangeArgSignature]) self.throttle.pendingLrangeBatchCount++;
-                self.throttle.pendingLrangeBatch[thisLrangeArgSignature] = self.throttle.pendingLrangeBatch[thisLrangeArgSignature] || [];
-                self.throttle.pendingLrangeBatch[thisLrangeArgSignature].push(cback);
-                if (self.throttle.pendingLrangeBatchCount === self.throttle.maxLrangeBatchSize) self.throttle.lrangeBatch();
-            },
-            lrangeBatchInterval: null,
-            initLrangeBatchInterval: () => {
-                if (self.throttle.lrangeBatchInterval) return;
-                self.throttle.lrangeBatchInterval = setInterval(() => {
-                    self.throttle.lrangeBatch();
-                }, self.throttle.lrangeIntervalTime);
-            },
-            lrangeBatch: () => {
-                if (self.throttle.pendingLrangeBatchCount === 0) return;
-                const pendingLrangeBatchEntries = Object.entries(self.throttle.pendingLrangeBatch);
-                console.log(`Now running batched lrange for ${pendingLrangeBatchEntries.length} lrange signatures...`);
-                self.throttle.pendingLrangeBatchCount = 0;
-                self.throttle.pendingLrangeBatch = {};
-                const batchCmdsArray = [];
-                const cbacksByIndex = [];
-                for (const [thisLrangeArgSignature, allCbacksForThisLrange] of pendingLrangeBatchEntries) {
-                    const lrangeArgs = JSON.parse(thisLrangeArgSignature);
-                    lrangeArgs.unshift('lrange');
-                    batchCmdsArray.push(lrangeArgs);
-                    cbacksByIndex.push(allCbacksForThisLrange);
-                }
-                self.batch(batchCmdsArray, (res) => {
-                    res.forEach((thisListRes, thisListResIndex) => {
-                        const cbacksForThisListRes = cbacksByIndex[thisListResIndex];
-                        cbacksForThisListRes.forEach((thisLrangeCback) => {
-                            if (thisLrangeCback) thisLrangeCback(thisListRes);
-                        });
-                    });
-                });
-            },
-
-            ///////
-            // Below functions are for manipulating batch records on this self.throttle object
-            clearPendingGet: (redisKey) => {
-                if (self.throttle.pendingGetBatch[redisKey]) delete self.throttle.pendingGetBatch[redisKey];
-            },
-
-        };
-    } //end attachThrottleFuncs
 
 }
 

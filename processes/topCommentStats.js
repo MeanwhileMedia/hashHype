@@ -2,16 +2,13 @@ import util from 'util';
 import { throttle } from 'throttle-debounce';
 import yargs from 'yargs';
 import natural from 'natural';
-import { std, median } from 'mathjs';
+import { std, median, sum } from 'mathjs';
 import RedisClient from '../utils/redisClient.js';
 import commentModel from '../utils/objectModels/comment.js';
 import wordModel from '../utils/objectModels/word.js';
 import symbolModel from '../utils/objectModels/symbol.js';
 import trainingModels from '../utils/objectModels/training.js';
 import stopWords from '../utils/stopWords.js';
-
-import events from 'events';
-events.EventEmitter.defaultMaxListeners = Infinity;
 
 const argv = yargs(process.argv.slice(2)).argv;
 
@@ -24,19 +21,15 @@ class TopCommentsStats {
         this.topTrendsStatsKey = 'stats:topTrends';
         this.trainingNotRelevantKey = 'training:notRelevant';
 
-        this.processPersistKey = 'process:topCommentStats:persistedState'; // see persistProcessState function
-        this.processPersistInterval = null;
-        this.processPersistIntervalTime = 5000;
+        this.topComments = this.newTopCommentsEntity();
 
         this.pendingCommentIdsToWords = {}; // these id's are roughly estimated to become topComments. Confirmed during refreshTopComments. {commentId1: ['word_!!_234', 'word_!!_foo'], etc}
         this.pendingWordFoundAtKeyspaceChannels = {}; // a local record of which '__keyspace@0__:word:*:foundAt' channels have already emitted messages during this refreshTopComments interval. No channel will be acted on twice during one interval.
-
-        this.topComments = this.newTopCommentsEntity();
-        this.pendingTopComments = {};  // { 'symbol:stock:GME': [comment1, comment3], 'symbol:stock:YOLO': [comment2, comment3, etc...]} }
+        this.trackCommentsFor = 3600000; // ms (1hr) How long will we keep updating redis comment objects with recurring word points
 
         this.topWordsCounts = {}; // {foo_bar: 35, baz: 100, etc...} // caches counts for words found to be both top, or not.
-        this.topWordsCountsMaxLength = 200;
-        this.topWordsMinCount = 0;
+        this.topWordsCountsMaxLength = 1000;
+        this.topWordsMinCount = 100; // Will start high at process init. Better to slowly adjust down than have an immidate memory overflow (cuz of trying to process too many comments based on too many word occurances)
         this.topWordsRefreshInterval = null;
         this.topWordsRefreshIntervalTime = 5000;
         this.lastIntervalTotalWordsCount = 0; // total new words that we reported via pubsub '__keyspace@0__:word:*:foundAt' in the last ${topWordsRefreshIntervalTime}ms
@@ -44,11 +37,9 @@ class TopCommentsStats {
         this.minAvgPercentTopWords = 20; // If the rolling average of percent of words which are deemed top words falls below this number, topWordsMinCount will be adjust down in increments until we start hitting our min percent.
         this.groupSizeForAvgPercentTopWords = 5; // We will store the percentage of words which were topWords for this many topWordsRefreshIntervals. After, the averaged percentage becomes part of the logic to update topWordsMinCount.
 
-
         this.topCommentsMustHaveSymbol = true; // set to true and highly pointed comments that do NOT have a symbol will be excluded from topComments (though they will still be pointed for their reocurring words).
-        this.minTopCommentsWithSymbols = 20;
-        this.minTopCommentsWithSymbolsType = 'stock'; // when collecting the minTopCommentsWithSymbols, only count comments who's top symbol is of type 'stock' (minTopCommentsWithSymbolsType)
-        this.trackCommentsFor = 3600000; // ms (1hr) How long will we keep updating redis comment objects with recurring word points
+        this.topCommentsMustHaveSymbolTypes = ['stock', 'coin'];
+        this.minTopCommentsPerSymbolType = 20; // How many top comments should be gathered BEFORE they are run through applyTopCommentsTrendHistory
 
         this.minTokenClusterLengthFor2dGram = 4; // this must always be greater than our longest word type (trigrams) otherwise we will have key conflicts in redis over the 2dGram vs trigram version of it.
         this.maxTokenClusterLengthFor2dGram = 10; // If we don't set a max then some comments which managed to have a high number of pointed tokens could overflow memory while 2dGram logic below tries to compute tens of thousands of combinations. We must assume that a comment with this many pointed words has diluted any potential for useful 2dGrams.
@@ -57,16 +48,18 @@ class TopCommentsStats {
         this.throttle = {
             storeNewTopCommentsStats: throttle(this.storeNewTopCommentsStatsThrottleTime, this.storeNewTopCommentsStats).bind(this),
         };
+        this.maxCommentsPerTopCommentsRefresh = null; // To ensure hardware stability, topCommentStats will only process this max number of comments for each loop of storeNewTopCommentsStats. Defaults to be unset, but will be later set when there is a storeNewTopCommentsStatsIsPending overlap.
+        this.commentsCountForLastTopCommentsRefresh = null; // used to track and dynamically set maxCommentsPerTopCommentsRefresh when we have overlapping calls to storeNewTopCommentsStats
+        this.maxCommentsPerTopCommentsRefreshResetTimeout = null; // The maxCommentsPerTopCommentsRefresh is manually reset to null after a timeout so that it can be recalculated under current load.
+        this.maxCommentsPerTopCommentsRefreshResetTimeoutLength = 60000*10; // every 10 minutes AFTER there were no storeNewTopCommentsStats overlaps
 
+        console.log('A new topCommentStats process has just started...');
         this.redisClient = null;
         self.initRedisClient(() => {
-            self.persistProcessState(() => {
-                self.redisClient.get(self.topCommentsStatsKey, (topCommentStatsObj) => {
-                    if (topCommentStatsObj) self.topComments = topCommentStatsObj;
-                    self.initKeyspaceSubscriptions();
-                    self.syncTrainingNotRelevant();
-
-                });
+            self.redisClient.get(self.topCommentsStatsKey, (topCommentStatsObj) => {
+                if (topCommentStatsObj) self.topComments = topCommentStatsObj;
+                self.initKeyspaceSubscriptions();
+                self.syncTrainingNotRelevant();
             });
         });
     }
@@ -75,7 +68,7 @@ class TopCommentsStats {
         const self = this;
         this.redisClient = new RedisClient({
             onConnect: (client) => {
-                console.log('Connected new redis sub client for topCommentStats class.');
+                console.log('Connected to locally hosted redis DBs for topCommentStats class.');
                 if(cback) cback();
             }
         });
@@ -190,10 +183,6 @@ class TopCommentsStats {
         } else {
             adjustedTopWordsMinCount = Math.max(Math.ceil(self.topWordsMinCount * 1.1), 1);
             console.log(`topWordsMinCount was adjusted up to maintain CPU load. ${self.topWordsMinCount}->${adjustedTopWordsMinCount}`);
-            // // Just roughly establish a minimum score based on our trimmed list of cached word counts (refreshCountForWords).
-            // // We just take the count for the last word in refreshCountForWords (which has already been shortened to meet this.topWordsCountsMaxLength)
-            // estimatedTopWordsMinCount = self.topWordsCounts[refreshCountForWords[refreshCountForWords.length-1]]; // refreshCountForWords is sorted descending
-            // if (typeof estimatedTopWordsMinCount === 'number') self.topWordsMinCount = estimatedTopWordsMinCount;
         }
 
         self.topWordsMinCount = adjustedTopWordsMinCount;
@@ -211,155 +200,164 @@ class TopCommentsStats {
         self.pendingCommentIdsToWords = {};
         self.pendingWordFoundAtKeyspaceChannels = {};
 
-        // At this point, we have prepared a record of all recently re-commented words (pendingCommentIdsToWords) which
-        // were determined from our word:foundAt keyspace listener. However, we also need to add existing topComment words (which previously earned points) to this
-        // list because they need to be kept up-to-date even if they haven't been re-commented since our last refreshTopComments interval.
-        const allExistingWordToCommentIndexPromises = [];
-        this.topComments.comments.forEach((thisExistingTopComment) => {
-            for (const [pointedWord, points] of Object.entries(thisExistingTopComment.points['24Hr'])) { // we use the 24Hr point bucket because we want to update all stored point words, not just recently trended.
-                if (pendingCommentIdsToWords[thisExistingTopComment.id] && pendingCommentIdsToWords[thisExistingTopComment.id].indexOf(pointedWord) !== -1) continue; // Looks like this word was naturally re-commented because it's already a part of pendingCommentIdsToWords. No need to re-add now.
-                allExistingWordToCommentIndexPromises.push(new Promise( (resolve, reject) => {
-                    self.getWordToCommentsIndexForTimeRange(pointedWord, self.trackCommentsFor, (wordToCommentsIndex) => { // For realtime logic, only update comments that are less than 1hr old
-                        if (!wordToCommentsIndex) {
-                            resolve();
-                            return;
-                        }
-                        wordToCommentsIndex.forEach((thisCommentId) => {
-                            pendingCommentIdsToWords[thisCommentId] = pendingCommentIdsToWords[thisCommentId] || [];
-                            pendingCommentIdsToWords[thisCommentId].push(pointedWord);
-                        });
-                        resolve();
+        // To ensure hardware stability, topCommentStats will only process a max number of comments for each loop of refreshTopComments (if self.maxCommentsPerTopCommentsRefresh is not null).
+        // We will not discard any current this.topComments.comments within this trimming logic. They must all be repointed every time.
+        const pendingCommentIds = Object.keys(pendingCommentIdsToWords);
+        const existingTopCommentIds = Object.values(self.topComments.comments).flat().map((thisCom) => thisCom.id);
+        let totalCommentsForThisTopCommentsRefresh = pendingCommentIds.length;
+        if (self.maxCommentsPerTopCommentsRefresh && totalCommentsForThisTopCommentsRefresh > self.maxCommentsPerTopCommentsRefresh) {
+            const removeCommentCount = totalCommentsForThisTopCommentsRefresh - self.maxCommentsPerTopCommentsRefresh;
+            const discardCommentIds = pendingCommentIds.slice(0, removeCommentCount) // discard the oldest comments within pendingCommentIds
+            // let randNumbers = Array(totalCommentsForThisTopCommentsRefresh).fill().map((_, index) => index + 1);
+            // randNumbers.sort(() => Math.random() - 0.5);
+            // const discardCommentsAtIndexes = randNumbers.slice(0, removeCommentCount);
+            discardCommentIds.forEach((thisCommentId) => {
+                // As this process starts to receive too many comments, it will also fully delete overflowed comments, including their place in wordToComments indexes (or else our number of overflowed comments will grow indefinitely)
+                if (existingTopCommentIds.indexOf(thisCommentId) === -1) { // don't discard/delete this comment if it's already part of topComments. All existing topComments need to have points updated each round or will be wrongfully beat out by incoming comments.
+                    self.redisClient.get(`comment:${thisCommentId}`, (removeComment) => {
+                        self.removeCommentFromAll({comment: removeComment});
                     });
-                }));
-            };
+                    delete pendingCommentIdsToWords[thisCommentId];
+                }
+
+            });
+            totalCommentsForThisTopCommentsRefresh = Object.keys(pendingCommentIdsToWords).length;
+            console.warn(`${removeCommentCount} random comments were discarded because the number of comments in this call to refreshTopComments exceeded our max of ${self.maxCommentsPerTopCommentsRefresh}. Will now proceed with just ${totalCommentsForThisTopCommentsRefresh} comments.`);
+        }
+        self.commentsCountForLastTopCommentsRefresh = totalCommentsForThisTopCommentsRefresh;
+
+        // We have recorded all relevant words and comments that need to be a part of this pointing refresh, but it was fast and dirty
+        // with no checks for dups. We wait until now to resolve dup words and comments as to not bog down CPU before the refreshTopComments interval.
+        for (const [commentId, wordStrings] of Object.entries(pendingCommentIdsToWords)) {
+            pendingCommentIdsToWords[commentId] = [...new Set(wordStrings)];
+        };
+
+        // Proceed to comment get promises, then point counting promises. After they all complete we can save the newly calculated self.topComments to redis.
+        const allCommentGetPromises = [];
+        const checkAndRestoreComment = (comment, commentId, wordsForThisCommentId, resolve) => {
+            if (!comment) {
+                // if this comment couldn't be found in redis, then delete from top comment stats (may have beed deleted by training or redis LRU algo)
+                // console.log(`Missing comment in redis: ${commentId}`);
+                self.removeCommentFromAll({
+                    commentId: commentId,
+                    associatedWords: wordsForThisCommentId
+                });
+                resolve(null);
+                return;
+            }
+            if (self.isDiscardComment(comment)) {
+                self.removeCommentFromAll({comment: comment});
+                resolve(null);
+                return;
+            }
+
+            // Last, restore auxiliary data to this comment object (like comment.pointsRecords, which is used below in pointing logic auxiliary data is later
+            // stripped from comment before saving comment, or sending to client.
+            commentModel.restoreAuxiliaryData(comment, self.redisClient, () => {
+                resolve(comment);
+            });
+        }; // end checkAndRestoreComment
+
+        // When forming possibleTopComments (allCommentGetPromises), we will include all comments which contain a recently commented topWord,
+        // AND we must be sure to add all current topComments (self.topComments.comments). They will all compete against eachother during pointing to be new topComments.
+        for (let [thisCommentId, wordsForThisCommentId] of Object.entries(pendingCommentIdsToWords)) {
+            allCommentGetPromises.push(new Promise( (resolve, reject) => {
+                if (existingTopCommentIds.indexOf(thisCommentId) === -1) {
+                    self.redisClient.get(`comment:${thisCommentId}`, (comment) => {
+                        checkAndRestoreComment(comment, thisCommentId, wordsForThisCommentId, resolve);
+                    });
+                } else {
+                    resolve();
+                }
+            }));
+        }; // end this.pendingCommentIdsToWords for loop
+        Object.values(self.topComments.comments).flat().forEach((thisExistingTopComment) => {
+            allCommentGetPromises.push(new Promise( (resolve, reject) => {
+                // No need to re-fetch from redis. Will just restore aux data inside checkAndRestoreComment
+                checkAndRestoreComment(thisExistingTopComment, thisExistingTopComment.id, null, resolve);
+            }));
         });
 
-        Promise.all(allExistingWordToCommentIndexPromises).then(() => {
-            // We have recorded all relevant words and comments that need to be a part of this pointing refresh, but it was fast and dirty
-            // with no checks for dups. We wait until now to resolve dup words and comments as to not bog down CPU before the refreshTopComments interval.
-            for (const [commentId, wordStrings] of Object.entries(pendingCommentIdsToWords)) {
-                pendingCommentIdsToWords[commentId] = [...new Set(wordStrings)];
-            };
 
-            // Proceed to comment get promises, and point counting promises. After they all complete we can save the newly calculated self.topComments to redis.
-            const allCommentGetPromises = [];
-            for (let [thisCommentId, wordsForThisCommentId] of Object.entries(pendingCommentIdsToWords)) {
-                allCommentGetPromises.push(new Promise( (resolve, reject) => {
-                    self.redisClient.throttle.get(`comment:${thisCommentId}`, (comment) => {
-                        if (!comment) {
-                            // if this comment couldn't be found in redis, then delete from top comment stats (may have beed deleted by training or redis LRU algo)
-                            console.log(`Missing comment in redis: ${thisCommentId}`);
-                            self.removeCommentFromAll({
-                                comment: comment,
-                                commentId: thisCommentId,
-                                associatedWords: wordsForThisCommentId
-                            });
-                            resolve(null);
-                            return;
+        Promise.all(allCommentGetPromises).then((allComments) => {
+            const allCommentPointingPromises = [];
+            const possibleTopComments = allComments.filter(Boolean); //remove null responses (was redis 404, or was discarded, etc)
+            possibleTopComments.forEach((comment) => {
+                // Before calculating points for this word, we will extract 2dGrams and store them as new word objects in redis. We do this before pointing so we can
+                // determine if this word is about to earn points on this comment for the first time (see extractNew2dGramsFromTopComment for more).
+                if (!pendingCommentIdsToWords[comment.id]) {
+                    return; // this is likely an existing comment transferred to possibleTopComments from self.topComments.comments (which did not have any recently commented words this round)
+                }
+                self.extractNew2dGramsFromTopComment(pendingCommentIdsToWords[comment.id], comment, (all2dGramStrings) => {
+                    all2dGramStrings.forEach((this2dGramString) => {
+                        if (pendingCommentIdsToWords[comment.id].indexOf(this2dGramString) === -1) {
+                            // looks like the above extractNew2dGramsFromTopComment found a new 2dGram for this comment. Let's add it to our local record objects before proceeding.
+                            pendingCommentIdsToWords[comment.id].push(this2dGramString);
                         }
-                        if (self.isDiscardComment(comment)) {
-                            self.removeCommentFromAll({
-                                comment: comment,
-                                commentId: thisCommentId,
-                                associatedWords: wordsForThisCommentId
-                            });
-                            resolve(null);
-                            return;
-                        }
-                        const isYoungComment = Date.now() - comment.foundAt < self.trackCommentsFor;
-                        if (!isYoungComment) {
-                            // ONLY add points and update redis for comments less than X milliseconds old.
-                            console.log(`A tracked comment is now too old. Will remove: ${thisCommentId}`);
-                            self.removeCommentFromAll({
-                                comment: comment,
-                                commentId: thisCommentId,
-                                associatedWords: wordsForThisCommentId
-                            });
-                            resolve(null);
-                            return;
-                        }
+                    });
+                    pendingCommentIdsToWords[comment.id].forEach((thisPendingWordStr) => {
+                        allCommentPointingPromises.push(new Promise( (resolve, reject) => {
+                            // first we must collect all comments which are getting points re-counted for this specific word re-occurance. This list
+                            // is used by applyPointsToCommentForWord to deduct points for word re-uses by the same comment author.
+                            // Now we can proceed to add up comment.points for this word, and later determine if this comment is a topComment.
 
-                        // Last, restore auxiliary data to this comment object (like comment.pointsRecords, which is used below in pointing logic auxiliary data is later
-                        // stripped from comment before saving comment, or sending to client.
-                        commentModel.restoreAuxiliaryData(comment, self.redisClient, () => {
-                            resolve(comment);
-                        });
-
-                    }); // end self.redisClient.throttle.get(`comment
-                })); // end allCommentGetPromises.push
-            }; // end this.pendingCommentIdsToWords for loop
-
-            Promise.all(allCommentGetPromises).then((allComments) => {
-                const allCommentPointingPromises = [];
-                const possibleTopComments = allComments.filter(Boolean); //remove null responses (was redis 404, or was discarded, etc)
-                possibleTopComments.forEach((comment) => {
-                    // Before calculating points for this word, we will extract 2dGrams and store them as new word objects in redis. We do this before pointing so we can
-                    // determine if this word is about to earn points on this comment for the first time (see extractNew2dGramsFromTopComment for more).
-                    self.extractNew2dGramsFromTopComment(pendingCommentIdsToWords[comment.id], comment, (all2dGramStrings) => {
-                        all2dGramStrings.forEach((this2dGramString) => {
-                            if (pendingCommentIdsToWords[comment.id].indexOf(this2dGramString) === -1) {
-                                // looks like the above extractNew2dGramsFromTopComment found a new 2dGram for this comment. Let's add it to our local record objects before proceeding.
-                                pendingCommentIdsToWords[comment.id].push(this2dGramString);
+                            if (!comment.words[thisPendingWordStr]) {
+                                console.warn('JWW1', comment, thisPendingWordStr, possibleTopComments, all2dGramStrings);
+                                debugger
                             }
-                        });
-                        pendingCommentIdsToWords[comment.id].forEach((thisPendingWordStr) => {
-                            allCommentPointingPromises.push(new Promise( (resolve, reject) => {
-                                // first we must collect all comments which are getting points re-counted for this specific word re-occurance. This list
-                                // is used by applyPointsToCommentForWord to deduct points for word re-uses by the same comment author.
-                                // Now we can proceed to add up comment.points for this word, and later determine if this comment is a topComment.
-                                self.applyPointsToCommentForWord(comment, comment.words[thisPendingWordStr], () => {
-                                    resolve();
+
+                            self.applyPointsToCommentForWord(comment, comment.words[thisPendingWordStr], () => {
+                                resolve();
+                            });
+                        }));
+                    });
+                }); // end extractNew2dGramsFromTopComment
+            }); // end possibleTopComments.forEach
+
+            Promise.all(allCommentPointingPromises).then(() => {
+                // Now take another look at each comment to see if it belongs in our topComments object
+                const finalPossibleTopComments = [];
+                possibleTopComments.forEach((comment) => {
+                    if (self.isDiscardComment(comment)) { // we are gonna run every comment through isDiscardComment one last time (now that the comments were pointed).
+                        self.removeCommentFromAll({comment: comment});
+                        return;
+                    }
+                    finalPossibleTopComments.push(comment);
+                });
+
+                // Now sort all "finalPossibleTopComments" into pendingTopComments, then move the winners from pendingTopComments to self.topComments.comments.
+                self.pendingTopComments = {};  // { 'symbol:stock:GME': [comment1, comment3], 'symbol:stock:YOLO': [comment2, comment3, etc...]} }
+                self.groupPendingTopCommentsByTopSymbols(finalPossibleTopComments); // assigns all finalPossibleTopComments to self.pendingTopComments
+                self.calcTotalPointsForPendingTopComments(finalPossibleTopComments); // alters comments in place - assigns comment.totalPoints, reduces duplicate points for nested 2dGrams
+                self.reducePendingTopComments(); // Chooses the final top comments that were valid and score the highest within their symbol group
+                self.deleteLoserComments(); // Every comment that was pointed and compared and DID NOT earn a place as topComment will be fully deleted from Redis right now.
+                self.pendingTopComments = {}; // pendingTopComments has been looped over and the comments that were chosen were moved to self.topComments.comments. Reset pendingTopComments so can be cleared from memory.
+
+                // Now we will further reduce topComments.comments by passing them through historical data logic
+                self.applyTopCommentsTrendHistory(() => {
+                    // Now take a final pass at self.pendingTopComments and save to redis. We will also do any necc. cleanup/additions to each topComment to prep for rendering.
+                    const allTopCommentCleanupPromises = [];
+                    // self.topComments.comments.forEach((thisTopComment, thisTopCommentIndex) => {
+                    for (const [symbolTypeGroup, theseTopComments] of Object.entries(self.topComments.comments)) {
+                        theseTopComments.forEach((thisTopComment, thisTopCommentIndex) => {
+                            allTopCommentCleanupPromises.push(new Promise( (resolve, reject) => {
+                                commentModel.saveCommentObject(thisTopComment, self.redisClient, () => { // first save all comment changes to redis
+                                    const minimizedTopComment = commentModel.minimizeForDb(thisTopComment); // strip out all the data that we don't need for FE rendering of topCommentStats.
+                                    self.topComments.comments[symbolTypeGroup][thisTopCommentIndex] = minimizedTopComment;
+                                    self.addSymbolsDataToComment(minimizedTopComment, () => { // To properly render this comment in the topCommentStats UI, we need to populate it's comment.symbols array.
+                                        resolve();
+                                    });
                                 });
                             }));
                         });
-                    }); // end extractNew2dGramsFromTopComment
-                }); // end possibleTopComments.forEach
-
-                Promise.all(allCommentPointingPromises).then(() => {
-                    // Now take another look at each comment to see if it belongs in our topComments object
-                    const finalPossibleTopComments = [];
-                    possibleTopComments.forEach((comment) => {
-                        if (self.isDiscardComment(comment)) { // we are gonna run every comment through isDiscardComment one last time (now that the comments were pointed).
-                            self.removeCommentFromAll({comment: comment});
-                            return;
-                        }
-                        finalPossibleTopComments.push(comment);
-                    });
-
-                    self.groupPendingTopCommentsByTopSymbols(finalPossibleTopComments); // assigns all finalPossibleTopComments to self.pendingTopComments
-                    self.calcTotalPointsForPendingTopComments(finalPossibleTopComments, pendingCommentIdsToWords); // alters comments in place - assigns comment.totalPoints, reduces duplicate points for nested 2dGrams
-
-                    // Now take a final pass at self.pendingTopComments and transfer to self.topComments to be saved to redis. We will also do any necc. cleanup/additions to each topComment to prep for rendering.
-                    const allTopCommentCleanupPromises = [];
-                    const allChangedComments = self.reducePendingTopComments(); // returns a unique array of all comments which were updated during this round of refreshTopComments (even if they didn't land in the final selection for self.topComments.comments)
-
-                    // Every single changed comment should now be saved to redis...
-                    allChangedComments.forEach((thisChangedComment) => {
-                        allTopCommentCleanupPromises.push(new Promise( (resolve, reject) => {
-                            // Save the comment: the comment has new point props. We also want it's saveCount prop to be updated and subjected to db preserve logic. Remember that we cannot use throttled redis commands to utilize dynamic DB functionality.
-                            commentModel.saveCommentObject(thisChangedComment, self.redisClient, () => {
-                                resolve();
-                            });
-                        }));
-                    });
-                    // BUT only the final comments which were filtered and landed in self.topComments.comments need to also fetch their full symbol objects
-                    self.topComments.comments.forEach((thisTopComment, thisTopCommentIndex) => {
-                        allTopCommentCleanupPromises.push(new Promise( (resolve, reject) => {
-                            const minimizedTopComment = commentModel.minimizeForDb(thisTopComment); // strip out all the data that we don't need for FE rendering of topCommentStats.
-                            self.topComments.comments[thisTopCommentIndex] = minimizedTopComment;
-                            self.addSymbolsDataToComment(minimizedTopComment, () => { // To properly render this comment in the topCommentStats UI, we need to populate it's comment.symbols array.
-                                resolve();
-                            });
-                        }));
-                    });
-
+                    };
                     Promise.all(allTopCommentCleanupPromises).then(() => {
                         if (cback) cback();
                     });
+                }); // end applyTopCommentsTrendHistory
 
-                }); // end Promise.all(allCommentPointingPromises)
-            }); // end Promise.all(allCommentGetPromises)
-        }); // end Promise.all(allExistingWordToCommentIndexPromises)
+            }); // end Promise.all(allCommentPointingPromises)
+        }); // end Promise.all(allCommentGetPromises)
     } // end refreshTopComments
 
     applyPointsToCommentForWord(comment, wordRef, cback) { // alters comment in-place (updates points object)
@@ -373,6 +371,7 @@ class TopCommentsStats {
 
     getWordPointCount(comment, wordRef) {
         const self = this;
+
         if (typeof wordRef.pointVal === 'number') {
             return wordRef.pointVal; // remember that we cache this calculation on the comment's wordRef objects.
         }
@@ -429,7 +428,8 @@ class TopCommentsStats {
         //////////
         // Get every single timestamp for when this word was in any comment, then sort sort them into timebuckets and total the points
         const foundAtListKey = `word:${wordRef.word}:foundAt`;
-        self.redisClient.throttle.lrange(foundAtListKey, 0, -1, (allFoundAtTstamps) => {
+        // self.redisClient.throttle.lrange(foundAtListKey, 0, -1, (allFoundAtTstamps) => {
+        self.redisClient.lrange(foundAtListKey, 0, -1, (allFoundAtTstamps) => {
             if (!allFoundAtTstamps || !allFoundAtTstamps.length) {
                 if (cback) cback();
                 return;
@@ -508,9 +508,10 @@ class TopCommentsStats {
         });
     } // end groupPendingTopCommentsByTopSymbols
 
-    calcTotalPointsForPendingTopComments(pendingTopComments, newlyPointedWordsByComment) { // newlyPointedWordsByComment is a copy of self.pendingCommentIdsToWords {commentId1: [wordString1, wordString2], commentId2: [wordString3, wordString6], etc...}
+    calcTotalPointsForPendingTopComments(pendingTopComments) {
         const self = this;
         // Sum total points for this comment into timebuckets
+        console.log(`Will now calcTotalPointsForPendingTopComments on ${pendingTopComments.length} comments...`);
         pendingTopComments.forEach((thisComment) => {
 
             for (const [timeBucketKey, prevPoints] of Object.entries(thisComment.totalPoints)) {
@@ -556,15 +557,20 @@ class TopCommentsStats {
                         if (shortWordRef.type === 'word' && shortWordRef.hasSymbols.length > 0) continue;
 
                         // Return as quickly as we can determine these 2 strings do not overlap
-                        if (shortWordRef.word.length >= longWordRef.word.length) continue; // can't be an inner shortWordStr if it's not of shorter length (only when not 2dGram because they get maxMisalignPerc wiggle room)
-                        if (longWordRef.word.indexOf(shortWordRef.word) === -1) continue;
+                        // if (shortWordRef.word.length >= longWordRef.word.length) continue; // can't be an inner shortWordStr if it's not of shorter length
+                        // if (longWordRef.word.indexOf(shortWordRef.word) === -1) continue; // this will cover all overlaps between words which are not 2dGrams (and some 2dGrams which don't have skipword offsets)
 
-                        if (!thisComment.pointsRecords[timeBucketKey][thisWordStr] || !thisComment.pointsRecords[timeBucketKey][thisShortWordStr]) {
-                            // console.warn(`Missing pointsRecords for ${thisWordStr} or ${thisShortWordStr} (${timeBucketKey}) on comment:${thisComment.id} comment.pointsRecords:`, thisComment.pointsRecords);
-                            continue;
-                        }
+                        // The next lines cover overlaps of normal words, and 2dGrams which shortWord is not an exact match substring, but all of it's words fall within the span of longWord. This is possible because of skipword 2dGrams.
+                        let wordsHaveOverlap = false;
+                        const longWordSpan = [longWordRef.index[0], longWordRef.index[0] + longWordRef.word.length];
+                        if (longWordRef.distance) longWordSpan[1] = longWordSpan[1] + longWordRef.distance;
+                        const shortWordSpan = [shortWordRef.index[0], shortWordRef.index[0] + shortWordRef.word.length];
+                        if (shortWordRef.distance) shortWordSpan[1] = shortWordSpan[1] + shortWordRef.distance;
+                        if (shortWordSpan[0] >= longWordSpan[0] && shortWordSpan[1] <= longWordSpan[1]) wordsHaveOverlap = true;
+                        if (!wordsHaveOverlap) continue;
 
                         // console.warn(`Detected overlapping words ${thisWordStr} and ${thisShortWordStr} in comment:${thisComment.id}`);
+                        if (!thisComment.pointsRecords[timeBucketKey][thisWordStr] || !thisComment.pointsRecords[timeBucketKey][thisShortWordStr]) continue;
                         thisComment.pointsRecords[timeBucketKey][thisWordStr].forEach((thisLongWordFoundAtTstamp) => {
                             if (thisComment.pointsRecords[timeBucketKey][thisShortWordStr].indexOf(thisLongWordFoundAtTstamp) !== -1) {
                                 // console.warn(`Detected that overlapping words ${thisWordStr} and ${thisShortWordStr} in comment:${thisComment.id} both earned points from the same re-comment.`);
@@ -590,27 +596,21 @@ class TopCommentsStats {
 
     reducePendingTopComments() {
         const self = this;
-        const weight2dGramComments = 0.9; // See HashHype rule 8976d. A comment X will be allowed to have this percentage of it's competitor's totalPoints (and win) IF that comment X has a 2dGram and it's competitor doesn't.
 
         const topCommentsClone = self.newTopCommentsEntity();
-
-        const allChangedTopComments = []; // this is our return value. A flattened and de-duped collection of all comments which were updated during this round of refreshTopComments (even if they didn't land in the final selection for self.topComments.comments)
-        const allChangedTopCommentsIds = [];
 
         const finalTopComments = []; // sorted by points ascending. This is the trimmed final collection which will be set to self.topComments.comments. This will likely not include all of the comments in allChangedTopComments.
         const finalTopCommentIds = [];
 
         /////////////
-        // 1. Move all (unique) comments from self.pendingTopComments into flattened array allChangedTopComments. At the same time, remove point outliers from every symbol group, then take only take 1 comment per symbol (the one with highest score) for finalTopComments array.
+        // 1. Remove point outliers from every symbol group, then take only take 1 comment per symbol (the one with highest score) for finalTopComments array. Any comment within a symbol group that wasn't chosen as the final top comment WILL BE DELETED FROM REDIS.
         for (const [thisSymbolKey, pendingTopCommentsForThisSymbol] of Object.entries(self.pendingTopComments)) {
             // HashHype rule - first we will loop through the totalPoints['1Hr'] for each comment in this symbol group, then determine if any are outliers.
             // A comment may score suspiciously high if it slips through an edge case in our algo, or users discover a vulneribility and game the points. This
             // very basic math is our last defense in attempting to block comments that should not earn trend ranking.
 
             // if the stDevCount is greater than {stdDevCountMax}, but less than {stdDevCountExtreme}, we discard the comment from this symbol group BUT we let it still circulate through topCommentStats to see if it's a future hit, or a hit in another symbol group.
-            // if the stDevCount is super high (over {stdDevCountExtreme}) then we are going to assume that this is a point miscalculation (most likely due to lost data from redis LRU eviction). We will fully delete this comment below.
             let stdDevCountMax = 5;
-            let stdDevCountExtreme = 10;
 
             let nonOutlierTotalPoints = null; // array of ints which represent only valid totalPoints['1Hr'] found in this comment group.
             let pointsMedian;
@@ -620,37 +620,44 @@ class TopCommentsStats {
                 pendingTopCommentsForThisSymbol.forEach(thisComment => {
                     if (thisComment.totalPoints['1Hr']) allTotalPoints.push(thisComment.totalPoints['1Hr']);
                 });
-                allTotalPoints.sort();
-                pointsMedian = median(allTotalPoints);
-                pointsStdDev = std(allTotalPoints);
-                if (pointsStdDev !== 0) {
-                    nonOutlierTotalPoints = [];
-                    allTotalPoints.forEach((thisTotalPoints) => {
-                        const diff = Math.abs(thisTotalPoints - pointsMedian);
-                        if (diff === 0) {
-                            nonOutlierTotalPoints.push(thisTotalPoints);
-                            return;
-                        }
-                        const stDevCount = diff / pointsStdDev;
-                        if (stDevCount < stdDevCountMax) nonOutlierTotalPoints.push(thisTotalPoints);
-                    });
-                }
-            }
+                if (allTotalPoints.length) {
+                    allTotalPoints.sort();
+                    pointsMedian = median(allTotalPoints);
+                    pointsStdDev = std(allTotalPoints);
+                    if (pointsStdDev !== 0) {
+                        nonOutlierTotalPoints = [];
+                        allTotalPoints.forEach((thisTotalPoints) => {
+                            const diff = Math.abs(thisTotalPoints - pointsMedian);
+                            if (diff === 0) {
+                                nonOutlierTotalPoints.push(thisTotalPoints);
+                                return;
+                            }
+                            const stDevCount = diff / pointsStdDev;
+                            if (stDevCount < stdDevCountMax) nonOutlierTotalPoints.push(thisTotalPoints);
+                        });
+                    }
+                } // end if (allTotalPoints.length) {
+            } // end if (thisSymbolKey !== 'noSymbols'
 
             // Ok now we can proceed to select only the top scoring comment for each symbol, and flatten all of them (including comments with no symbols) into an array for sorting.
             let highestScoredSymbolComment = null;
-            let highestScoredSymbolCommentWith2dGram = null;
+            // let highestScoredSymbolCommentWith2dGram = null;
             pendingTopCommentsForThisSymbol.forEach((thisComment) => {
-                if (allChangedTopCommentsIds.indexOf(thisComment.id) === -1) {
-                    // console.log(`comment:${thisComment.id} has changed during topComments refresh and will be saved to redis.`);
-                    allChangedTopCommentsIds.push(thisComment.id);
-                    allChangedTopComments.push(thisComment);
-                }
+                // if (allChangedTopCommentsIds.indexOf(thisComment.id) === -1) {
+                //     // console.log(`comment:${thisComment.id} has changed during topComments refresh and will be saved to redis.`);
+                //     allChangedTopCommentsIds.push(thisComment.id);
+                //     allChangedTopComments.push(thisComment);
+                // }
 
-                if (thisSymbolKey === 'noSymbols' && self.topCommentsMustHaveSymbol) {
+                const thisSymbolSplit = thisSymbolKey.split(':');
+                const thisSymbolType = thisSymbolSplit[1];
+                const thisSymbolWord = thisSymbolSplit.splice(2).join(':'); // NOTE: THIS WILL NOT ACCOUNT FOR symbolAlias matches (and comments that have earned based on alias usage will be wrongly discarded here). Those comments will, however, still earn points for this symbols usage (to provide for another topComment to carry the torch)
+
+                if (self.topCommentsMustHaveSymbol && self.topCommentsMustHaveSymbolTypes.indexOf(thisSymbolType) === -1) {
                     // console.warn(`comment:${thisComment.id} contained no symbols and will be excluded from topComments.`)
                     return; // (though these comments still play a part in word reuse pointing)
                 }
+
                 if (thisSymbolKey === 'noSymbols' && finalTopCommentIds.indexOf(thisComment.id) === -1) {
                     // console.log(`Will add comment:${highestScoredSymbolComment.id} (no symbols) to our final selection of topCommentStats.comments.`)
                     finalTopCommentIds.push(thisComment.id);
@@ -662,7 +669,6 @@ class TopCommentsStats {
                 // This rule is required so that if a comment scores very high because of good word combos and/or 2dGrams, BUT has a topSymbolHigh that isn't trending, we won't present it's symbol in the trending UI.
                 // Adjust minPercOfTotalPointsForSymbol to change how strict this rule is. I.e: minPercOfTotalPointsForSymbol = 0.1 required that a symbol accounts for at least 10% of the comments totalPoints (or else comment is discarded).
                 const minPercOfTotalPointsForSymbol = 0.1;
-                const thisSymbolWord = thisSymbolKey.split(':').splice(2).join(':'); // JWW stopping THIS WILL NOT ACCOUNT FOR symbolAlias matches (and comments that have earned based on alias usage will be wrongly discarded here). Those comments will, however, still earn points for this symbols usage (to provide for another topComment to carry the torch)
                 let percOfTotalPointsFromThisSymbol = 0;
                 if (thisComment.points['1Hr'][thisSymbolWord]) percOfTotalPointsFromThisSymbol = thisComment.points['1Hr'][thisSymbolWord] / thisComment.totalPoints['1Hr'];
                 if (percOfTotalPointsFromThisSymbol < minPercOfTotalPointsForSymbol) {
@@ -673,31 +679,14 @@ class TopCommentsStats {
                 if (nonOutlierTotalPoints !== null && nonOutlierTotalPoints.indexOf(thisComment.totalPoints['1Hr']) === -1) {
                     const stDevCount = Math.abs(thisComment.totalPoints['1Hr'] - pointsMedian) / pointsStdDev;
                     console.warn(`An outlier totalPoints (${thisComment.totalPoints['1Hr']}) was found on comment:${thisComment.id} (${stDevCount} stdDevs from median ${pointsMedian}). This comment will be discarded from ${thisSymbolKey} group (${pendingTopCommentsForThisSymbol.length} comments).`); // comment.points['1Hr']:`, thisComment.points['1Hr']);
-                    if (stDevCount > stdDevCountExtreme) {
-                        console.warn(`An extreme outlier totalPoints (${thisComment.totalPoints['1Hr']}) was found on comment:${thisComment.id} (${stDevCount} stdDevs from median ${pointsMedian}). This comment will be DELETED from redis. comment.points['1Hr']:`, thisComment.points['1Hr']);
-                        self.removeCommentFromAll({comment: thisComment});
-                    }
                     return;
                 }
 
                 if (highestScoredSymbolComment === null || highestScoredSymbolComment.totalPoints['1Hr'] < thisComment.totalPoints['1Hr']) {
                     highestScoredSymbolComment = thisComment;
                 }
-                const thisComment2dGramCount = commentModel.getPointed2dGramCount(thisComment);
-                if (thisComment2dGramCount > 0) {
-                    if (highestScoredSymbolCommentWith2dGram === null || highestScoredSymbolCommentWith2dGram.totalPoints['1Hr'] < thisComment.totalPoints['1Hr']) {
-                        highestScoredSymbolCommentWith2dGram = thisComment;
-                    }
-                }
-
             }); // end pendingTopCommentsForThisSymbol.forEach
 
-            if (highestScoredSymbolComment && highestScoredSymbolCommentWith2dGram && highestScoredSymbolComment !== highestScoredSymbolCommentWith2dGram) {
-                if (highestScoredSymbolCommentWith2dGram.totalPoints['1Hr'] >= highestScoredSymbolComment.totalPoints['1Hr'] * weight2dGramComments) {
-                    console.warn(`A potentially lower scoring comment:${highestScoredSymbolCommentWith2dGram.id} was selected to represent symbol ${thisSymbolKey} because that comment contained ${commentModel.getPointed2dGramCount(highestScoredSymbolCommentWith2dGram)} pointed 2dGrams and it's competition had 0 (comment:${highestScoredSymbolComment.id}).`);
-                    highestScoredSymbolComment = highestScoredSymbolCommentWith2dGram;
-                }
-            }
             if (highestScoredSymbolComment && finalTopCommentIds.indexOf(highestScoredSymbolComment.id) === -1) {
                 // console.log(`Will add the highest scoring comment:${highestScoredSymbolComment.id} for ${thisSymbolKey} to our final selection of topCommentStats.comments.`)
                 finalTopCommentIds.push(highestScoredSymbolComment.id);
@@ -713,38 +702,47 @@ class TopCommentsStats {
 
         ///////////
         // 3. And trim off the lowest scoring comments (until we have the minimum required comments with symbols)
-        let topCommentsWithSymbolsCount = 0;
+        const topCommentsWithSymbolsCount = {}; // {stock: 8, coin: 10, etc..}
         finalTopComments.some((thisTopComment) => {
-
-            // Before choosing to keep this comment in the final selection, take a look at some config flags re: symbol requirements in topComments
-            let commentMeetsSymbolRequirements = false;
-            if (self.minTopCommentsWithSymbolsType) {
-                if (thisTopComment.topSymbolHigh['1Hr']) {
-                    const topSymbolType = thisTopComment.topSymbolHigh['1Hr'].split(':')[1];
-                    if (topSymbolType === self.minTopCommentsWithSymbolsType) commentMeetsSymbolRequirements = true;
-                }
-            } else {
-                if (thisTopComment.topSymbolHigh['1Hr']) commentMeetsSymbolRequirements = true; // any symbol type will do
+            let topSymbolType = 'noSymbols';
+            if (thisTopComment.topSymbolHigh['1Hr']) {
+                topSymbolType = thisTopComment.topSymbolHigh['1Hr'].split(':')[1];
             }
 
-            // Now proceed to update topCommentsClone.comments if this comment meets requirements
-            if (commentMeetsSymbolRequirements) {
-                topCommentsClone.comments.push(thisTopComment);
-                ++topCommentsWithSymbolsCount;
-            }
-            if (!self.topCommentsMustHaveSymbol && !thisTopComment.topSymbolHigh['1Hr']) { // our current config allows non-symbol comments. Add it now.
-                topCommentsClone.comments.push(thisTopComment);
-            }
+            if (topCommentsWithSymbolsCount[topSymbolType] === self.minTopCommentsPerSymbolType) return;
+            topCommentsClone.comments[topSymbolType] = topCommentsClone.comments[topSymbolType] || [];
+            topCommentsClone.comments[topSymbolType].push(thisTopComment);
+            if (typeof topCommentsWithSymbolsCount[topSymbolType] === 'undefined') topCommentsWithSymbolsCount[topSymbolType] = 0;
+            ++topCommentsWithSymbolsCount[topSymbolType];
 
-            // this comment has found it's place as a topComment. Because finalTopComments was already sorted descending (totalPoints), the topComment's rank is also
-            // it's index in the topCommentsClone.comments array. Set the rank property now.
-            thisTopComment.rank = topCommentsClone.comments.length;
+            // this comment has found it's place as a topComment. Because finalTopComments was already sorted descending (totalPoints), the topCommentsWithSymbolsCount
+            // represents the rank of this comment within it's symbol type group
+            thisTopComment.rank = topCommentsWithSymbolsCount[topSymbolType];
 
-            if (topCommentsWithSymbolsCount >= self.minTopCommentsWithSymbols) return true; // we have all we need break loop
+            if (sum(Object.values(topCommentsWithSymbolsCount)) >= self.minTopCommentsPerSymbolType*self.topCommentsMustHaveSymbolTypes) return true; // we have all we need break loop
         }); // end finalTopComments.some
 
         self.topComments.comments = topCommentsClone.comments;
-        return allChangedTopComments;
+        // return allChangedTopComments;
+    }
+
+    deleteLoserComments() {
+        const self = this;
+        // take a look at self.topComments.comments vs self.pendingTopComments. At this point, self.topComments.comments has been finalized and any comments inside self.pendingTopComments
+        // that didn't make the cut are going to be deleted from redis. Essentially, every comment has 1 shot at becomming a top comment. HashHype does this because we want to prioritize hardware
+        // for incoming new comments rather than repeatedly recalculate points for the same comments.
+        // const allTopCommentIds = self.topComments.comments.map(thisTopComment => thisTopComment.id);
+        const allTopCommentIds = Object.values(self.topComments.comments).flat().map((thisCom) => thisCom.id);
+        const alreadyDeletedComments = []; // an array of comment id's that have already been deleted below. So we don't try to delete the same comment twice (a comment can belong to more than one symbol group)
+        for (const [thisSymbolKey, pendingTopCommentsForThisSymbol] of Object.entries(self.pendingTopComments)) {
+            pendingTopCommentsForThisSymbol.forEach((thisPendingComment) => {
+                if (allTopCommentIds.indexOf(thisPendingComment.id) === -1 && alreadyDeletedComments.indexOf(thisPendingComment.id) === -1) {
+                    // console.warn(`Deleting loser comment:${thisPendingComment.id}`);
+                    alreadyDeletedComments.push(thisPendingComment.id)
+                    self.removeCommentFromAll({comment: thisPendingComment});
+                }
+            });
+        }
     }
 
     extractNew2dGramsFromTopComment(newlyPointedWordsForComment, comment, cback) { //alters comment in-place. cback returns an array of all 2dGrams currently in comment.
@@ -1001,32 +999,11 @@ class TopCommentsStats {
                 })); // end wordRefSavePromises.push
             }
 
-            // add new word object to redis (or merge if exists)
-            const newWordObject = wordModel.createWordObject({
-                type: '2dGram',
-                value: this2dGramTokens,
-                rawWords: this2dGram.rawWords,
-                hasSymbols: this2dGram.hasSymbols
-            });
-            wordSavePromises.push(new Promise( (resolve, reject) => {
-                self.redisClient.get(newWordAbsKey, (existingWordObj) => {
-                    let saveWordObj = newWordObject;
-                    if (existingWordObj) {
-                        saveWordObj = wordModel.merge(existingWordObj, newWordObject);
-                    }
-                    self.redisClient.set(newWordAbsKey, saveWordObj, () => {
-                        resolve();
-                    });
-                });
-            })); // end wordSavePromises.push
-
             all2dGramStrings.push(this2dGram.word);
         }); //end all2dGrams.forEach(
 
         Promise.all(wordRefSavePromises).then(() => {
-            Promise.all(wordSavePromises).then(() => {
-                if (cback) cback(all2dGramStrings);
-            });
+            if (cback) cback(all2dGramStrings);
         });
     }
     extractAllWordCombos(wordRefs = [], minComboLength = 4) { // returns array of arrays of objects: [[{wordRef: wordRefObj, index: int}, etc...], [{wordRef: wordRefObj, index: int}, etc...], etc...]
@@ -1136,30 +1113,38 @@ class TopCommentsStats {
         // Each topComments.comments object must maintain it's point based ranking (comment.rank) to ensure accurate historical data.
         // We instead hold a seperate property (comment.rankAdjust) which can be used in rendering logic to supress comments with high decay/low volatility.
         self.redisClient.get(self.topTrendsStatsKey, (topTrendsStats) => {
-            self.topComments.comments.forEach((thisTopComment) => {
 
-                // First check if this comment matches on of our topTrends
-                if (!thisTopComment.topSymbolHigh['1Hr']) return;
-                const topSymbol = thisTopComment.symbols.find((symbol) => {
-                    return symbolModel.generateRedisKey(symbol) === thisTopComment.topSymbolHigh['1Hr'];
-                });
-                if (!topSymbol) return;
-                let matchedTopTrend = null;
-                topTrendsStats.trends.some((thisTopTrend) => {
-                    if (thisTopTrend.word === topSymbol.symbol) {
-                        matchedTopTrend = thisTopTrend;
-                        return true; // break some loop
+            // const commentsBySymbolType = {}; // {coin: [comment5, comment3], etc...} -
+            // self.topComments.comments.forEach((thisTopComment) => {
+            for (const [symbolTypeGroup, theseTopComments] of Object.entries(self.topComments.comments)) {
+                theseTopComments.forEach((thisTopComment) => {
+
+                    let topSymbolWord = null;
+                    if (thisTopComment.topSymbolHigh['1Hr']) {
+                        topSymbolWord = thisTopComment.topSymbolHigh['1Hr'].split(':').slice(2).join(':');
                     }
-                });
-                if (!matchedTopTrend) return;
+                    if (!topSymbolWord) return;
 
-                // We found a match, now apply changes to thisTopComment based on historical props on matchedTopTrend
-                if (matchedTopTrend.decay) {
-                    thisTopComment.rankAdjust = thisTopComment.rank + Math.round(matchedTopTrend.decay * self.minTopCommentsWithSymbols);
-                    thisTopComment.rankAdjust = Math.max(thisTopComment.rankAdjust, 0);
-                    // console.log(`The comment:${thisTopComment.id} rank was adjusted from ${thisTopComment.rank} to ${thisTopComment.rankAdjust} because it's topSymbol (${matchedTopTrend.word}) contained a decay of ${matchedTopTrend.decay}`);
-                }
-            });
+                    // Next, check if this comment matches on of our topTrends
+                    let matchedTopTrend = null;
+                    topTrendsStats.trends.some((thisTopTrend) => {
+                        if (thisTopTrend.word === topSymbolWord) {
+                            matchedTopTrend = thisTopTrend;
+                            return true; // break some loop
+                        }
+                    });
+                    if (!matchedTopTrend) return;
+
+                    // We found a match, now apply changes to thisTopComment based on historical props on matchedTopTrend
+                    if (matchedTopTrend.decay) {
+                        thisTopComment.rankAdjust = thisTopComment.rank + Math.round(matchedTopTrend.decay * self.minTopCommentsPerSymbolType);
+                        thisTopComment.rankAdjust = Math.max(thisTopComment.rankAdjust, 0);
+                        // console.log(`The comment:${thisTopComment.id} rank was adjusted from ${thisTopComment.rank} to ${thisTopComment.rankAdjust} because it's topSymbol (${matchedTopTrend.word}) contained a decay of ${matchedTopTrend.decay}`);
+                    }
+                }); // end theseTopComments.forEach
+
+            }; // end for (const [symbolTypeGroup, theseTopComments]
+
             if (cback) cback();
         });
     }
@@ -1168,7 +1153,15 @@ class TopCommentsStats {
         // This process includes rules around which comments should be excluded in trend analysis. Ie: comments that are from not relevant users
         let shouldDiscard = false;
 
-        // 1. has the user been marked as not relevant. Comments will be discarded first by the fetchRedditComments process, but consider
+        // Check the comment age. Delete if it's too old.
+        const isYoungComment = Date.now() - comment.foundAt < this.trackCommentsFor;
+        if (!isYoungComment) {
+            shouldDiscard = true;
+            console.warn(`A comment is now too old and will be discarded: ${comment.id}`);
+            return shouldDiscard;
+        }
+
+        // 2. has the user been marked as not relevant. Comments will be discarded first by the fetchRedditComments process, but consider
         // this a backup to catch any offending comments which may have already been saved to redis (before the not relevant rule was established)
         if (this.trainingNotRelevant) {
             const notRelUserIndex = this.trainingNotRelevant.users.findIndex((thisUser) => thisUser.username === comment.author.name);
@@ -1186,7 +1179,7 @@ class TopCommentsStats {
             }
         }
 
-        // 2. HashHype also enforces a rule that no comment should have earned points on every single word combination possible. It was found that when this happens,
+        // 3. HashHype rule - no comment should have earned points on every single word combination possible. It was found that when this happens,
         // it was usually because a single user posted an identical comment more than once, was a single word comment with no additional context, or was a comment by bots
         // that posted the same canned comments under different usernames.
         const allTriGramsInComment = Object.values(comment.words).filter(wordRef => wordRef.type === 'trigram'); // the quickest way to do this is only look at the trigrams. If they all got pointed, the whole comment got pointed.
@@ -1199,7 +1192,7 @@ class TopCommentsStats {
             });
             if (pointedTrigramCount === allTriGramsInComment.length) {
                 shouldDiscard = true;
-                console.warn(`Comment will be discarded because all of it's word combos earned points. Suspected dup comment:${comment.id} by user ${comment.author.name}. Comment body: ${comment.body}`);
+                // console.warn(`Comment will be discarded because all of it's word combos earned points. Suspected dup comment:${comment.id} by user ${comment.author.name}. Comment body: ${comment.body}`);
                 return shouldDiscard;
             }
         }
@@ -1237,18 +1230,14 @@ class TopCommentsStats {
         console.log(`Now responding to training on changed keys:`, self.activeTrainingKeys);
 
         self.activeTrainingKeys.forEach((changedKey, index) => {
-            // 1. First we immediately delete any throttled redis get/set commands for this key. This is somewhat invasive because all registered cbacks for getting this key will be abandoned.
-            //    However, this is an all-or-nothing decision: if an object which this process manipulates was altered outside this process, then this process can't continue any pending logic on a locally cached version of that object.
-            self.redisClient.throttle.clearPendingGet(changedKey);
-            // self.redisClient.throttle.clearPendingSet(changedKey);
-            // 2. If this is a user just marked not relevant, loop through this.topComments and delete any existing comments by that user.
+            // 1. If this is a user just marked not relevant, loop through this.topComments and delete any existing comments by that user.
             if (changedKey.indexOf('user:') !== -1) {
                 const notRelevantUser = changedKey.replace('user:', '');
-                this.topComments.comments.forEach((thisComment) => {
+                Object.values(self.topComments.comments).flat().forEach((thisComment) => {
                     if (thisComment.author && thisComment.author.name === notRelevantUser) self.removeCommentFromTopComments(thisComment.id); // (also removes from redis throttle cache)
                 });
             }
-            // 3. If this training change deleted a comment, then it must also be locally deleted from this.topComments, and from redis throttle cache
+            // 2. If this training change deleted a comment, then it must also be locally deleted from this.topComments, and from redis throttle cache
             if (changedKey.indexOf('comment:') !== -1) {
                 // The best we can do is just assume the training change invalidates the comment from being a top comment. If this assumption is wrong, then the comment may resurface as word pointing continues.
                 const commentId = changedKey.replace('comment:', '');
@@ -1281,21 +1270,18 @@ class TopCommentsStats {
 
     removeCommentFromTopComments(removeCommentId) { // Alters self.topComments in place
         const self = this;
-
-        // first delete any throttled redis set/get commands for this comment.
-        const commentRedisKey = `comment:${removeCommentId}`;
-        self.redisClient.throttle.clearPendingGet(commentRedisKey);
-        // self.redisClient.throttle.clearPendingSet(commentRedisKey);
-
-        // Then delete the instance of this object stored directly on stats:topComments
-        const revisedTopComments = {comments: []};
-        this.topComments.comments.forEach((thisComment, thisCommentIndex) => {
-            if (thisComment.id !== removeCommentId) {
-                revisedTopComments.comments.push(thisComment);
-                return;
-            }
-            console.log(`Removing comment from ${this.topCommentsStatsKey}. Comment: ${removeCommentId}`);
-        });
+        // delete the instance of this object stored directly on stats:topComments
+        const revisedTopComments = {comments: {}};
+        for (const [symbolTypeGroup, theseTopComments] of Object.entries(self.topComments.comments)) {
+            theseTopComments.forEach((thisComment) => {
+                if (thisComment.id !== removeCommentId) {
+                    revisedTopComments.comments[symbolTypeGroup] = revisedTopComments.comments[symbolTypeGroup] || [];
+                    revisedTopComments.comments[symbolTypeGroup].push(thisComment);
+                    return;
+                }
+                console.log(`Removing comment from ${this.topCommentsStatsKey}. Comment: ${removeCommentId}`);
+            });
+        };
         this.topComments.comments = revisedTopComments.comments;
         this.throttle.storeNewTopCommentsStats();
     }
@@ -1313,9 +1299,7 @@ class TopCommentsStats {
         const self = this;
         associatedWords.forEach((wordString) => {
             const thisIndexKey = `index:wordToComments:${wordString}`;
-            self.redisClient.zrem(thisIndexKey, [commentId], (commentRemovedCount) => {
-                if (commentRemovedCount === 0) console.warn(`Could not remove comment:${commentId} from ${thisIndexKey}`);
-            });
+            self.redisClient.zrem(thisIndexKey, [commentId]);
         });
     }
 
@@ -1334,9 +1318,9 @@ class TopCommentsStats {
         if (opts.commentId) this.removeCommentFromTopComments(opts.commentId);
         if (opts.commentId && opts.associatedWords) this.removeCommentFromWordToCommentIndexes(opts.commentId, opts.associatedWords);
         // In some logic this function may be called for a comment which was not found in redis (returned null). If that was the case, we don't want to attempt to delete right now.
-        if (opts.commentId && opts.comment !== null) {
+        if (opts.commentId && opts.comment !== undefined) {
             opts.comment.deleted = true; // Set this local flag so that the comment can't be re-saved later if it's being held somewhere in this process's live memory (is honored in redisClient.js "set")
-            this.redisClient.del(`comment:${opts.commentId}`);
+            commentModel.deleteCommentObject(opts.comment, this.redisClient);
         }
     }
 
@@ -1367,89 +1351,119 @@ class TopCommentsStats {
         // returns an initial state for a top comment stats
         return {
             absKey: this.topCommentsStatsKey,
-            comments: [],
+            comments: {}, // {stock: [comment8, comment3], coin: [etc..], etc..}
             ui: {
                 viewPath: '/ui/views/topCommentStats.jsx.js'
             }
          }
     }
 
+
     storeNewTopCommentsStats() {
         const self = this;
-        if (self.storeNewTopCommentsStatsIsPending) {
-            console.warn(`Detected overlap in calls to "storeNewTopCommentsStats" at ${Date.now()}. Cancelling most recent call until pending call completes...`);
-            if (!self.storeNewTopCommentsStatsIsPendingTimeout) {
-                self.storeNewTopCommentsStatsIsPendingTimeout = setTimeout(() => {
-                    self.storeNewTopCommentsStatsIsPendingTimeout = null;
-                    if (!self.storeNewTopCommentsStatsIsPending) return;
-                    self.storeNewTopCommentsStatsIsPending = false;
-                    console.warn(`Forcefully cleared a pending storeNewTopCommentsStats timeout.`)
-                }, this.storeNewTopCommentsStatsThrottleTime * 4);
-            }
-            return;
-        }
+        if (self.refreshTopCommentsIsBusy()) return;
+
+        const thisRefreshTstamp = Date.now();
+        self.curActiveTopCommentsRefresh = thisRefreshTstamp;
+
+        self.commentsCountForLastTopCommentsRefresh = null; // calculated inside refreshTopComments
         self.storeNewTopCommentsStatsIsPending = true;
         self.refreshTopComments(() => {
-            self.applyTopCommentsTrendHistory(() => {
+            if (self.curActiveTopCommentsRefresh === thisRefreshTstamp) {
+                self.storeNewTopCommentsStatsIsPending = false;
                 self.redisClient.set(self.topCommentsStatsKey, self.topComments, () => {
-                    self.storeNewTopCommentsStatsIsPending = false;
-                    clearTimeout(self.storeNewTopCommentsStatsIsPendingTimeout);
-                    self.storeNewTopCommentsStatsIsPendingTimeout = null;
-                    console.log('Updated stats:topComments at time:', Date.now());
+                    console.log(`Succesfully updated stats:topComments (started at ${thisRefreshTstamp}). Total duration: ${(Date.now() - thisRefreshTstamp) / 1000} seconds`);
                 });
-            });
+            } else {
+                console.warn(`A cancelled topCommentsRefresh finally returned (started at ${thisRefreshTstamp}). Total duration: ${(Date.now() - thisRefreshTstamp) / 1000} seconds`);
+            }
         });
     }
 
-    persistProcessState(cback) {
-        // This function will take certain process class properties (defined in constructor) and persist them to redis.
-        // The properties to be saved are the ones which need to be restored when the process is restarted.
+    refreshTopCommentsIsBusy() {
         const self = this;
+        // This function allows this process to adapt to hardware load to make sure calls to refreshTopComments don't continually hang the process.
+        let isBusy = false;
 
-        // 1. Restore process state from redis
-        if (!self.persistedState) {
-            self.redisClient.get(self.processPersistKey, (processStateObj) => {
-                self.persistedState = Object.assign({
-                    topWordsCounts: self.topWordsCounts || {},
-                    topWordsMinCount: self.topWordsMinCount || 0
-                }, processStateObj);
+        // If maxOverlapsPerTopCommentsRefresh overlaps occur during a single attempt to run refreshTopComments, then we must assume something got stuck, and didn't return properly.
+        // As to not permanently freeze refreshTopComments attempts, we will unblock let the process regain stability on it's own. maxOverlapsPerTopCommentsRefresh is also used
+        // when computing how much to adjust maxCommentsPerTopCommentsRefresh at the end of a refresh interval.
+        self.maxOverlapsPerTopCommentsRefresh = 5;
 
-                self.topWordsCounts = self.persistedState.topWordsCounts;
-                self.topWordsMinCount = self.persistedState.topWordsMinCount;
+        // maxCommentsPerTopCommentsRefresh will go down by 10% for EVERY overlap. Then, each time there a call to refreshTopComments completes with NO overlap, maxCommentsPerTopCommentsRefresh
+        // is changed to the previous value in maxCommentsPerTopCommentsRefreshRecord. Each succesful iteration of refreshTopComments works backwards through maxCommentsPerTopCommentsRefreshRecord until it eventually is reset to be unlimited.
+        self.loadAdjustPerTopCommentsRefreshOverlap = .1;
+        self.maxCommentsPerTopCommentsRefreshRecord = self.maxCommentsPerTopCommentsRefreshRecord || [];
 
-                console.log(`Restored process state ${self.processPersistKey}`); //:`, self.persistedState);
-                self.persistProcessState(cback);
-            });
-            return;
+        ///////
+        // 1. An existing call to refreshTopComments is still busy.
+        if (self.storeNewTopCommentsStatsIsPending) {
+            isBusy = true;
+            if (self.overlapCountThisTopCommentsRefresh === null) self.overlapCountThisTopCommentsRefresh = 0; // how many times did code attempt to call storeNewTopCommentsStat while it was busy during JUST THIS INTERVAL.
+            ++self.overlapCountThisTopCommentsRefresh;
+            console.warn(`Detected overlap in calls to "storeNewTopCommentsStats" (${self.overlapCountThisTopCommentsRefresh}/${self.maxOverlapsPerTopCommentsRefresh}). Cancelling most recent call until pending call completes...`);
+
+            // If 5 overlaps occur during a single attempt to run refreshTopComments, then we must assume something got stuck, and didn't return properly.
+            // As to not permanently freeze refreshTopComments attempts, we will unblock and hope the process regains stability on it's own.
+            if (self.overlapCountThisTopCommentsRefresh >= self.maxOverlapsPerTopCommentsRefresh) {
+                self.setMaxCommentsPerTopCommentsRefresh();
+                console.warn(`Forcefully cleared a pending storeNewTopCommentsStats timeout after ${self.overlapCountThisTopCommentsRefresh} overlapping calls.`);
+                self.overlapCountThisTopCommentsRefresh = 0;
+                self.storeNewTopCommentsStatsIsPending = false;
+                isBusy = false;
+            }
+
+            return isBusy;
         }
 
-        // 2. Save process state to redis
-        self.persistedState.topWordsCounts = self.topWordsCounts;
-        self.persistedState.topWordsMinCount = self.topWordsMinCount;
-        self.redisClient.set(self.processPersistKey, self.persistedState, () => {
-            console.log(`Saved process state ${self.processPersistKey}`); //:`, self.persistedState);
-            if (cback) cback();
-        });
+        //////
+        //2.  The process is not busy with an existing call to refreshTopComments. If this is a newly started refresh interval, check the last interval for any overlaps. Adjust maxCommentsPerTopCommentsRefresh accordingly.
+        self.setMaxCommentsPerTopCommentsRefresh();
 
-        // 3. Init interval to resave process state to redis
-        if (self.processPersistInterval) return;
-        self.processPersistInterval = setInterval(() => {
-            self.persistProcessState();
-        }, self.processPersistIntervalTime);
+        return isBusy;
     }
+    setMaxCommentsPerTopCommentsRefresh() {
+        const self = this;
+        if (self.commentsCountForLastTopCommentsRefresh === null) {
+            self.overlapCountThisTopCommentsRefresh = 0;
+            return; // This may be the very first topCommentsRefresh since process start. Can't compute maxCommentsPerTopCommentsRefresh yet.
+        }
 
-    logInspectTopComments() { // util for debugging
-        const summTopComments = [];
-        this.topComments.comments.forEach((thisTopComment) => {
-            const thisSumm = {
-                id: thisTopComment.id,
-                body: thisTopComment.body,
-                points: thisTopComment.points,
-                totalPoints: thisTopComment.totalPoints,
-            };
-            summTopComments.push(thisSumm);
-        })
-        console.log(util.inspect(summTopComments, {depth: 5, colors: true}));
+        let newMaxCommentsCount = null;
+        if (self.overlapCountThisTopCommentsRefresh === 0) {
+            self.maxCommentsPerTopCommentsRefreshRecord.pop();
+            if (self.maxCommentsPerTopCommentsRefreshRecord.length){
+                newMaxCommentsCount = self.maxCommentsPerTopCommentsRefreshRecord[self.maxCommentsPerTopCommentsRefreshRecord.length-1];
+                newMaxCommentsCount = Math.ceil(newMaxCommentsCount);
+                console.warn(`There were no overlapping calls to storeNewTopCommentsStats. maxCommentsPerTopCommentsRefresh has been adjusted up: ${self.maxCommentsPerTopCommentsRefresh}->${newMaxCommentsCount}`);
+                console.warn(`Remaining maxCommentsPerTopCommentsRefreshRecords:`, self.maxCommentsPerTopCommentsRefreshRecord);
+            } else {
+                newMaxCommentsCount = null;
+                if (self.maxCommentsPerTopCommentsRefresh !== newMaxCommentsCount) console.warn(`maxCommentsPerTopCommentsRefresh will be reset to null after recovering from previous overlaps. No current max limit.`);
+            }
+        } else {
+            if (self.maxCommentsPerTopCommentsRefresh === null) self.maxCommentsPerTopCommentsRefresh = self.commentsCountForLastTopCommentsRefresh;
+            newMaxCommentsCount = self.maxCommentsPerTopCommentsRefresh - (self.maxCommentsPerTopCommentsRefresh * (self.loadAdjustPerTopCommentsRefreshOverlap * Math.min(self.overlapCountThisTopCommentsRefresh, self.maxOverlapsPerTopCommentsRefresh)));
+            newMaxCommentsCount = Math.max(newMaxCommentsCount, 10); // We need to be sure this never reaches 0 or process will stall.
+            newMaxCommentsCount = Math.ceil(newMaxCommentsCount);
+            if (self.maxCommentsPerTopCommentsRefreshRecord.length){
+                if (self.maxCommentsPerTopCommentsRefreshRecord[self.maxCommentsPerTopCommentsRefreshRecord.length-1] !== newMaxCommentsCount) {
+                    if (self.maxCommentsPerTopCommentsRefreshRecord[self.maxCommentsPerTopCommentsRefreshRecord.length-1] < newMaxCommentsCount) {
+                        console.warn(`Will now reset maxCommentsPerTopCommentsRefreshRecord because the previous record is lower than current. It became out of sync.`);
+                        self.maxCommentsPerTopCommentsRefreshRecord = [newMaxCommentsCount];
+                    } else {
+                        self.maxCommentsPerTopCommentsRefreshRecord.push(newMaxCommentsCount);
+                    }
+                }
+            } else {
+                self.maxCommentsPerTopCommentsRefreshRecord.push(newMaxCommentsCount);
+            }
+            console.warn(`There were ${self.overlapCountThisTopCommentsRefresh} overlapping calls to storeNewTopCommentsStats. maxCommentsPerTopCommentsRefresh was adjusted: ${self.maxCommentsPerTopCommentsRefresh}->${newMaxCommentsCount}`);
+        }
+
+        if (self.maxCommentsPerTopCommentsRefreshRecord.length > 100) console.warn(`maxCommentsPerTopCommentsRefreshRecord is getting long (${self.maxCommentsPerTopCommentsRefreshRecord.length} entries). Please inspect for memory leaks.`, self.maxCommentsPerTopCommentsRefreshRecord);
+        self.maxCommentsPerTopCommentsRefresh = newMaxCommentsCount;
+        self.overlapCountThisTopCommentsRefresh = 0;
     }
 
 }

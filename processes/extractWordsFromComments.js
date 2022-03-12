@@ -4,7 +4,7 @@ import {parse} from 'node-html-parser';
 import urlRegex from 'url-regex';
 import urlNormalize from 'normalize-url';
 import emojiUnicodeRegex from 'emojibase-regex';
-import emojiShortcodeRegex from 'emojibase-regex/shortcode-native';
+import emojiShortcodeRegex from 'emojibase-regex/shortcode';
 import yargs from 'yargs';
 import RedisClient from '../utils/redisClient.js';
 import commentModel from '../utils/objectModels/comment.js';
@@ -12,11 +12,10 @@ import wordModel from '../utils/objectModels/word.js';
 import symbolModel from '../utils/objectModels/symbol.js';
 import stopWords from '../utils/stopWords.js';
 
-import events from 'events';
-events.EventEmitter.defaultMaxListeners = Infinity;
+// import events from 'events';
+// events.EventEmitter.defaultMaxListeners = Infinity;
 
 const argv = yargs(process.argv.slice(2)).argv;
-
 
 const naturalWordTokenizer = new natural.WordTokenizer(); // is object (naturalWordTokenizer.tokenize(string)
 const naturalWordTokenizerPreserveContractions = new natural.RegexpTokenizer({pattern: /[^A-Za-zА-Яа-я0-9_'’]/}); // IF MODIFYING TO A GLOBAL REPLACE. a slightly modified natural WordTokenizer which adds "'" to non-split chars. https://regexr.com/69idj  https://github.com/NaturalNode/natural/blob/master/lib/natural/tokenizers/regexp_tokenizer.js#L86
@@ -27,7 +26,6 @@ naturalNGrams.setTokenizer(naturalWordTokenizerPreserveContractions);
 const naturalStemmer = natural.PorterStemmer; // is object (naturalStemmer.stem(string))
 const naturalNormalizer = natural.normalize; // is funcion (naturalNormalizer(array or string))
 
-
 const nodeHtmlParser = parse; // because their naming sucks
 
 class ExtractWordsFromComments {
@@ -37,24 +35,72 @@ class ExtractWordsFromComments {
     // Step 3: Store word object for every single word that is ALSO a symbol
     // Step 4: Store every bigram to redis as a word object
     // Step 5: Store every trigram to redis as a word object
-    // Step 6: As topWordStats continues to produce occurance counts - comments which contain topWords will be pointed accordingly, and maybe trend.
+    // Step 6: As topWordStats continues to produce occurance counts - comments which contain topWords will be pointed accordingly, then produce 2dGrams.
 
     constructor() {
         const self = this;
         this.redisClient = null;
 
+        this.extractRawCommentQueue = []; // We only extract words from comments 1 at a time. It has complex async logic and when many extractions overlap memory can overflow.
+        this.extractRawCommentQueueWarnLength = 500; // when do we start logging warnings that the queue is too large
+        this.extractRawCommentQueueClearLength = 1000; // when do we clear the queue so that new incoming comments cut to the front
+        this.cancelCurrentExtractRawCommentQueue = () => {}; // set below in processNextQueuedNewRawCommentExtraction. This is a safety switch that our code may call anytime we need to flush out the queue to keep this process healthy.
+
+        this.isProcessingExtractRawCommentQueue = false; // will be false only when extractRawCommentQueue has been fully emptied
+        this.queueSizeCountInterval = null; // for logging queue progress
+        this.queueSizeCountIntervalLength = 5000;
+        this.initQueueSizeCountInterval();
+
+        this.commentCount = {}; // {twitter: 762, reddit: etc...} for logging comment count every 5 seconds
+        this.commentCountInterval = null;
+        this.commentCountIntervalLength = 5000;
+        this.initCommentCountInterval();
+
+        console.log('A new extractWordsFromComments process has just started...');
         this.initRedisClient(() => {
             self.syncTrainingNotRelevant();
             self.initKeyspaceSubscriptions();
         });
     }
 
+    initQueueSizeCountInterval() {
+        const self = this;
+        if (self.queueSizeCountInterval) return;
+        self.queueSizeCountInterval = setInterval(() => {
+            console.log(`extractRawCommentQueue current length: ${this.extractRawCommentQueue.length}`);
+            if (this.extractRawCommentQueue.length >= this.extractRawCommentQueueWarnLength) {
+                console.warn(`extractRawCommentQueue is falling behind!`)
+            }
+            if (this.extractRawCommentQueue.length >= this.extractRawCommentQueueClearLength) {
+                console.error(`extractRawCommentQueue has gotten too large and will now be cleared!`);
+                self.extractRawCommentQueue = [];
+                // We must also be sure to manually cancel any active queue.
+                self.cancelCurrentExtractRawCommentQueue();
+                self.isProcessingExtractRawCommentQueue = false;
+            }
+        }, self.queueSizeCountIntervalLength);
+    }
+
+    initCommentCountInterval() {
+        const self = this;
+        if (self.commentCountInterval) return;
+        self.commentCountInterval = setInterval(() => {
+            for (let [commentSource, commentCount] of Object.entries(self.commentCount)) {
+                console.log(`Processed ${commentCount} new ${commentSource} comments in the last ${self.commentCountIntervalLength/1000} seconds.`);
+                self.commentCount[commentSource] = 0;
+            }
+        }, self.commentCountIntervalLength);
+    }
+
     initRedisClient(cback) {
         const self = this;
         self.redisClient = new RedisClient({
             onConnect: () => {
-                console.log('Connected new redis sub client for word extractor class.');
-                if(cback) cback();
+                console.log('Connected to locally hosted redis DBs for word extractor class.');
+                self.redisClient.initRemoteClient('commentFetcher', () => {
+                    console.log(`Connected to remotely hosted commentFetcher redis DB for word extractor class.`);
+                    if(cback) cback();
+                });
             }
         });
     }
@@ -63,31 +109,69 @@ class ExtractWordsFromComments {
         const self = this;
         this.redisClient.on('pmessage', function (matchedPattern, patternWithKey, action){
             if (action !== 'set') return;
-            // If this event was sent as part of the set pattern subcribed keyspace event, then it's "patternWithKey" will be: __keyspace@0__:comment:0b90a45d-283b-4716-aa14-ac9f99ac54b1
-            let rawCommentKey = patternWithKey;
-            rawCommentKey = rawCommentKey.replace('__keyspace@0__:', '');
-            self.redisClient.get(rawCommentKey, (comment) => {
-                self.redisClient.del(rawCommentKey); // We are going to reform the rawComment: into a comment:. Delete rawComment from redis.
-                if (!comment || !comment.originalBody) return;
-                comment.pendingSymbols = {};
-                self.sanitizeAndNormalizeCommentBody(comment, () => {
-                    self.preserveSymbolsInCommentBody(comment, () => {
-                        self.setStemmedCommentBody(comment, () => {
-                            self.extractWordSequences(comment, () => {
-                                self.setHighAndLowSymbols(comment, () => {
-                                    commentModel.saveCommentObject(comment, self.redisClient);
+            self.extractRawCommentQueue.push(patternWithKey);
+            if (!self.isProcessingExtractRawCommentQueue) self.processNextQueuedNewRawCommentExtraction();
+        }, 'commentFetcher');
+        this.redisClient.psubscribe('__keyspace@0__:rawComment*', 'commentFetcher');
+    }
+
+    processNextQueuedNewRawCommentExtraction(curProcessingQueue) {
+        // If this event was sent as part of the set pattern subcribed keyspace event, then it's "patternWithKey" will be: __keyspace@0__:comment:0b90a45d-283b-4716-aa14-ac9f99ac54b1
+        const self = this;
+
+        if (curProcessingQueue && curProcessingQueue.isCancelled) {
+            // Sometimes we manually cancel an active queue via self.cancelCurrentExtractRawCommentQueue(). This may occur when  extractRawCommentQueueClearLength has been reached (see initQueueSizeCountInterval), or perhaps
+            // some other health check or failsafe has deemed it necc. to make way for a fresh start on a new batch of rawComments and an existing loop must not continue, or block.
+            return; // We must assume that this current processNextQueuedNewRawCommentExtraction loop has become unhealthy and out of sync with flags such as self.isProcessingExtractRawCommentQueue. We must ONLY return and not change anything else.
+        }
+
+        if (curProcessingQueue && curProcessingQueue.length === 0) {
+            // looks like the queue has been finished. Reset our flag and this function will be called again later by our cback in initKeyspaceSubscriptions
+            self.isProcessingExtractRawCommentQueue = false;
+            return;
+        }
+
+        if (!curProcessingQueue) {
+            // looks like this is the first iteration on an external call to processNextQueuedNewRawCommentExtraction (probably from initKeyspaceSubscriptions cback)
+            curProcessingQueue = self.extractRawCommentQueue; // We don't shift off of the live queue because it introduces instability for a potentially orphaned loop that never ends, or sets isProcessingExtractRawCommentQueue back to false.
+            self.extractRawCommentQueue = [];
+            // console.warn(`Will now attempt word extraction on ${curProcessingQueue.length} new rawComments...`);
+            self.isProcessingExtractRawCommentQueue = true;
+            self.cancelCurrentExtractRawCommentQueue = () => {
+                curProcessingQueue.isCancelled = true;
+                console.warn(`An active extractRawCommentQueue was cancelled. There were ${curProcessingQueue.length} comments that were not processed.`);
+            };
+        }
+
+        let rawCommentKey = curProcessingQueue.shift();
+        rawCommentKey = rawCommentKey.replace('__keyspace@0__:', '');
+        self.redisClient.get(rawCommentKey, (comment) => {
+            if (self.commentCount[comment.source] === null) self.commentCount[comment.source] = 0;
+            ++self.commentCount[comment.source]; // track our count for logging
+
+            if (!comment || !comment.originalBody) {
+                console.warn(`extractWordsFromComments could not find ${rawCommentKey} in redis, or it was missing comment.originalBody: `, comment);
+                self.processNextQueuedNewRawCommentExtraction(curProcessingQueue);
+                return;
+            }
+            self.sanitizeAndNormalizeCommentBody(comment, () => {
+                self.preserveSymbolsInCommentBody(comment, () => {
+                    self.setStemmedCommentBody(comment, () => {
+                        self.extractWordSequences(comment, () => {
+                            self.setHighAndLowSymbols(comment, () => {
+                                commentModel.saveCommentObject(comment, self.redisClient, () => {
+                                    self.processNextQueuedNewRawCommentExtraction(curProcessingQueue);
                                 });
                             });
                         });
                     });
                 });
-
             });
-        });
-        this.redisClient.psubscribe('__keyspace@0__:rawComment*');
+        }, 'commentFetcher'); // end self.redisClient.get
     }
 
     sanitizeAndNormalizeCommentBody(comment, cback) { // alters comment in-place
+        const self = this;
         ///////////
         // 1. Take comment.originalBody, treat it like html, parse out text, then set the result to comment.body (overwriting whatever may have already been there)
         let sanitizedBody = '';
@@ -97,14 +181,28 @@ class ExtractWordsFromComments {
             sanitizedBody = tempDomEl.text; //.rawText;
         } catch (e) {
             console.warn(`Could not html parse comment.originalBody in comment:${comment.id}`, comment.originalBody, e);
-            return; // we can't keep this comment if it fails our parsing routing. No cback called.
+            return; // we can't keep this comment if it fails our parsing routine
         }
-        comment.body = sanitizedBody.replaceAll("’", "'"); // we only need one type of apostrophe
         // console.log(`Comment body: ${comment.body}`);
 
         ///////////////
-        // 2. Now we will normalize by expanding contractions and any other steps necc to make different word variations as uniform as possible
+        // 2. Now we will normalize to make different word variations as uniform as possible
         comment.normalizedBody = `${comment.body}`;
+
+        // we only need one type of apostrophe
+        // comment.body = sanitizedBody.replaceAll("’", "'");
+        self.replaceInCommentBody(comment, "’", "'");
+
+        // Normalize whitespace
+        // comment.normalizedBody = comment.normalizedBody.replace(/\u{2800}+/gum, ' '); // \u{2800} is the unicode for braile 0 dot symbol (looks like a space)
+        self.replaceInCommentBody(comment, /\u{2800}+/gum, ' '); // \u{2800} is the unicode for braile 0 dot symbol (looks like a space)
+
+        // Convert wacky charachters
+        // comment.normalizedBody = comment.normalizedBody.replace(/\u{2026}+/gum, '...'); // \u{2026} is the unicode for "…" charchter (a single charachter of 3 dots - elipses). This trips up urlNormalize and will now be converted into 3 "." chars.
+        self.replaceInCommentBody(comment, /\u{2026}+/gum, '...'); // \u{2026} is the unicode for "…" charchter (a single charachter of 3 dots - elipses). This trips up urlNormalize and will now be converted into 3 "." chars.
+        self.replaceInCommentBody(comment, '&amp;', '&'); // decode the & sign
+
+        // expand contractions BUT ONLY on comment.normalizedBody.
         let bodyTokens = naturalWordTokenizerPreserveContractions.tokenize(comment.normalizedBody);
         const normalizedBodyTokens = [];
         bodyTokens.forEach((thisToken) => {
@@ -149,6 +247,7 @@ class ExtractWordsFromComments {
 
     preserveSymbolsInCommentBody(comment, cback) {
         const self = this;
+        comment.pendingSymbols = {};
         self.preserveUrlsInCommentBody(comment, () => {
             self.preserveEmojiSymbolsInCommentBody(comment, () => {
                 self.preserveFinanceSymbolsInCommentBody(comment, 'stock', () => {
@@ -162,6 +261,10 @@ class ExtractWordsFromComments {
 
     preserveUrlsInCommentBody(comment, cback) { // alters comment in-place
         const self = this;
+        const escapeUrlForRegex = (url) => {
+            return url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Use this function when we are injecting a url string into a regex. Certain charachters within a URL need to be escaped for regex. https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
+        }
+
         // This function uses regex to locate urls within the comment body, then temporarily stores those URLs in comment.pendingSymbols (not saved to redis).
         // It then replaces the URL strings within comment.body with a "urlUid" string (which natural.js will respect as a single token - already "stemmed").
         // The comment.body can then be tokenized and stemmed in extractWordSequences without malforming the URL or misinterpreting it as multiple tokens.
@@ -175,8 +278,7 @@ class ExtractWordsFromComments {
         }
 
         // 1. Perform some alterations to the commentBody that will better support our regex based URL extraction below.
-        // Normalize whitespace
-        commentBody = commentBody.replace(/\u{2800}/gum, ' '); // \u{2800} is the unicode braile 0 dot symbol (looks like a space)
+
         // Convert markdown links to a raw link string. urlRegex mistakes format [http://foo.com](http://foo.com/bar/baz) for a single link.
         commentBody = commentBody.replace(/\[(.(?!\s))+\]\(/gm, '('); // https://regexr.com/5q85i - converts [http://foo.com](http://foo.com/bar/baz) to (http://foo.com/bar/baz)
         // next, we need to convert all urls wrapped in parenthesis/brackets (whether they were leftover from MD conversion above, or commenter intentionally put in parenths).
@@ -188,10 +290,14 @@ class ExtractWordsFromComments {
         }
         foundUrlsSecondPass.forEach((thisSecondPassUrl) => {
             if (/\)|\]$/.test(thisSecondPassUrl)) { // https://regexr.com/5q85i
-                // found a trailing parenth/bracket. Confirm there was originally an opening before stripping them both from commentBody
-                const thisSecondPassUrlNoClosing = thisSecondPassUrl.slice(0, -1);
-                commentBody = commentBody.replace('['+thisSecondPassUrl, thisSecondPassUrlNoClosing);
-                commentBody = commentBody.replace('('+thisSecondPassUrl, thisSecondPassUrlNoClosing);
+                // found a trailing parenth/bracket. Take it off now BUT only if we can confirm this is actually a closing parenthesis (not actually part of the URL as they are technically valid url chars)
+                const testIsClosingParenth = new RegExp(`\\([^)]*${escapeUrlForRegex(thisSecondPassUrl)}`, 'gm');
+                const isClosingParenth = testIsClosingParenth.test(commentBody);
+                if (isClosingParenth) {
+                    const thisSecondPassUrlNoClosing = thisSecondPassUrl.slice(0, thisSecondPassUrl.indexOf(')'));
+                    // console.warn(`Removed closing parenthesis from url ${thisSecondPassUrl} -> ${thisSecondPassUrlNoClosing}`);
+                    commentBody = commentBody.replace(thisSecondPassUrl, thisSecondPassUrlNoClosing);
+                }
             }
         });
 
@@ -249,7 +355,7 @@ class ExtractWordsFromComments {
                             assocs: tokenSymbolResult.assocs,
                         });
                         self.redisClient.set(symbolKey, symbolModel.minimizeForDb(newSymbolObj), () => {
-                            console.log(`Created new URL symbol object for ${symbolKey}`);
+                            // console.log(`Created new URL symbol object for ${symbolKey}`);
                             tokenSymbolResult.matchedSymbol = newSymbolObj;
                             resolve(tokenSymbolResult);
                         });
@@ -263,10 +369,13 @@ class ExtractWordsFromComments {
             tokenSymbolResults.forEach((tokenSymbolResult) => {
                 if (tokenSymbolResult.matchedSymbol) {
                     const thisUrlUid = `url${++idIncrement}symbol`;
-                    const thisUrlEscapedForRegex = tokenSymbolResult.token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // the string we are matching against needs to be escaped for regex. https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
+                    const thisUrlEscapedForRegex = escapeUrlForRegex(tokenSymbolResult.token); // the string we are matching against needs to be escaped for regex. https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
                     const newUrlRegex = new RegExp(thisUrlEscapedForRegex, 'gm'); // remember has to be double escaped cuz it's wrapped in string concat. https://regexr.com/5q5m8
-                    // comment.body = comment.body.replace(newUrlRegex, thisUrlUid);
                     self.replaceInCommentBody(comment, newUrlRegex, thisUrlUid);
+                    if (!comment.pendingSymbols) {
+                        console.error('No comment.pendingSymbols? Please inspect:', thisUrlUid, tokenSymbolResult, comment);
+                        return;
+                    }
                     comment.pendingSymbols[thisUrlUid] = tokenSymbolResult;
                 }
             });
@@ -506,7 +615,14 @@ class ExtractWordsFromComments {
         tokensToStems.forEach((thisTokenToStem) => {
             if (thisTokenToStem.stemmed.length > maxNgram) return; // The outcome from this stemming resulted in too long a sequence. Discard.
             const sequenceKey = thisTokenToStem.stemmed.join('_!!_'); // _!!_ is the hashHype word delimeter
-            reducedTokensToStems[sequenceKey] = reducedTokensToStems[sequenceKey] || [];
+
+            // Be careful because we are now assigning dynamic, user provided naming to the reducedTokensToStems object.
+            if (reducedTokensToStems.__proto__[sequenceKey] || (reducedTokensToStems[sequenceKey] && !Array.isArray(reducedTokensToStems[sequenceKey])) ){
+                console.warn(`Will not process extracted word "${sequenceKey}" on comment:${commentData.id} because it is the name of a prototype value. Potential security flag. Comment body:`, commentData.body);
+                return;
+            }
+
+            if (!reducedTokensToStems[sequenceKey]) reducedTokensToStems[sequenceKey] = [];
             reducedTokensToStems[sequenceKey].push(thisTokenToStem.tokenized.join(' '));
         });
         // if (commentData.normalizedBody.indexOf("'") !== -1) console.log(commentData.body,  util.inspect(reducedTokensToStems, {depth: 5, colors: true}))
@@ -552,23 +668,30 @@ class ExtractWordsFromComments {
             // Determine the index(es) of this word within comment.stemmedBody. This is saved in our wordRef object, attached to the comment. Used in forming 2dGrams later.
             let indexesOfWordInStemmedBody = [];
             let searchForWordStr = stemSequence.join(' ');
-            const matches = commentData.stemmedBody.matchAll(new RegExp(searchForWordStr,'g'));
+            let searchWordRegExp = null;
+            try {
+                searchWordRegExp = new RegExp(searchForWordStr,'g')
+            } catch (e) {
+                console.error(`Could not create a RegExp to search for word "${searchForWordStr}" within comment:${commentData.id}`, commentData.body, e);
+                continue;
+            }
+            const matches = commentData.stemmedBody.matchAll(searchWordRegExp);
             for (const match of matches) indexesOfWordInStemmedBody.push(match.index);
+
             // ALSO determine the index(es) of each raw word seq associated with this word within comment.body. These indexes are used to search for a word within comment.body later (like when applying point viz to readable comment body in UI)
             let indexesOfWordInRawBody = [];
             allRawTokenSequences.forEach((thisRawTokensSeq) => {
-                const matches = commentData.body.matchAll(new RegExp(thisRawTokensSeq,'g'));
+                let searchRawWordRegExp = null;
+                try {
+                    searchRawWordRegExp = new RegExp(thisRawTokensSeq,'g')
+                } catch (e) {
+                    console.error(`Could not create a RegExp to search for raw word "${thisRawTokensSeq}" within comment:${commentData.id}`, commentData.body, e);
+                    return;
+                }
+                const matches = commentData.body.matchAll(searchRawWordRegExp);
                 for (const match of matches) indexesOfWordInRawBody.push(match.index);
             });
             indexesOfWordInRawBody = [...new Set(indexesOfWordInRawBody)]; // remove dups
-
-            // Create the word and wordRef objects
-            const newWordObject = wordModel.createWordObject({
-                type: wordType,
-                value: stemSequence, // sequence array - NOT stringified
-                rawWords: allRawTokenSequences, // array of space delimeted word strings
-                hasSymbols: symbolsInWord // array of symbol keys
-            });
 
             const wordRef = wordModel.createWordRefObject({ // Store a wordRef object on the comment
                 word: sequenceKey,
@@ -581,23 +704,12 @@ class ExtractWordsFromComments {
             commentData.words[sequenceKey] = wordRef;
 
             wordSavePromises.push(new Promise( (resolve, reject) => {
-                const redisWordKey = wordModel.generateWordObjectKey(newWordObject);
-                self.redisClient.get(redisWordKey, (existingWordObj) => {
-                    let saveWordObject = newWordObject;
-                    if (existingWordObj) {
-                        saveWordObject = wordModel.merge(existingWordObj, newWordObject);
-                    }
-
-                    // Save the word object to redis
-                    self.redisClient.set(redisWordKey, saveWordObject);
-
-                    // Add a foundAt tstamp for this word and save this comment to it's WordToCommentsIndex (creating one if it does not yet exist)
-                    wordModel.addFoundAtTstampForWord(sequenceKey, commentData, self.redisClient, () => { // this must be done BEFORE registerWordToCommentsIndex or the foundAt tstamp will be cancelled as dup word by same user.
-                        wordModel.registerWordToCommentsIndex(redisWordKey.replace('word:', ''), commentData, self.redisClient, () => {
-                            resolve();
-                        });
+                // Add a foundAt tstamp for this word and save this comment to it's WordToCommentsIndex (creating one if it does not yet exist)
+                wordModel.addFoundAtTstampForWord(sequenceKey, commentData, self.redisClient, () => { // this must be done BEFORE registerWordToCommentsIndex or the foundAt tstamp will be cancelled as dup word by same user.
+                    wordModel.registerWordToCommentsIndex(sequenceKey, commentData, self.redisClient, () => {
+                        resolve();
                     });
-                }); // end self.redisClient.get(redisWordKey
+                });
             })); // end wordSavePromises.push
         } // end for reducedTokensToStems loop
 

@@ -97,7 +97,13 @@ class GNav extends React.Component {
 
     showGNavMainMenu() {
         const mainMenu = (
-            <GNavMainMenu modal={this.props.modal} gNav={this}/>
+            <GNavMainMenu
+                modal={this.props.modal}
+                gNav={this}
+                removeActiveSymbolType={this.props.removeActiveSymbolType}
+                addActiveSymbolType={this.props.addActiveSymbolType}
+                activeSymbolTypes={this.props.activeSymbolTypes}
+            />
         );
         this.props.modal.show({
             title: '',

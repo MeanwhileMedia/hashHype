@@ -4,8 +4,8 @@ const trendObjModel = {
 
     createTrendObject: function(props = {}) {
 
-        if (!props.word || !props.wordKey) {
-            console.error(`Must provide word and wordkey prop when instantiating a new trend object. Props received:`, props);
+        if (!props.word) {
+            console.error(`Must provide word prop when instantiating a new trend object. Props received:`, props);
             return null;
         }
         if (!props.rank) {
@@ -17,8 +17,10 @@ const trendObjModel = {
             class: 'trend',
             trendSrc: props.trendSrc || 'stats:topComments', // the absKey to the redis object which originally surfaced this trend.
             word: props.word || null, // the word string that represents this trene. i.e: GME_!!_moon_!!_today
-            wordKey: props.wordKey || null, // the absKey to the word that this trend is represented by
+
             symbolKey: props.symbolKey || null, // the absKey to the symbol that this trend is represented by
+            symbolType: props.symbolType || null,
+
             rank: props.rank || null, // this trend's current position within trendSrc (where 1st rank is the trend which represents the 1st ranked comment within topCommentStats.comments)
 
             // histDur is the window of time in which the below historical data was calculated. See topTrendStats.rankHistoryTotalDuration
@@ -41,7 +43,7 @@ const trendObjModel = {
             // decay is a measure of what degree of significance this trend has lost over the time represented inside rankHistory. The higher the number, the less signicant this trend is (with a decay
             // of 1 suggesting this trend is basically irrelevant). This is calculated in topTrendStats.js, and is based multiple factors. I.e: a trend starts to decay if it's ranking is too consistent over time (low volatility).
             decay: props.decay || 0, // int between 0 and 1.
-            
+
         }
 
         return trendObj;

@@ -85,18 +85,19 @@ class ArchiveKeysToDisk {
         self.changeEventThrottle = 5000; //ms, maximum for how often this process will run redisKeyspaceSubscriptions actions on any given channel
         self.changeEventTstamps = {}; // a record used below in subscribeToRedisKeyspaceEvents when determining if our changeEventThrottle time has elapsed yet.
 
+        console.log('A new archiveKeysToDisk process has just started...');
         self.initRedisClient(() => {
             self.initLevelDbClient(() => {
                 self.subscribeToRedisKeyspaceEvents();
             });
         });
     }
-    
+
     initRedisClient(cback) {
         const self = this;
         self.redisClient = new RedisClient({
             onConnect: () => {
-                console.log('Connected new redis sub client for ArchiveKeysToDisk class.');
+                console.log('Connected to locally hosted redis DBs for ArchiveKeysToDisk class.');
                 if(cback) cback();
             }
         });

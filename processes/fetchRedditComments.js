@@ -2,6 +2,7 @@ import snoowrap from 'snoowrap';
 import yargs from 'yargs';
 import RedisClient from '../utils/redisClient.js';
 import commentModel from '../utils/objectModels/comment.js';
+import redditClientConfig from '../utils/redditClient-config.js';
 
 const argv = yargs(process.argv.slice(2)).argv;
 
@@ -11,14 +12,13 @@ const argv = yargs(process.argv.slice(2)).argv;
 class Reddit {
     constructor() {
         //Config options
-        this.subRedditName = 'wallstreetbets'; //'Superstonk'; //'wallstreetbets';
+        this.fetchSubReddits = ['wallstreetbets', 'CryptoCurrency'];
         this.fetchLoopIntervalTime = 5000;
 
         //Spam comment rules
         this.maxCommentLength = 280; //kinda like twitter.
 
         //Local vars
-        this.fetchLoopInterval = null;
         this.redditApiClient = null;
         this.redisClient = null;
 
@@ -26,11 +26,12 @@ class Reddit {
         this.recentCommentRecordMaxLength = 50;
         this.recentCommentRecord = [];
 
+        console.log('A new fetchRedditComments process has just started...');
         const self = this;
         self.initRedisClient(() => {
             self.syncTrainingNotRelevant();
             self.createNewApiClient();
-            self.initFetchLoop();
+            self.initFetchLoopsForAllSubReddits();
         });
     }
 
@@ -38,38 +39,48 @@ class Reddit {
         const self = this;
         this.redisClient = new RedisClient({
             onConnect: () => {
-                console.log('Connected new redis sub client for topCommentStats class.');
+                console.log('Connected to locally hosted redis DBs for topCommentStats class.');
                 if(cback) cback();
             }
         });
     }
 
-    initFetchLoop() {
-        if (this.fetchLoopInterval) clearInterval(this.fetchLoopInterval);
-        this.fetchLoopInterval = setInterval( () => {
-            this.fetchCommentsForSubreddit(this.subRedditName, (rawComments) =>{
+    initFetchLoopsForAllSubReddits(thisSubRedditIndex = 0) {
+        const self = this;
+        const thisSubReddit = self.fetchSubReddits[thisSubRedditIndex];
+        if (!thisSubReddit) return;
+        self.initFetchLoop(thisSubReddit);
+        setTimeout(() => {
+            self.initFetchLoopsForAllSubReddits(++thisSubRedditIndex);
+        }, 1000); // offset fetch loops per subreddit as to better distribute CPU load
+    }
+
+    initFetchLoop(thisSubReddit) {
+        const self = this;
+        self.fetchLoopInterval = setInterval( () => {
+            self.fetchCommentsForSubreddit(thisSubReddit, (rawComments) =>{
                 const commentObjects = [];
                 rawComments.forEach((rawComment) => {
-                    if(this.isDupComment(rawComment) || this.isDiscardComment(rawComment)) return;
-                    this.createCommentObjects(rawComment, commentObjects);
+                    if(self.isDupComment(rawComment) || self.isDiscardComment(rawComment)) return;
+                    self.createCommentObjects(rawComment, commentObjects, thisSubReddit);
                 });
-                this.storeCommentsToRedis(commentObjects);
+                self.storeCommentsToRedis(commentObjects, thisSubReddit);
             });
-        }, this.fetchLoopIntervalTime);
+        }, self.fetchLoopIntervalTime);
     }
 
     createNewApiClient() {
         this.redditApiClient = new snoowrap({
-            userAgent: 'code563',
-            clientId: 'CRczORkXj04qiQ',
-            clientSecret: 'dwC0N8a9H0dsM2j8qrU8O7WYc4mt1g',
-            refreshToken: '517486034553-idlmDwRFIA_1o1iWE2SJuFy3UUwq-Q'
+            userAgent: redditClientConfig.userAgent,
+            clientId: redditClientConfig.clientId,
+            clientSecret: redditClientConfig.clientSecret,
+            refreshToken: redditClientConfig.refreshToken
         });
     }
 
     fetchCommentsForSubreddit(subName, cback) {
         if(!subName) {
-            console.log('Must provide subName.');
+            console.error('Must provide subName.');
             return;
         }
         this.redditApiClient.getNewComments(subName).then(cback).catch((err) => { // https://www.reddit.com/dev/api/#GET_new
@@ -78,7 +89,7 @@ class Reddit {
         });
     }
 
-    createCommentObjects(comment, commentObjects) {
+    createCommentObjects(comment, commentObjects, subRedditName) {
         const self = this;
         const createdUtc = comment.created_utc || Date.now()/1000; // Reddit reports tstamps in SECONDS
 
@@ -107,6 +118,7 @@ class Reddit {
         }
 
         const thisCommentObject = commentModel.createCommentObject({
+            source: `reddit_${subRedditName}`,
             body: comment.body, // we only use reddit's comment.body temporarily in our "isDiscardComment" function below. This gets reset in the extractWordsFromComments process from a parsed/sanitized originalBody.
             originalBody: comment.body_html,
             author: {name: comment.author.name},
@@ -122,9 +134,9 @@ class Reddit {
         // }
     }
 
-    storeCommentsToRedis(commentObjects) {
+    storeCommentsToRedis(commentObjects, thisSubReddit) {
         const self = this;
-        console.log(`Now storing ${commentObjects.length} comments to redis...`);
+        console.log(`Stored ${commentObjects.length} r/${thisSubReddit} comments in the last ${self.fetchLoopIntervalTime/1000} seconds.`);
         commentObjects.forEach((comment) => {
             self.redisClient.set(`rawComment:${comment.id}`, comment);
         });
@@ -171,7 +183,7 @@ class Reddit {
         const allCapsBody = rawComment.body.toUpperCase();
         if (allCapsBody === rawComment.body) {
             shouldDiscard = true;
-            console.warn(`Comment will be discarded because it was in all caps. body:`, rawComment.body)
+            // console.warn(`Comment will be discarded because it was in all caps. body:`, rawComment.body)
             return shouldDiscard;
         }
 

@@ -20,7 +20,8 @@ class TopCommentStats extends React.Component {
         this.state = {
             pageIsReady: false, // all page content will have 0 opacity until this is set to true
             freezeState: false, // set to true and all calls to receiveNewState (from our server socket) will be discarded.
-            comments: [],
+            comments: [], // all the comments received from server (stats:topComments) of all symbol types
+            activeSymbolTypes: ['stock'], // ['coin', 'stock', etc]
             focusedTopComment: null,
             topCommentsLastUpdated: Date.now(), // when was the last time we got a fresh stats:topComments from the server
             topCommentsVizType: 'barRace', // barRace or spinWheel
@@ -74,6 +75,19 @@ class TopCommentStats extends React.Component {
         });
     }
 
+    addActiveSymbolType(type) {
+        const newSymbolTypes = [...this.state.activeSymbolTypes];
+        if (newSymbolTypes.indexOf(type) === -1) newSymbolTypes.push(type);
+        this.setState({activeSymbolTypes: newSymbolTypes});
+    }
+    removeActiveSymbolType(type) {
+        const newSymbolTypes = [...this.state.activeSymbolTypes];
+        const existingSymbolTypeIndex = newSymbolTypes.indexOf(type);
+        if (existingSymbolTypeIndex === -1) return;
+        newSymbolTypes.splice(existingSymbolTypeIndex, 1);
+        this.setState({activeSymbolTypes: newSymbolTypes});
+    }
+
     setTopCommentsVizType(type = 'barRace') { // 'barRace', 'spinWheel', or 'toggle'
         if (type === 'toggle') {
             type = 'spinWheel';
@@ -97,12 +111,22 @@ class TopCommentStats extends React.Component {
         return this.state.topCommentsVizType;
     }
 
-    createCommentVisEl() {
+    getFilteredTopComments() {
+        const self = this;
+        let topComments = [];
+        self.state.activeSymbolTypes.forEach((thisSymbolType) => {
+            if (!self.state.comments[thisSymbolType]) return;
+            topComments = topComments.concat(self.state.comments[thisSymbolType]);
+        });
+        return topComments;
+    }
+
+    createCommentVisEl(topComments) {
         let commentVisEl;
         if (!this.state.topCommentsVizType || this.state.topCommentsVizType === 'barRace') {
             commentVisEl = (
                 <BarRace
-                    topComments={this.state.comments}
+                    topComments={topComments} activeSymbolTypes
                     topCommentsLastUpdated={this.state.topCommentsLastUpdated}
                     focusTopComment={this.focusTopComment.bind(this)}
                     focusedTopComment={this.state.focusedTopComment}
@@ -115,7 +139,7 @@ class TopCommentStats extends React.Component {
         } else {
             commentVisEl = (
                 <SpinWheel
-                    topComments={this.state.comments}
+                    topComments={topComments}
                     topCommentsLastUpdated={this.state.topCommentsLastUpdated}
                     focusTopComment={throttleDebounce.throttle(200, this.focusTopComment).bind(this)}
                     focusedTopComment={this.state.focusedTopComment}
@@ -134,7 +158,8 @@ class TopCommentStats extends React.Component {
         const css = styles.generate(this);
         const StyleRoot = Radium.StyleRoot;
 
-        const commentVisEl = this.createCommentVisEl();
+        const topComments = this.getFilteredTopComments();
+        const commentVisEl = this.createCommentVisEl(topComments);
 
         let loadSpinnerEl = null;
         if (!this.state.pageIsReady) {
@@ -152,9 +177,12 @@ class TopCommentStats extends React.Component {
                 <Modal content={this.state.modalContent} modal={this.modalControls} />
                 <GNav
                     ref={this.gNavRef}
-                    topComments={this.state.comments}
+                    topComments={topComments}
                     modal={this.modalControls}
                     setTopCommentsVizType={this.setTopCommentsVizType.bind(this)}
+                    addActiveSymbolType={this.addActiveSymbolType.bind(this)}
+                    removeActiveSymbolType={this.removeActiveSymbolType.bind(this)}
+                    activeSymbolTypes={this.state.activeSymbolTypes}
                     topCommentsVizType={this.state.topCommentsVizType}
                     focusedTopComment={this.state.focusedTopComment}
                 />
@@ -173,21 +201,23 @@ class TopCommentStats extends React.Component {
     focusNextTopComment() {
         const self = this;
         if (!this.state.focusedTopComment) return;
+        const topComments = self.getFilteredTopComments();
         const curRank = this.state.focusedTopComment.rankRender;
-        let nextTopComment = this.state.comments.find(thisTopComment => thisTopComment.rankRender === curRank + 1);
-        if (!nextTopComment) nextTopComment = this.state.comments.find(thisTopComment => thisTopComment.rankRender === 1);
+        let nextTopComment = topComments.find(thisTopComment => thisTopComment.rankRender === curRank + 1);
+        if (!nextTopComment) nextTopComment = topComments.find(thisTopComment => thisTopComment.rankRender === 1);
         setTimeout(() => self.focusTopComment(nextTopComment), 0); // when passing functions into input event listeners (keyboard controls) should wait until next tick so all registered events have time to process.
     }
     focusPrevTopComment() {
         const self = this;
         if (!self.state.focusedTopComment) return;
+        const topComments = self.getFilteredTopComments();
         const curRank = self.state.focusedTopComment.rankRender;
         const targetRank = curRank - 1;
         let prevTopComment;
         if (targetRank < 1) {
-            self.state.comments.forEach(thisTopComment => { if (thisTopComment.rankRender > targetRank) prevTopComment = thisTopComment });
+            topComments.forEach(thisTopComment => { if (thisTopComment.rankRender > targetRank) prevTopComment = thisTopComment });
         } else {
-            prevTopComment = self.state.comments.find(thisTopComment => thisTopComment.rankRender === targetRank);
+            prevTopComment = topComments.find(thisTopComment => thisTopComment.rankRender === targetRank);
         }
         setTimeout(() => self.focusTopComment(prevTopComment), 0);
     }

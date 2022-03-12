@@ -38,6 +38,8 @@ googleApiServiceCreds.json
 deployCodeSftp-config.js
 redisClient-config.js
 googleClient-config.js
+redditClient-config.js
+twitterClient-config.js
 hbCodeChecker-config.js
 nodeMailer-config.js
 flushCDNCache-config.js

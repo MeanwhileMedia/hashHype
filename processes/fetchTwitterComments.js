@@ -1,6 +1,9 @@
+import util from 'util';
 import yargs from 'yargs';
 import { ETwitterStreamEvent, TweetStream, TwitterApi, ETwitterApiError } from 'twitter-api-v2';
 import RedisClient from '../utils/redisClient.js';
+import commentModel from '../utils/objectModels/comment.js';
+import twitterClientConfig from '../utils/twitterClient-config.js';
 
 const argv = yargs(process.argv.slice(2)).argv;
 
@@ -9,15 +12,27 @@ const argv = yargs(process.argv.slice(2)).argv;
 // The other processes will seperately grab from redis for language processing.
 class FetchTwitterComments {
     constructor() {
-        //This process keeps track of which comments were recently fetched it doesn't store duplicates to redis.
-        this.recentCommentRecordMaxLength = 50;
-        this.recentCommentRecord = [];
-
         const self = this;
+        self.twitterApiClient = null;
+        self.twitterApiClientStream = null;
+
+        self.commentCountLastInterval = 0; // For logging our comment volume.]
+        self.commentCountIntervalLength = 5000; // ms, how long should we count comments before we log the sum and restart. Set it to same as reddit fetchLoopIntervalTime for easy volume comparison.
+        self.commentCountInterval = null;
+        self.initCommentCountInterval();
+
+        //This process keeps track of which comments were recently fetched it doesn't store duplicates to redis.
+        self.recentCommentRecordMaxLength = 200;
+        self.recentCommentRecord = [];
+
+        console.log('A new fetchTwitterComments process has just started...');
         self.initRedisClient(() => {
             self.syncTrainingNotRelevant();
-            self.createNewApiClient();
-            // JWW stopping init stream connection
+            self.createNewApiClient(() => {
+                self.initTwitterSampleStream(() => {
+                    self.initTwitterSampleStreamListeners();
+                });
+            });
         });
     }
 
@@ -25,27 +40,103 @@ class FetchTwitterComments {
         const self = this;
         this.redisClient = new RedisClient({
             onConnect: () => {
-                console.log('Connected new redis sub client for topCommentStats class.');
-                if(cback) cback();
+                console.log('Connected to locally hosted redis DBs for topCommentStats class.');
+                if (cback) cback();
             }
         });
     }
 
-    createNewApiClient() {
-        // JWW stopping
+    createNewApiClient(cback) {
+        this.twitterApiClient = new TwitterApi(twitterClientConfig.bearerToken);
+        if (cback) cback();
     }
 
-    storeCommentsToRedis(commentObjects) { // JWW stopping implement
+    initTwitterSampleStream(cback) {
+        this.twitterApiClientStream = this.twitterApiClient.v2.sampleStream({
+            autoConnect: false,
+            'expansions': ['author_id'], //['author_id', 'attachments.media_keys'],
+            'tweet.fields': ['created_at', 'lang'],
+            'user.fields': ['username'],
+            // 'media.fields': ['type', 'url', 'preview_image_url']
+        });
+        this.twitterApiClientStream.on(ETwitterStreamEvent.Connected, () => {
+            console.log('Twitter sample stream is connected...');
+            if (cback) cback();
+        });
+        this.twitterApiClientStream.on(ETwitterStreamEvent.ConnectionError, (err) => {
+            console.error('Twitter sample stream connection error:', err);
+        });
+        this.twitterApiClientStream.on(ETwitterStreamEvent.ConnectionClosed, (err) => {
+            console.log('Twitter sample stream connection was closed.', err);
+        });
+        this.twitterApiClientStream.on(ETwitterStreamEvent.Error, (err) => {
+            console.error('Twitter sample stream error:', util.inspect(err, {depth: 5, colors: true}));
+        });
+        this.twitterApiClientStream.connect({ autoReconnect: true, autoReconnectRetries: Infinity });
+    }
+
+    initTwitterSampleStreamListeners() {
+        // Emitted on Tweet
         const self = this;
-        console.log(`Now storing ${commentObjects.length} comments to redis...`);
-        commentObjects.forEach((comment) => {
-            self.redisClient.set(`rawComment:${comment.id}`, comment);
+        self.twitterApiClientStream.on(ETwitterStreamEvent.Data, (data) => {
+            //console.log('New tweet: ', util.inspect(data, {depth: 5, colors: true}));
+            if (!data ||
+                !data.data ||
+                !data.data.id ||
+                !data.data.lang ||
+                !data.data.text ||
+                !data.data.author_id ||
+                !data.data.created_at ||
+                !data.includes ||
+                !data.includes.users
+            ) {
+                console.warn(`Incomplete tweet data will be discarded:`, util.inspect(data, {depth: 5, colors: true}));
+            }
+
+            // We currently only process english tweets
+            if (data.data.lang !== 'en') return; // && data.data.lang !== 'und') return; // 'und' - undetermined - is usually a tweet that is just a bunch of mentions or hashTags without actual wording.
+
+            if (self.isDupComment(data.data.id)) return;
+
+            const author = data.includes.users.find(user => user.id === data.data.author_id);
+            if (!author) console.warn(`Could not identify author username on tweet. Will be discarded:`, util.inspect(data, {depth: 5, colors: true}));
+
+            const rawComment = commentModel.createCommentObject({
+                source: 'twitter_sampleStream',
+                body: data.data.text, // we only use reddit's comment.body temporarily in our "isDiscardComment" function below. This gets reset in the extractWordsFromComments process from a parsed/sanitized originalBody.
+                originalBody: data.data.text,
+                author: {name: author.username},
+                createdUtc: new Date(data.data.created_at).getTime(),
+                // wordAssocs: wordAssocs
+            });
+
+            if (self.isDiscardComment(rawComment)) return;
+
+            self.storeCommentToRedis(rawComment);
         });
     }
 
-    isDupComment(rawComment) { // JWW stopping implement
-        if (this.recentCommentRecord.indexOf(rawComment.id) !== -1) return true;
-        this.recentCommentRecord.unshift(rawComment.id);
+    storeCommentToRedis(rawComment) {
+        const self = this;
+        self.redisClient.set(`rawComment:${rawComment.id}`, rawComment);
+        ++self.commentCountLastInterval;
+    }
+
+    initCommentCountInterval() {
+        const self = this;
+        if (self.commentCountInterval) return;
+        self.commentCountInterval = setInterval(() => {
+            console.log(`Stored ${self.commentCountLastInterval} twitter comments in the last ${self.commentCountIntervalLength/1000} seconds.`);
+            self.commentCountLastInterval = 0;
+        }, self.commentCountIntervalLength);
+    }
+
+    isDupComment(twitterCommentId) {
+        if (this.recentCommentRecord.indexOf(twitterCommentId) !== -1) {
+            console.warn(`Comment with twitter ID ${twitterCommentId} was already stored. Will discard dup.`);
+            return true;
+        }
+        this.recentCommentRecord.unshift(twitterCommentId);
         this.recentCommentRecord = this.recentCommentRecord.slice(0, this.recentCommentRecordMaxLength);
         return false;
     }
@@ -84,7 +175,7 @@ class FetchTwitterComments {
         const allCapsBody = rawComment.body.toUpperCase();
         if (allCapsBody === rawComment.body) {
             shouldDiscard = true;
-            console.warn(`Comment will be discarded because it was in all caps. body:`, rawComment.body)
+            // console.warn(`Comment will be discarded because it was in all caps. body:`, rawComment.body)
             return shouldDiscard;
         }
 

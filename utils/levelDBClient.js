@@ -267,11 +267,11 @@ class LevelDBClient {
 
             const endTime = Date.now();
             console.log(`Successfully ran levelDb getMany command for ${pendingReadQueue.length} keys. ${self.readQueue.length} queued commands remain...`);
-            const readSpeed = Math.ceil(pendingReadQueue.length / ((endTime-startTime)/1000));
-            self.readSpeedHistory = self.readSpeedHistory || [];
-            self.readSpeedHistory.splice(500);
-            self.readSpeedHistory.push(readSpeed);
-            console.warn(`LevelDBClient just ran ${readSpeed} read commands per second (rps). The average is ${Math.ceil(mean(self.readSpeedHistory))}rps.`);
+            // const readSpeed = Math.ceil(pendingReadQueue.length / ((endTime-startTime)/1000));
+            // self.readSpeedHistory = self.readSpeedHistory || [];
+            // self.readSpeedHistory.splice(500);
+            // self.readSpeedHistory.push(readSpeed);
+            // console.warn(`LevelDBClient just ran ${readSpeed} read commands per second (rps). The average is ${Math.ceil(mean(self.readSpeedHistory))}rps.`);
 
             allValsJson.forEach((thisValJson, thisValIndex) => {
                 let val;

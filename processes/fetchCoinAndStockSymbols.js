@@ -14,6 +14,7 @@ class FetchCoinAndStockSymbols {
         }
         this.fetchLoopIntervalTime = 43200000; // every 12 hours
 
+        console.log('A new fetchCoinAndStockSymbols process has just started...');
         this.redisClient = null;
         this.initRedisClient(() => {
             self.initFetchLoop();
@@ -24,7 +25,7 @@ class FetchCoinAndStockSymbols {
         const self = this;
         self.redisClient = new RedisClient({
             onConnect: (client) => {
-                console.log('Connected new redis sub client for FetchCoinAndStockSymbols class.');
+                console.log('Connected to locally hosted redis DBs for FetchCoinAndStockSymbols class.');
                 if(cback) cback();
             }
         });

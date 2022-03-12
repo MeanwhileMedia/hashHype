@@ -81,6 +81,7 @@ const uiServer = {
     ],
 
     init() {
+        console.log('A new uiServer process has just started...');
         uiServer.initRedisClient( () => {
             uiServer.initKoaServer();
             uiServer.hbClientSocketDbResponses_admin = new HbClientSocketDbResponses_admin({

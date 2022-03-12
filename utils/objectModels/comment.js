@@ -7,6 +7,7 @@ const commentObjModel = {
         const commentObj = {
             class: 'comment',
             id: uuidv4(),
+            source: props.source || null, // 'reddit_wsb', 'twitter_sampleStream', etc
             body: props.body || null, // comment.body is the renderable string. The closest (sanitized) representation of what was orignially posted by commenter.
             originalBody: props.originalBody || null, // comment.body gets maniplulated to format symbols/urls/etc. We keep a copy of the untouched originalBody too.
             normalizedBody: props.normalizedBody || null, // this is comment.body with contractions expanded + more. See extractWordsFromComments.sanitizeAndNormalizeCommentBody
@@ -71,6 +72,13 @@ const commentObjModel = {
         commentObjModel.savePointsRecords(commentObj, redisClient, () => {
             commentObjModel.saveWordsFor2dGram(commentObj, redisClient, () => {
                 if (cback) cback(commentObj);
+            });
+        });
+    },
+    deleteAuxiliaryData: function(commentObj, redisClient, cback) {
+        redisClient.del(`comment:${commentObj.id}:pointsRecords`, () => {
+            redisClient.del(`comment:${commentObj.id}:wordsFor2dGram`, () => {
+                if (cback) cback();
             });
         });
     },
@@ -153,6 +161,14 @@ const commentObjModel = {
             });
         });
     },
+
+    deleteCommentObject: function(commentObj, redisClient, cback) {
+        commentObjModel.deleteAuxiliaryData(commentObj, redisClient, () => {
+            redisClient.del(`comment:${commentObj.id}`, () => {
+                if (cback) cback();
+            });
+        });
+    }
 
 }; // end commentObjModel
 
