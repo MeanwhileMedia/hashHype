@@ -37,7 +37,7 @@ module.exports = {
                     // appendfilename: 'persistDb.aof',
 
                     // Memory settings
-                    maxmemory: '1gb',
+                    maxmemory: '900mb',
                     'maxmemory-policy': 'allkeys-lru',
                     'maxmemory-samples': 5,
 
@@ -45,7 +45,10 @@ module.exports = {
                     'notify-keyspace-events': 'K$l',
 
                     // Buffer limits. HashHype sets pubsub higher than default to allow for more data to be sent in messages. (redis default is 'pubsub 32mb 8mb 60')
-                    'client-output-buffer-limit': 'pubsub 1024mb 256mb 60'
+                    'client-output-buffer-limit': 'pubsub 1024mb 256mb 60',
+
+                    // Redis should not block all commands if the latest RDB snapshot failed. We will count on the next snapshot succeeding and let the app continue as normal.
+                    'stop-writes-on-bgsave-error': 'no'
                 }
             }
         },
@@ -86,7 +89,7 @@ module.exports = {
                     // appendfilename: 'persistDb.aof',
 
                     // Memory settings
-                    maxmemory: '1gb',
+                    maxmemory: '1100mb',
                     'maxmemory-policy': 'volatile-lru', // evict keys by trying to remove the less recently used (LRU) keys first, but ONLY among keys that have an expire set.
                     'maxmemory-samples': 10,
 
@@ -94,7 +97,10 @@ module.exports = {
                     // 'notify-keyspace-events': 'K$l',
 
                     // Buffer limits. HashHype sets pubsub higher than default to allow for more data to be sent in messages. (redis default is 'pubsub 32mb 8mb 60')
-                    'client-output-buffer-limit': 'pubsub 1024mb 256mb 60'
+                    'client-output-buffer-limit': 'pubsub 1024mb 256mb 60',
+
+                    // Redis should not block all commands if the latest RDB snapshot failed. We will count on the next snapshot succeeding and let the app continue as normal.
+                    'stop-writes-on-bgsave-error': 'no'
                 }
             }
         },

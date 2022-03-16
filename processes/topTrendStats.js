@@ -270,7 +270,7 @@ class TopTrendStats {
         trend.rankClusterStdDev = clusterRankStdDev;
 
         const percOfTimeWasRanked = 1 - (historiesNotRankedCount / trend.rankHistory.length);
-        const percUnusedStdDeviation = 1 - (clusterRankStdDev / (this.totalRankPlaces/2)); // if totalRankPlaces is 10, the maximum standard deviation is 5. percUnusedStdDeviation = 1 - what percentage of 10 is this trends own ranking stdDev.
+        const percUnusedStdDeviation = 1 - (clusterRankStdDev / (this.totalRankPlaces/2)); // if totalRankPlaces is 20, the maximum standard deviation is 10. percUnusedStdDeviation = 1 - what percentage of 10 is this trends own ranking stdDev.
 
         const volatility = 1 - (percOfTimeWasRanked * percUnusedStdDeviation);
         trend.volatility = Math.round(volatility*1000)/1000;

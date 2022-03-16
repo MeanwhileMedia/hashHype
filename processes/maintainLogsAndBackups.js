@@ -1,4 +1,5 @@
 import fs from 'fs';
+import {exec} from 'child_process';
 import path from 'path';
 import yargs from 'yargs';
 import pm2 from 'pm2';
@@ -24,6 +25,9 @@ class MaintainLogsAndBackups {
         self.nodeMailer = new NodeMailer('joeATmeanwhile');
 
         // All interval routines run immediately upon maintence process init, then at the interval times specified.
+        self.machineHealthLogInterval = null;
+        self.machineHealthLogIntervalTime = 60000*2; // once per 2 minutes.
+
         self.dbHealthLogInterval = null;
         self.dbHealthLogIntervalTime = 60000*5; // once per 5 minutes. This is a sizeable log
 
@@ -83,6 +87,7 @@ class MaintainLogsAndBackups {
         self.initRedisClient(() => {
             self.initLevelDbClient(() => {
                 self.initGoogleDriveClient(() => {
+                    self.initMachineHealthLogInterval();
                     self.initDbHealthLogInterval();
                     self.initPm2HealthLogInterval();
                     self.initRotateLogsInterval();
@@ -168,6 +173,31 @@ class MaintainLogsAndBackups {
         });
     }
 
+    initMachineHealthLogInterval() {
+        const self = this;
+        self.getMachineMemUsageLog((memUsageInfoStr) => {
+            console.log(`Machine memory usage at time ${Date.now()} :`, memUsageInfoStr);
+        });
+
+        if (self.machineHealthLogInterval) return;
+        self.machineHealthLogInterval = setInterval(() => {
+            self.initMachineHealthLogInterval();
+        }, self.machineHealthLogIntervalTime);
+    }
+    getMachineMemUsageLog(cback) {  // returns string
+        const self = this;
+        exec(`cat /proc/meminfo`, (error, stdout, stderr) => {
+            if (error || stderr) {
+                console.error(`du -b ${self.levelDbDir} error.`, error, stderr);
+                return;
+            }
+            const memHealthArr = stdout.split('\n');
+            let memHealthStr = memHealthArr.slice(0, 3).join('\n'); // ram memory lines
+            memHealthStr = memHealthStr + '\n' + memHealthArr.slice(14, 16).join('\n'); // swap mem lines
+            if (cback) cback(`\n${memHealthStr}`);
+        });
+    }
+
     initDbHealthLogInterval() {
         const self = this;
         self.getDbHealthLog((dbInfoObjArray) => {
@@ -236,7 +266,7 @@ class MaintainLogsAndBackups {
         const self = this;
         self.levelDbClient.getDbDiskUsage((archiveDbHealthLogObj) => {
             console.log(`Archive DB info at time ${Date.now()} :`, archiveDbHealthLogObj);
-            if (parseInt(archiveDbHealthLogObj.diskLeft) < 500) {
+            if (parseInt(archiveDbHealthLogObj.diskLeft)/1048576 < 2000) { // less than 2gb starts logging warnings
                 console.warn(`WARNING! This disk is running out of space. ${parseInt(archiveDbHealthLogObj.diskLeft) / parseInt(diskInfo.total)}% of space remains...`);
                 if (!self.sentDiskSpaceWarningEmail) {
                     self.sentDiskSpaceWarningEmail = true;
@@ -406,12 +436,13 @@ class MaintainLogsAndBackups {
                 const activeRDBFilePath = path.resolve(rdbDir, activeRDBFileName);
                 const todayRDBBackupFileName = activeRDBFileName.replace('00000', todayTstamp);
                 const todayRDBBackupPath = path.resolve(rdbDir, todayRDBBackupFileName);
+                console.log(`Will now begin copying RDB file on local drive before uploading to cloud backup: ${activeRDBFileName} -> ${todayRDBBackupFileName}`)
                 fs.copyFile(activeRDBFilePath, todayRDBBackupPath, (err) => {
                     if (err) {
                         console.warn(err);
                         return;
                     }
-                    // console.log(`Transferred active rdb file to today's rdb archive file: ${thisFileName} => ${todayRDBBackupFileName}`)
+                    console.log(`Finished copyting active rdb file to today's rdb archive file: ${activeRDBFileName} => ${todayRDBBackupFileName}`)
                     const startTime = Date.now();
                     self.isArchivingRDBs = true;
                     self.uploadFileToGdrive(todayRDBBackupFileName, todayRDBBackupPath, (res) => {
@@ -572,7 +603,7 @@ class MaintainLogsAndBackups {
             });
             return;
         }
-        console.log(`Will now attempt to upload file to google drive... ${fileName}`);
+        console.log(`Will now attempt to upload file to google drive... ${filePath}`);
         self.googleDriveClient.files.create({
             requestBody: {
                 name: fileName,

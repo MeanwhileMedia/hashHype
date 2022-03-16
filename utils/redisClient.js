@@ -182,17 +182,21 @@ class RedisClient {
         const self = this;
         if (self.restoredKeyCountInterval) return;
 
-        const restoredKeysLongRecordIntervalMaxCount = 12; // how long should we hold self.restoredKeysLongRecord in memory while trying to determine when keys are in a recovery loop.
+        const restoredKeysLongRecordIntervalMaxCount = 6; // how long should we hold self.restoredKeysLongRecord in memory while trying to determine when keys are in a recovery loop.
         let restoredKeysLongRecordIntervalCount = 0;
         self.restoredKeyCountInterval = setInterval(() => {
-            if (self.restoredKeys.length) console.warn(`Recovered ${self.restoredKeys.length} redis objects from preserved data in the last ${self.restoredKeyCountIntervalLength/1000} seconds.`);
-            if (self.restoredKeysLooping.length) console.warn(`WARNING: ${self.restoredKeysLooping.length} redis objects appear to be stuck in a recovery loop. Please inspect.`);
+            if (self.restoredKeys.length) {
+                console.warn(`Recovered ${self.restoredKeys.length} redis objects from preserved data in the last ${self.restoredKeyCountIntervalLength/1000} seconds.`);
+                // if (self.restoredKeys.length < 100) console.warn(self.restoredKeys);
+            }
+            if (self.restoredKeysLooping.length > 100) console.warn(`WARNING: ${self.restoredKeysLooping.length} redis objects appear to be stuck in a recovery loop. Please inspect:`, self.restoredKeysLooping);
             if (restoredKeysLongRecordIntervalCount >= restoredKeysLongRecordIntervalMaxCount) {
                 self.restoredKeysLongRecord = self.restoredKeysLongRecord.concat(self.restoredKeys);
                 ++restoredKeysLongRecordIntervalCount;
             } else {
                 self.restoredKeysLongRecord =  [];
                 restoredKeysLongRecordIntervalCount = 0;
+                self.restoredKeysLooping = [];
             }
             self.restoredKeys = [];
         }, self.restoredKeyCountIntervalLength);
@@ -268,11 +272,7 @@ class RedisClient {
                 preserveToExecs.push((execCback) => {
                     commandArgs.dbName = thisPreserveConf.dbName;
                     commandArgs.cback = (redisRes) => {
-                        if (redisRes) {
-                            // console.log(`Could not find redis key in primary DB. Recovered ${commandArgs.key} from preserved data in "${thisPreserveConf.dbName}" DB.`);
-                            if (self.restoredKeys.indexOf(commandArgs.key) !== -1 || self.restoredKeysLongRecord.indexOf(commandArgs.key) !== -1) self.restoredKeysLooping.push(commandArgs.key);
-                            self.restoredKeys.push(commandArgs.key);
-                        }
+                        // if (redisRes) console.log(`Could not find redis key in primary DB. Recovered ${commandArgs.key} from preserved data in "${thisPreserveConf.dbName}" DB.`);
                         if (execCback) execCback(redisRes);
                         if (thisPreserveConf.ttl) self.pexpire(commandArgs.key, thisPreserveConf.ttl, null, thisPreserveConf.dbName);
                     };
@@ -293,6 +293,14 @@ class RedisClient {
                         return;
                     }
                     // console.log(`Executed redis ${commandArgs.command} command for key ${commandArgs.key} and returned a response from DB "${storeToDbs[curCmdExecIndex].dbName}". All target DBs:`, storeToDbs);
+                    if (curCmdExecIndex > 0) {
+                        if (self.restoredKeys.indexOf(commandArgs.key) !== -1 || self.restoredKeysLongRecord.indexOf(commandArgs.key) !== -1) self.restoredKeysLooping.push(commandArgs.key);
+                        self.restoredKeys.push(commandArgs.key);
+                        if (commandArgs.command === 'get') {
+                            // console.warn(`A recovered redis string (get) will be synced (set) to all DBs after recovery: ${commandArgs.key}`);
+                            self.set(commandArgs.key, redisRes);
+                        }
+                    }
                     if (origCback) origCback(redisRes);
                 });
             };

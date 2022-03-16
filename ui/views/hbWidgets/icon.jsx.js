@@ -14,6 +14,7 @@ import leaderboard from '/node_modules/@material-icons/leaderboard.svg';
 import place from '/node_modules/@material-icons/place.svg';
 import info from '/node_modules/@material-icons/info.svg';
 import arrow_drop_down_circle from '/node_modules/@material-icons/arrow_drop_down_circle.svg';
+import menu from '/node_modules/@material-icons/menu.svg';
 
 class Icon extends React.Component {
     constructor(props) {
@@ -37,7 +38,8 @@ class Icon extends React.Component {
             leaderboard,
             place,
             info,
-            arrow_drop_down_circle
+            arrow_drop_down_circle,
+            menu
         };
     }
 

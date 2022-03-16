@@ -41,6 +41,11 @@ class ExtractWordsFromComments {
         const self = this;
         this.redisClient = null;
 
+        // Set "newCommentsMustContainSymbol" to true and every new comment processed will discared immediately after preserveSymbolsInCommentBody. It's words won't be extracted, earn foundAt timestamps.
+        // The comment object will not be saved to DB and therfore never make it to topCommentStats to compete as a topComment. This saves a lot of resources and may make the
+        // hashHype algorithm more accurate by only allowing it to count word combos in comments that are in a symbol's context.
+        this.newCommentsMustContainSymbol = true;
+
         this.extractRawCommentQueue = []; // We only extract words from comments 1 at a time. It has complex async logic and when many extractions overlap memory can overflow.
         this.extractRawCommentQueueWarnLength = 500; // when do we start logging warnings that the queue is too large
         this.extractRawCommentQueueClearLength = 1000; // when do we clear the queue so that new incoming comments cut to the front
@@ -54,6 +59,7 @@ class ExtractWordsFromComments {
         this.commentCount = {}; // {twitter: 762, reddit: etc...} for logging comment count every 5 seconds
         this.commentCountInterval = null;
         this.commentCountIntervalLength = 5000;
+        this.commentCountDiscardedNoSymbol = 0; // a separate counter just for logging how many comments were discarded because newCommentsMustContainSymbol = true
         this.initCommentCountInterval();
 
         console.log('A new extractWordsFromComments process has just started...');
@@ -89,6 +95,8 @@ class ExtractWordsFromComments {
                 console.log(`Processed ${commentCount} new ${commentSource} comments in the last ${self.commentCountIntervalLength/1000} seconds.`);
                 self.commentCount[commentSource] = 0;
             }
+            console.log(`Discarded ${self.commentCountDiscardedNoSymbol} comments with 0 symbols in the last ${self.commentCountIntervalLength/1000} seconds.`)
+            self.commentCountDiscardedNoSymbol = 0;
         }, self.commentCountIntervalLength);
     }
 
@@ -156,6 +164,13 @@ class ExtractWordsFromComments {
             }
             self.sanitizeAndNormalizeCommentBody(comment, () => {
                 self.preserveSymbolsInCommentBody(comment, () => {
+                    const foundSymbolsCount = Object.keys(comment.pendingSymbols).length;
+                    if (self.newCommentsMustContainSymbol && foundSymbolsCount === 0) {
+                        // console.warn(`comment:${comment.id} was discarded before word extraction because it contained 0 symbols.`);
+                        ++self.commentCountDiscardedNoSymbol; // track our count for logging
+                        self.processNextQueuedNewRawCommentExtraction(curProcessingQueue);
+                        return;
+                    }
                     self.setStemmedCommentBody(comment, () => {
                         self.extractWordSequences(comment, () => {
                             self.setHighAndLowSymbols(comment, () => {

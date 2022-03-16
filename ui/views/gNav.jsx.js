@@ -77,6 +77,9 @@ class GNav extends React.Component {
                         <div style={css.GNav_right_ctrls_icon} onClick={this.showAboutModal.bind(this)}>
                             <Icon iconName="account_circle" width="2.2rem" />
                         </div>
+                        <div style={css.GNav_right_ctrls_icon} onClick={this.showGNavMainMenu.bind(this)}>
+                            <Icon iconName="menu" width="2.2rem" />
+                        </div>
                     </div>
                 </div>
                 <div className="GNav_bottom_right" style={css.GNav_bottom_right}>
@@ -95,7 +98,7 @@ class GNav extends React.Component {
         );
     }
 
-    showGNavMainMenu() {
+    showGNavMainMenu(e, title = '') {
         const mainMenu = (
             <GNavMainMenu
                 modal={this.props.modal}
@@ -106,7 +109,7 @@ class GNav extends React.Component {
             />
         );
         this.props.modal.show({
-            title: '',
+            title: title,
             body: mainMenu,
             customStyleClasses: ['align__left', 'align__top']
         });

@@ -13,10 +13,6 @@ class SpinWheel extends React.Component {
     // React lifecycle functions
     constructor(props) {
         super(props);
-        this.state = {
-            topCommentCount: 10, // how many topComments to show in our wheel
-        };
-
         this.lastUpdated = this.props.topCommentsLastUpdated;
 
         this.pendingKeyPress = false; // will be set true immediately after one of our registerKeyboardCtrls is activated. This flag will trigger an auto rotate.
@@ -233,7 +229,7 @@ class SpinWheel extends React.Component {
 
         if (hierarchyData.children.length === 0) { return []; }
 
-        hierarchyData.children = hierarchyData.children.slice(0, this.state.topCommentCount);
+        hierarchyData.children = hierarchyData.children.slice(0, this.props.renderTopCommentCount);
         hierarchyData.children.forEach( (topComment) => {
             const getUniquePointCount = (lastTriedUniqueCount) => {
                 if (allMsgCounts.indexOf(lastTriedUniqueCount) !== -1) { // Because we use this array to rank trends, we cannot use tie scores. If a tie is found, increment the dup by 1 until it's no longer a dup.

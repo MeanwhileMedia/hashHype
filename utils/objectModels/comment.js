@@ -60,11 +60,16 @@ const commentObjModel = {
         return Object.assign(commentObj, auxiliaryDataDefaults);
     },
 
-    restoreAuxiliaryData: function(commentObj, redisClient, cback) {
+    restoreAuxiliaryData: function(commentObj, redisClient, cback) { // alters commentObj in-place. Returns bool for success
         commentObjModel.createAuxiliaryDataDefaults(commentObj);
-        commentObjModel.getPointsRecords(commentObj, redisClient, () => {
-            commentObjModel.getWordsFor2dGram(commentObj, redisClient, () => {
-                if (cback) cback(commentObj);
+        commentObjModel.getPointsRecords(commentObj, redisClient, (success) => {
+            if (success === false) {
+                // commentObj will return as false when the pointsRecords data was corrupted. Pass that along to caller, which should then delete the comment completely (because accurate pointsRecords are vital to proper comment pointing)
+                if (cback) cback(false);
+                return;
+            }
+            commentObjModel.getWordsFor2dGram(commentObj, redisClient, (success) => {
+                if (cback) cback(success);
             });
         });
     },
@@ -85,8 +90,26 @@ const commentObjModel = {
 
     getPointsRecords: function(commentObj, redisClient, cback){
         redisClient.get(`comment:${commentObj.id}:pointsRecords`, (commentPointsRecords) => {
-            if (commentPointsRecords) commentObj.pointsRecords = commentPointsRecords;
-            if (cback) cback(commentObj);
+            const pointedWords = Object.keys(commentObj.points['1Hr']);
+            if (!commentPointsRecords && pointedWords.length > 0) {
+                console.warn(`comment:${commentObj.id} had no pointsRecords in redis, but has points. Possible DB error. This comment must be deleted! Please inspect.`);
+                if (cback) cback(false); // return false to caller to signify corrupted data
+                return;
+            }
+
+            if (commentPointsRecords) {
+                const pointsRecordsWords = Object.keys(commentPointsRecords['1Hr']);
+                if (pointedWords.length !== pointsRecordsWords.length) {
+                    console.warn(`comment:${commentObj.id} had a mismatched number of pointsRecords to pointed words. Possible DB error. This comment must be deleted! Please inspect.`);
+                    console.warn('Pointed words:', pointedWords);
+                    console.warn('Words with pointsRecords:', pointsRecordsWords);
+                    if (cback) cback(false); // return false to caller to signify corrupted data
+                    return;
+                }
+
+                commentObj.pointsRecords = commentPointsRecords;
+            }
+            if (cback) cback(true); // return true for success
         });
     },
     savePointsRecords: function(commentObj, redisClient, cback){
@@ -96,7 +119,7 @@ const commentObjModel = {
             return;
         }
         if (Object.values(commentObj.pointsRecords).map(thisTimeBucket => Object.keys(thisTimeBucket)).flat().length === 0) {
-            // console.warn(`Won't save pointsRecords because it is empty on live comment:${commentObj.id}`);
+            // console.warn(`Won't save pointsRecords because it is empty on live comment:${commentObj.id}`, commentObj);
             if (cback) cback(commentObj);
             return;
         }
@@ -108,7 +131,7 @@ const commentObjModel = {
     getWordsFor2dGram: function(commentObj, redisClient, cback){
         redisClient.get(`comment:${commentObj.id}:wordsFor2dGram`, (commentWordsFor2dGram) => {
             if (commentWordsFor2dGram) commentObj.wordsFor2dGram = commentWordsFor2dGram;
-            if (cback) cback(commentObj);
+            if (cback) cback(true); // return true for success
         });
     },
     saveWordsFor2dGram: function(commentObj, redisClient, cback){

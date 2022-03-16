@@ -15,13 +15,13 @@ class GNavMainMenu extends React.Component {
             {label: 'News', val: 'news'},
         ];
         this.gatedTrendCats = [ // these are the categories that user's must sign-in to see (set to match val above)
-            // 'Coins',
+            // 'coin',
             'social',
             'news'
         ];
 
         this.state = {
-            activeSymbolTypes: this.props.activeSymbolTypes || [this.allTrendCats[0].val],
+            clickedTrendCats: this.props.activeSymbolTypes || [this.allTrendCats[0].val],
             blockedTrendCats: [] // trend cat strings are added here when a not-logged-in user clicks on a gated category
         };
     }
@@ -31,33 +31,35 @@ class GNavMainMenu extends React.Component {
     }
 
     toggleTrendCat(trendCatVal, e) {
-        const newActiveSymbolTypes = [...this.state.activeSymbolTypes];
-        const reqTrendCatIsActive = this.state.activeSymbolTypes.indexOf(trendCatVal);
+        const newActiveSymbolTypes = [...this.state.clickedTrendCats];
+        const reqTrendCatIsActive = this.state.clickedTrendCats.indexOf(trendCatVal);
         if (this.freezTrendToggling) return;
-        if (reqTrendCatIsActive !== -1 && newActiveSymbolTypes.length === 1) return; // at least one category must always be active
+        const trendCatIsBlocked = this.blockGatedTrendCats(trendCatVal);
+
         if (reqTrendCatIsActive !== -1) {
             newActiveSymbolTypes.splice(reqTrendCatIsActive, 1);
-            this.props.removeActiveSymbolType(trendCatVal);
+            if (!trendCatIsBlocked) this.props.removeActiveSymbolType(trendCatVal);
         } else {
             newActiveSymbolTypes.push(trendCatVal);
-            this.props.addActiveSymbolType(trendCatVal);
+            if (!trendCatIsBlocked) this.props.addActiveSymbolType(trendCatVal);
         }
-        this.blockGatedTrendCats(trendCatVal);
-        this.setState({'activeSymbolTypes': newActiveSymbolTypes});
+
+        this.setState({'clickedTrendCats': newActiveSymbolTypes});
     }
 
-    blockGatedTrendCats(trendCatName) {
+    blockGatedTrendCats(trendCatVal) {
         const self = this;
         // Check if this cat is being gated for logged in users only
-        if (self.gatedTrendCats.indexOf(trendCatName) !== -1) {
-            self.setState({'blockedTrendCats': [trendCatName]});
+        if (self.gatedTrendCats.indexOf(trendCatVal) !== -1) {
+            self.setState({'blockedTrendCats': [trendCatVal]});
             self.freezTrendToggling = true;
             setTimeout(() => { // automatically turn toggle switch back off
-                const newActiveSymbolTypes = [...self.state.activeSymbolTypes];
-                if (newActiveSymbolTypes.indexOf(trendCatName) === -1) return;
-                newActiveSymbolTypes.splice(newActiveSymbolTypes.indexOf(trendCatName), 1);
+                const newActiveSymbolTypes = [...self.state.clickedTrendCats];
+                if (newActiveSymbolTypes.indexOf(trendCatVal) === -1) return;
+                newActiveSymbolTypes.splice(newActiveSymbolTypes.indexOf(trendCatVal), 1);
                 self.freezTrendToggling = false;
-                self.setState({'activeSymbolTypes': newActiveSymbolTypes});
+                self.setState({'clickedTrendCats': newActiveSymbolTypes});
+                this.props.removeActiveSymbolType(trendCatVal);
             }, 200);
             return true
         }
@@ -71,7 +73,7 @@ class GNavMainMenu extends React.Component {
 
         const trendCatLis = [];
         self.allTrendCats.forEach((thisTrendCat, index) => {
-            const isChecked = self.state.activeSymbolTypes.indexOf(thisTrendCat.val) !== -1;
+            const isChecked = self.state.clickedTrendCats.indexOf(thisTrendCat.val) !== -1;
             const onClick = (e) => {
                 self.toggleTrendCat.call(self, thisTrendCat.val, e);
             }

@@ -12,7 +12,6 @@ class BarRace extends React.Component {
     constructor(props) {
         super(props);
         this.state = {
-            topCommentCount: 10, // how many topComments to show in our wheel
             topCommentsLastUpdated: this.props.topCommentsLastUpdated || Date.now(),
         };
 
@@ -23,14 +22,17 @@ class BarRace extends React.Component {
         this.barElRefs = []; // so this parent can set state to it's children
 
         this.topCommentBodyAndPointsRef = React.createRef(); // so can toggle the points explainer msgBox
-
-        utils.registerWindowResizeEvent('checkBarElsForTextSpace', this.checkBarElsForTextSpace.bind(this));
     }
 
     componentDidMount() {
         this.props.setPageIsReady();
         this.reducedTopComments = this.reduceTopComments();
         this.createBarEls();
+        utils.registerWindowResizeEvent('checkBarElsForTextSpace', this.checkBarElsForTextSpace.bind(this));
+    }
+
+    componentWillUnmount() {
+        utils.unregisterWindowResizeEvent('checkBarElsForTextSpace');
     }
 
     componentDidUpdate(prevProps, prevState) {
@@ -61,7 +63,7 @@ class BarRace extends React.Component {
             thisTopComment.rankRender = thisTopCommentIndex + 1;
         });
 
-        reducedTopComments = reducedTopComments.slice(0, this.state.topCommentCount);
+        reducedTopComments = reducedTopComments.slice(0, this.props.renderTopCommentCount);
 
         return reducedTopComments;
     }
@@ -88,8 +90,8 @@ class BarRace extends React.Component {
             barElRefs.push(thisBarElRef);
         });
 
-        // Since we instantiate and reuse these components for each topCommentStats state change, we need to make sure we have a placeholder bar el even if this initial batch of reducedTopComments is less than 10 (self.state.topCommentCount)
-        for (let barCount = barEls.length; barCount <= self.state.topCommentCount; barCount++) {
+        // Since we instantiate and reuse these components for each topCommentStats state change, we need to make sure we have a placeholder bar el even if this initial batch of reducedTopComments is less than 10 (this.props.renderTopCommentCount)
+        for (let barCount = barEls.length; barCount <= self.props.renderTopCommentCount; barCount++) {
             const thisBarElRef = React.createRef();
             barEls.push(
                 <BarRaceBar

@@ -2,7 +2,6 @@ const styles = {
 
     generate(view) {
         const css = {
-
             topCommentStats: {
                 'min-height': '100vh',
                 'opacity': '0',
@@ -10,8 +9,14 @@ const styles = {
                 'width': '100vw',
                 'box-sizing': 'border-box',
                 'overflow-x': 'hidden'
-            }
+            },
 
+            topCommentStats_empty: {
+                'padding': '0 2rem',
+                'text-align': 'center',
+                'width': '100%',
+                'box-sizing': 'border-box'
+            }
         };
 
         if (view.state.pageIsReady) {

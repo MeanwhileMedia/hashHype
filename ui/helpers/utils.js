@@ -16,6 +16,9 @@ const utils = {
     registerWindowResizeEvent(eventName, func) { // must pass unique eventName arg to registerWindowResizeEvent to avoid duplicated events
         utils.windowResizeEvents[eventName] = func;
     },
+    unregisterWindowResizeEvent(eventName) {
+        delete utils.windowResizeEvents[eventName];
+    },
     initWindowResizeListener() {
         window.addEventListener('resize', throttleDebounce.debounce(200, () => {
             for (const [eventName, eventFunc] of Object.entries(utils.windowResizeEvents)) {
