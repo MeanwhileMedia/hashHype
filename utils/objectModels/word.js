@@ -180,6 +180,9 @@ const wordObjModel = {
     },
 
     execCleanupRedisTstampList: function(listKeys, maxAge, redisClient) {
+        // JWW STOPPING - it's time to convert this to sorted set. makes for much easier trimming (instead of below where we get the entire list, loop through it, then resave a subset). Also... it looks like I'm comparing thisTstamp
+        // to an int when redis returns it as a string? Prob a bug.
+        
         const self = wordObjModel;
         // console.log(`execCleanupRedisTstampList: Redis word records will now be cleaned up for ${listKeys.length} words. They will be trimmed of all items older than ${(Date.now()-maxAge)/3600000}hrs...`);
         listKeys.forEach((thisListKey) => {

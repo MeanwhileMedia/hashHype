@@ -117,7 +117,7 @@ class Reddit {
             });
         }
 
-        const thisCommentObject = commentModel.createCommentObject({
+        const thisCommentObject = commentModel.createNewCommentObject({
             source: `reddit_${subRedditName}`,
             body: comment.body, // we only use reddit's comment.body temporarily in our "isDiscardComment" function below. This gets reset in the extractWordsFromComments process from a parsed/sanitized originalBody.
             originalBody: comment.body_html,
@@ -126,12 +126,6 @@ class Reddit {
             wordAssocs: wordAssocs
         });
         commentObjects.push(thisCommentObject);
-        // if (comment.replies && comment.replies.length > 0) {
-        //     console.log('Comment has replies...');
-        //     comment.replies.forEach((reply) => {
-        //         self.createCommentObjects(reply, commentObjects);
-        //     });
-        // }
     }
 
     storeCommentsToRedis(commentObjects, thisSubReddit) {

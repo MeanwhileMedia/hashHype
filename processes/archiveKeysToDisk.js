@@ -15,6 +15,8 @@ class ArchiveKeysToDisk {
         self.redisClient = null;
         self.levelDbClient = null;
 
+        self.topCommentsStatsMinKey = 'stats:topComments'; // this process will only snapshot the min version because the full version is massive and holds data only needed by topCommentStats
+
         self.lastSnapshotTstamp = null;
         self.redisKeyspaceSubscriptions = { // obj where key defines specific redis key to be transferred to long term archive, and where value is the function run for each redis change message for that key.
 
@@ -24,7 +26,7 @@ class ArchiveKeysToDisk {
                     // Each redis key that is defined here (to be snapshotted to levelDB) is saved to archive key ${objectKey}:${tstampRoundedToDenomination}
                     // 'stats:topComments' has snapshots saved in 10s denominations
                     const now = Date.now();
-                    const thisTstamp = now - (now % self.redisKeyspaceSubscriptions['__keyspace@0__:stats:topComments'].snapshotTstampInterval);
+                    const thisTstamp = now - (now % self.redisKeyspaceSubscriptions[`__keyspace@0__:${self.topCommentsStatsMinKey}`].snapshotTstampInterval);
 
                     this.lastUsedTstamp = this.lastUsedTstamp || 0;
                     if (thisTstamp === this.lastUsedTstamp) return null;
@@ -32,8 +34,8 @@ class ArchiveKeysToDisk {
                     return thisTstamp;
                 },
                 action: () => {
-                    const thisRedisObjKey = 'stats:topComments';
-                    const thisTstamp = self.redisKeyspaceSubscriptions['__keyspace@0__:stats:topComments'].genTstamp();
+                    const thisRedisObjKey = self.topCommentsStatsMinKey;
+                    const thisTstamp = self.redisKeyspaceSubscriptions[`__keyspace@0__:${self.topCommentsStatsMinKey}`].genTstamp();
                     if (!thisTstamp) return;
                     const levelDBArchiveKey = `${thisRedisObjKey}:${thisTstamp}`;
                     self.redisClient.get(thisRedisObjKey, (topCommentsObj) => {
@@ -47,7 +49,7 @@ class ArchiveKeysToDisk {
                         });
                     });
                 }
-            }, // end '__keyspace@0__:stats:topComments'
+            }, // end `__keyspace@0__:${self.topCommentsStatsMinKey}`: {
 
             // '__keyspace@0__:stats:topTrends': { // JWW TODO - if we find a need to archive stats:topTrends, levelDB client DB eviction logic will need to be updated. See "diskCheckCorrectionDeletesArchivedKey"
             //     snapshotTstampInterval: 10000, // how long between each snapshot. The snapshot tstamps are generated as denominations of this num.

@@ -398,6 +398,11 @@ class LevelDBClient {
             if (!snapshotTstampIndex) {
                 // this must be the first iteration an we have not yet established an array of snapshot keys to be deleted in loop. Do now.
                 self.get(`index:snapshotTstamps:${evictingKey}`, (gotSnapshotTstampIndex) => {
+                    if (!gotSnapshotTstampIndex) {
+                        console.warn(`Could not find index:snapshotTstamps:${evictingKey} in redis. There may not yet be any snapshots saved for this key yet.`);
+                        if (cback) cback();
+                        return;
+                    }
                     console.warn(`At start of ensureDBDiskUsageIsWithinBounds, there were ${gotSnapshotTstampIndex.length} snapshots of ${evictingKey}`);
                     self.ensureDBDiskUsageIsWithinBounds(cback, evictingKey, gotSnapshotTstampIndex, minDeleteBatchSize);
                 });

@@ -174,14 +174,17 @@ class ExtractWordsFromComments {
                     self.setStemmedCommentBody(comment, () => {
                         self.extractWordSequences(comment, () => {
                             self.setHighAndLowSymbols(comment, () => {
-                                commentModel.saveCommentObject(comment, self.redisClient, () => {
-                                    self.processNextQueuedNewRawCommentExtraction(curProcessingQueue);
+                                commentModel.saveCommentObject(comment, self.redisClient, () => { // this must be done BEFORE saveAllWordsInComment because our other processes will be listening for word:foundAt events, then look for an associated comment:id object that hasn't yet been saved.
+                                    // now proceed to save all word indexes before continuing to extraction on the next comment
+                                    self.saveAllWordsInComment(comment, () => {
+                                        self.processNextQueuedNewRawCommentExtraction(curProcessingQueue);
+                                    });
                                 });
-                            });
-                        });
-                    });
-                });
-            });
+                            }); // end setHighAndLowSymbols
+                        }); // end extractWordSequences
+                    }); // end setStemmedCommentBody
+                }); // end preserveSymbolsInCommentBody
+            }); // end sanitizeAndNormalizeCommentBody
         }, 'commentFetcher'); // end self.redisClient.get
     }
 
@@ -717,20 +720,9 @@ class ExtractWordsFromComments {
                 rawIndex: indexesOfWordInRawBody
             });
             commentData.words[sequenceKey] = wordRef;
-
-            wordSavePromises.push(new Promise( (resolve, reject) => {
-                // Add a foundAt tstamp for this word and save this comment to it's WordToCommentsIndex (creating one if it does not yet exist)
-                wordModel.addFoundAtTstampForWord(sequenceKey, commentData, self.redisClient, () => { // this must be done BEFORE registerWordToCommentsIndex or the foundAt tstamp will be cancelled as dup word by same user.
-                    wordModel.registerWordToCommentsIndex(sequenceKey, commentData, self.redisClient, () => {
-                        resolve();
-                    });
-                });
-            })); // end wordSavePromises.push
         } // end for reducedTokensToStems loop
 
-        Promise.all(wordSavePromises).then(() => {
-            if(cback) cback();
-        });
+        if(cback) cback();
     } //end extractWordSequences
 
     setHighAndLowSymbols(comment, cback) {
@@ -801,6 +793,24 @@ class ExtractWordsFromComments {
 
             if(cback) cback();
         }); // end Promise.all(symbolsFoundAtCountPromises).then
+    }
+
+    saveAllWordsInComment(comment, cback) {
+        const self = this;
+        const wordSavePromises = [];
+        Object.keys(comment.words).forEach((thisWordStr) => {
+            wordSavePromises.push(new Promise( (resolve, reject) => {
+                // Add a foundAt tstamp for this word and save this comment to it's WordToCommentsIndex (creating one if it does not yet exist)
+                wordModel.addFoundAtTstampForWord(thisWordStr, comment, self.redisClient, () => { // this must be done BEFORE registerWordToCommentsIndex or the foundAt tstamp will be cancelled as dup word by same user.
+                    wordModel.registerWordToCommentsIndex(thisWordStr, comment, self.redisClient, () => {
+                        resolve();
+                    });
+                });
+            })); // end wordSavePromises.push
+        })
+        Promise.all(wordSavePromises).then(() => {
+            if (cback) cback();
+        });
     }
 
     syncTrainingNotRelevant() {

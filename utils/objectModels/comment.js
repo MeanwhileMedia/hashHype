@@ -3,10 +3,18 @@ import { v4 as uuidv4 } from 'uuid';
 // For any process which must create comment objects to be stored to redis
 const commentObjModel = {
 
-    createCommentObject: function(props = {}) {
+    createNewCommentObject: function(props = {}) {
+        props.id = uuidv4();
+        return commentObjModel.ensureCommentObjectDefaults(props);
+    },
+
+    ensureCommentObjectDefaults: function(props = {}) {
+        if (!props.id) {
+            console.warn(`Comment is missing an id! Can't ensureCommentObjectDefaults. Please inspect:`, props);
+        }
         const commentObj = {
             class: 'comment',
-            id: uuidv4(),
+            id: props.id || uuidv4(),
             source: props.source || null, // 'reddit_wsb', 'twitter_sampleStream', etc
             body: props.body || null, // comment.body is the renderable string. The closest (sanitized) representation of what was orignially posted by commenter.
             originalBody: props.originalBody || null, // comment.body gets maniplulated to format symbols/urls/etc. We keep a copy of the untouched originalBody too.
@@ -40,114 +48,16 @@ const commentObjModel = {
             symbols: props.symbols || [], // array of symbol objects. Not saved to DB as part of a comment:id object (see minimizeForDb), but will remain on comments that become part of a parent stat object.
             rank: props.rank || null, // int - if this comment happens to be part of stats:topComments, this rank will be set accordingly.
             rankAdjust: props.rankAdjust || null, // int - if this comment has rank, topCommentStats.js will also attempt to apply an "adjusted rank" based on historical data computed by topTrendStats.js. Note that this will not always be defined (even if rank is defined). More than one comment within stats:topComments may share the same rankAdjust.
-            // deleted: bool // this flag is sometimes used locally but is never saved to redis (it's set to true when a live copy must be blocked from any future saves)
-            // see createAuxiliaryDataDefaults for additional properties that will be available to comment objects when required (via restoreAuxiliaryData)
-        }
-
-        return commentObj;
-    },
-    createAuxiliaryDataDefaults: function(commentObj) {
-        // Below items are stored in redis separate from the comment object ("auxiliary" data). This function sets defauly values before attempting to recover from redis.
-        const auxiliaryDataDefaults = {
-            wordsFor2dGram: [], // ['GME', 'foo_!!_bar', etc.] - this is a record of all words which have already been accounted for when forming new 2dGrams. Used by topCommentStats extractNew2dGramsFromTopComment
-            pointsRecords: { // Persisted to redis as it's own object at comment:id:pointsRecords
+            wordsFor2dGram: props.wordsFor2dGram || [], // ['GME', 'foo_!!_bar', etc.] - this is a record of all words which have already been accounted for when forming new 2dGrams. Used by topCommentStats extractNew2dGramsFromTopComment
+            pointsRecords: props.pointsRecords || {
                 '1Hr': {}, // {foo_bar: [tstamp1, tstamp20], other_word: etc...} this prop is used in topCommentStats during calcTotalPointsForPendingTopComments
                 '12Hr': {},
                 '24Hr': {},
             },
+            // deleted: bool // this flag is sometimes used locally but is never saved to redis (it's set to true when a live copy must be blocked from any future saves)
         }
 
-        return Object.assign(commentObj, auxiliaryDataDefaults);
-    },
-
-    restoreAuxiliaryData: function(commentObj, redisClient, cback) { // alters commentObj in-place. Returns bool for success
-        commentObjModel.createAuxiliaryDataDefaults(commentObj);
-        commentObjModel.getPointsRecords(commentObj, redisClient, (success) => {
-            if (success === false) {
-                // commentObj will return as false when the pointsRecords data was corrupted. Pass that along to caller, which should then delete the comment completely (because accurate pointsRecords are vital to proper comment pointing)
-                if (cback) cback(false);
-                return;
-            }
-            commentObjModel.getWordsFor2dGram(commentObj, redisClient, (success) => {
-                if (cback) cback(success);
-            });
-        });
-    },
-    saveAuxiliaryData: function(commentObj, redisClient, cback) {
-        commentObjModel.savePointsRecords(commentObj, redisClient, () => {
-            commentObjModel.saveWordsFor2dGram(commentObj, redisClient, () => {
-                if (cback) cback(commentObj);
-            });
-        });
-    },
-    deleteAuxiliaryData: function(commentObj, redisClient, cback) {
-        redisClient.del(`comment:${commentObj.id}:pointsRecords`, () => {
-            redisClient.del(`comment:${commentObj.id}:wordsFor2dGram`, () => {
-                if (cback) cback();
-            });
-        });
-    },
-
-    getPointsRecords: function(commentObj, redisClient, cback){
-        redisClient.get(`comment:${commentObj.id}:pointsRecords`, (commentPointsRecords) => {
-            const pointedWords = Object.keys(commentObj.points['1Hr']);
-            if (!commentPointsRecords && pointedWords.length > 0) {
-                console.warn(`comment:${commentObj.id} had no pointsRecords in redis, but has points. Possible DB error. This comment must be deleted! Please inspect.`);
-                if (cback) cback(false); // return false to caller to signify corrupted data
-                return;
-            }
-
-            if (commentPointsRecords) {
-                const pointsRecordsWords = Object.keys(commentPointsRecords['1Hr']);
-                if (pointedWords.length !== pointsRecordsWords.length) {
-                    console.warn(`comment:${commentObj.id} had a mismatched number of pointsRecords to pointed words. Possible DB error. This comment must be deleted! Please inspect.`);
-                    console.warn('Pointed words:', pointedWords);
-                    console.warn('Words with pointsRecords:', pointsRecordsWords);
-                    if (cback) cback(false); // return false to caller to signify corrupted data
-                    return;
-                }
-
-                commentObj.pointsRecords = commentPointsRecords;
-            }
-            if (cback) cback(true); // return true for success
-        });
-    },
-    savePointsRecords: function(commentObj, redisClient, cback){
-        if (!commentObj.pointsRecords) {
-            // console.warn(`Can't save pointsRecords because it does not exist on live comment:${commentObj.id}`);
-            if (cback) cback(commentObj);
-            return;
-        }
-        if (Object.values(commentObj.pointsRecords).map(thisTimeBucket => Object.keys(thisTimeBucket)).flat().length === 0) {
-            // console.warn(`Won't save pointsRecords because it is empty on live comment:${commentObj.id}`, commentObj);
-            if (cback) cback(commentObj);
-            return;
-        }
-        redisClient.set(`comment:${commentObj.id}:pointsRecords`, commentObj.pointsRecords, () => {
-            if (cback) cback(commentObj);
-        });
-    },
-
-    getWordsFor2dGram: function(commentObj, redisClient, cback){
-        redisClient.get(`comment:${commentObj.id}:wordsFor2dGram`, (commentWordsFor2dGram) => {
-            if (commentWordsFor2dGram) commentObj.wordsFor2dGram = commentWordsFor2dGram;
-            if (cback) cback(true); // return true for success
-        });
-    },
-    saveWordsFor2dGram: function(commentObj, redisClient, cback){
-        if (!commentObj.wordsFor2dGram) {
-            // console.warn(`Can't save wordsFor2dGram because it does not exist on live comment:${commentObj.id}`);
-            if (cback) cback(commentObj);
-            return;
-        }
-        if (commentObj.wordsFor2dGram.length === 0) {
-            // console.warn(`Won't save wordsFor2dGram because it is empty on live comment:${commentObj.id}`);
-            if (cback) cback(commentObj);
-            return;
-        }
-        redisClient.set(`comment:${commentObj.id}:wordsFor2dGram`, commentObj.wordsFor2dGram, () => {
-            if (cback) cback(commentObj);
-        });
+        return commentObj;
     },
 
     getPointed2dGramCount: function(commentObj, timeBucket = '1Hr') {
@@ -160,36 +70,51 @@ const commentObjModel = {
         return pointed2dGramCount;
     },
 
-    minimizeForDb: function(commentObj){
+    minimizeForDb: function(commentObj, inPlace = false){
         // comments tend to be relatively large redis objects. Run this function on a commentObject before db.set and all props that
         // arent required for persistence will be deleted.
-        // RETURNS A SHALLOW COPY! This function will not alter the original commentObj arg. First it clones, then returns the clone object.
+        // RETURNS A SHALLOW COPY! (unless inPlace == true) This function will not alter the original commentObj arg. First it clones, then returns the clone object.
         // The returned object should be saved immediately and not used for other purposes.
-        const commentClone = { ...commentObj }; // this is a shallow copy so nested objects should not be altered within this function.
-
+        let commentClone;
+        if (inPlace) {
+            commentClone = commentObj;
+        } else {
+            commentClone = { ...commentObj }; // this is a shallow copy so nested objects should not be altered within this function.
+        }
         delete commentClone.pendingSymbols; // a temporary prop for extractWOrdsFromComments.preserveSymbolsInCommentBody
         delete commentClone.symbols; // a temporary prop for topCommentStats. is an array of full symbol objects used for rendering into UI.
-        delete commentClone.pointsRecords; // aux data. a temp prop for topCommentStats pointing logic. Persisted to redis as it's own object at comment:id:pointsRecords
-        delete commentClone.wordsFor2dGram; // aux data. a temp record of all words which have already been accounted for when forming new 2dGrams. Used by topCommentStats extractNew2dGramsFromTopComment
+        delete commentClone.wordAssocs;
+
+        return commentClone;
+    },
+
+    minimizeForClient: function(commentObj, inPlace = false){
+        // comments tend to be relatively large objects. Run this function on a commentObject before setting to topCommentStats, or any other object that gets sent to browser/client via uiServer.js
+        // RETURNS A SHALLOW COPY! (unless inPlace == true) This function will not alter the original commentObj arg. First it clones, then returns the clone object.
+        let commentClone;
+        if (inPlace) {
+            commentClone = commentObj;
+        } else {
+            commentClone = { ...commentObj }; // this is a shallow copy so nested objects should not be altered within this function.
+        }
+        delete commentClone.pendingSymbols; // a temporary prop for extractWOrdsFromComments.preserveSymbolsInCommentBody
+        delete commentClone.pointsRecords; // a prop for topCommentStats pointing logic. Persisted to redis as it's own object at comment:id:pointsRecords
+        delete commentClone.wordsFor2dGram; // a record of all words which have already been accounted for when forming new 2dGrams. Used by topCommentStats extractNew2dGramsFromTopComment
         delete commentClone.wordAssocs;
 
         return commentClone;
     },
 
     saveCommentObject: function(commentObj, redisClient, cback) {
-        commentObjModel.saveAuxiliaryData(commentObj, redisClient, () => {
-            const minimizedCommentObj = commentObjModel.minimizeForDb(commentObj);
-            redisClient.set(`comment:${commentObj.id}`, minimizedCommentObj, () => {
-                if (cback) cback(commentObj);
-            });
+        const minimizedCommentObj = commentObjModel.minimizeForDb(commentObj);
+        redisClient.set(`comment:${commentObj.id}`, minimizedCommentObj, () => {
+            if (cback) cback(commentObj);
         });
     },
 
     deleteCommentObject: function(commentObj, redisClient, cback) {
-        commentObjModel.deleteAuxiliaryData(commentObj, redisClient, () => {
-            redisClient.del(`comment:${commentObj.id}`, () => {
-                if (cback) cback();
-            });
+        redisClient.del(`comment:${commentObj.id}`, () => {
+            if (cback) cback();
         });
     }
 

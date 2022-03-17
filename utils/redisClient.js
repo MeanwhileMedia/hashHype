@@ -335,6 +335,10 @@ class RedisClient {
                         });
                     }
                     if (commandArgs.command === 'rpush') {
+
+                        // JWW stopping - this caused a full crash when I flushed short on dev. There is a recovery loop and when we attempt to restore a list it dups itself into a massive mess, extractWOrdsFromComments stalls because foundAt lists get too big.
+                        //                  prob need to manage the commands to be synchronous and tidy up the logic. Also see if the below zadd preserve logic is causing the "Could not zadd comment:70c0aa9b-2c5d-4aa1-a57b-41ed6499b7e3 to index:wordToComments:in_!!_3. Most likely, that comment id already existed in the sorted set." errors.
+
                         // rpush returns the new list length in it's response. Compare this number to the configured preserveNamespaces.count param and re-save.
                         const redisListLength = redisRes;
                         preserveToNow(redisListLength);
@@ -346,7 +350,7 @@ class RedisClient {
                             self.lrange(commandArgs.key, 0, -1, (resList) => {
                                 if (resList.length <= 1) return; // looks like this actually is a new list. Nothing was found in preserved DB.
                                 self.rpush(commandArgs.key, resList);
-                                // console.log(`Restored ${commandArgs.key} redis list (length ${resList.length}) from preserved DB "${usePreserveToConfig.dbName}".`);
+                                console.log(`Restored ${commandArgs.key} redis list (length ${resList.length}) from preserved DB "${usePreserveToConfig.dbName}".`);
                                 if (self.restoredKeys.indexOf(commandArgs.key) !== -1 || self.restoredKeysLongRecord.indexOf(commandArgs.key) !== -1) self.restoredKeysLooping.push(commandArgs.key);
                                 self.restoredKeys.push(commandArgs.key);
                             }, usePreserveToConfig.dbName);

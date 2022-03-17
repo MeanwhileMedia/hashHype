@@ -101,7 +101,7 @@ class FetchTwitterComments {
             const author = data.includes.users.find(user => user.id === data.data.author_id);
             if (!author) console.warn(`Could not identify author username on tweet. Will be discarded:`, util.inspect(data, {depth: 5, colors: true}));
 
-            const rawComment = commentModel.createCommentObject({
+            const rawComment = commentModel.createNewCommentObject({
                 source: 'twitter_sampleStream',
                 body: data.data.text, // we only use reddit's comment.body temporarily in our "isDiscardComment" function below. This gets reset in the extractWordsFromComments process from a parsed/sanitized originalBody.
                 originalBody: data.data.text,
