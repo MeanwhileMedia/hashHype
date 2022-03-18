@@ -80,7 +80,7 @@ class TopCommentsStats {
     initKeyspaceSubscriptions() {
         const self = this;
         this.redisClient.on('pmessage', function (matchedPattern, patternWithKey, action){ // If this event was sent as part of the set pattern subcribed keyspace event, then it's "patternWithKey" will be: __keyspace@0__:word:foo_!!_bar:foundAt
-            if (action !== 'rpush') return;
+            if (action !== 'zadd') return;
 
             // We will only run isTopWord and getWordToCommentsIndexForTimeRange once per word per storeNewTopCommentsStats interval (to save on mem/cpu).
             if (self.pendingWordFoundAtKeyspaceChannels[patternWithKey]) return; // remember that self.pendingWordFoundAtKeyspaceChannels gets reset inside storeNewTopCommentsStats().
@@ -132,7 +132,7 @@ class TopCommentsStats {
 
         // This incoming word was not yet cached to this.topWordCounts. Fetch the "foundAt" redis list length now.
         const wordFoundAtKey = `word:${wordString}:foundAt`;
-        self.redisClient.llen(wordFoundAtKey, (thisFoundAtListLength) => {
+        self.redisClient.zcard(wordFoundAtKey, (thisFoundAtListLength) => {
             self.topWordsCounts[wordString] = thisFoundAtListLength;
             if (thisFoundAtListLength >= self.topWordsMinCount) {
                 if (cback) cback(true);
@@ -252,7 +252,7 @@ class TopCommentsStats {
 
         // const getAllCommentIds = pendingCommentIds.concat(existingTopCommentIds);
         const getAllCommentIds = pendingCommentIds.filter((thisId) => existingTopCommentIds.indexOf(thisId) === -1);
-        const getAllCommentKeys = pendingCommentIds.map((thisId) => `comment:${thisId}`);
+        const getAllCommentKeys = getAllCommentIds.map((thisId) => `comment:${thisId}`);
         if (!getAllCommentKeys.length) {
             console.warn(`There were 0 new comments during this refreshTopComments interval.`);
             if (cback) cback(lastTopCommentsStats); // final cback to refreshTopComments. Since we didn't have any new comments, just return the previous topCommentStats
@@ -366,11 +366,15 @@ class TopCommentsStats {
                             // We will now perform a very large mset with all our updated comment data. However, we will NOT wait for this to return before we continue with the next refreshTopComments loop.
                             // We can do this because any comments being saved here are topComments. TopComments are held in local memory and we don't redis get them during our next loop. The only comments we
                             // get are new incoming comments that have not yet competed for topComment. Those new comments are saved to DB by extractWordsFromComments.
-                            const startTime = Date.now();
-                            // console.log(`Now saving (mset) ${saveTheseComments.length} updated topComments to DB. Started ${startTime}...`);
-                            self.redisClient.mset(msetCmd, () => { // remember that mset does NOT use dynamic db logic, but that's ok for comments because they are only ever written to short.
-                                console.log(`Finished saving ${saveTheseComments.length} updated topComments to DB. Started ${startTime}. Duration: ${(Date.now() - startTime) / 1000} seconds.`);
-                            });
+                            if (msetCmd.length) {
+                                const startTime = Date.now();
+                                // console.log(`Now saving (mset) ${saveTheseComments.length} updated topComments to DB. Started ${startTime}...`);
+                                self.redisClient.mset(msetCmd, () => { // remember that mset does NOT use dynamic db logic, but that's ok for comments because they are only ever written to short.
+                                    console.log(`Finished saving ${saveTheseComments.length} updated topComments to DB. Started ${startTime}. Duration: ${(Date.now() - startTime) / 1000} seconds.`);
+                                });
+                            } else {
+                                console.warn(`There were 0 topComments selected by refreshTopComments.`)
+                            }
 
                             allTopCommentCleanupPromises.push(new Promise( (resolve, reject) => {
                                 self.deleteLoserComments(freshTopCommentsStats, () => { // Every comment that was pointed and compared and DID NOT earn a place as topComment will be fully deleted from Redis right now.
@@ -457,8 +461,11 @@ class TopCommentsStats {
         //////////
         // Get every single timestamp for when this word was in any comment, then sort sort them into timebuckets and total the points
         const foundAtListKey = `word:${wordRef.word}:foundAt`;
-        // self.redisClient.throttle.lrange(foundAtListKey, 0, -1, (allFoundAtTstamps) => {
-        self.redisClient.lrange(foundAtListKey, 0, -1, (allFoundAtTstamps) => {
+        const now = Date.now();
+        const msInHr = 3600000;
+        const msIn12Hr = 43200000;
+        const msIn24Hr = 86400000;
+        self.redisClient.zrange(foundAtListKey, now - msIn24Hr, now, (allFoundAtTstamps) => {
             if (!allFoundAtTstamps || !allFoundAtTstamps.length) {
                 if (cback) cback();
                 return;
@@ -467,12 +474,8 @@ class TopCommentsStats {
 
             // Converts an ordered array of word foundAt tstamps into time bucketed points. Where "foo_bar" is word:  {1hr: {foo_bar: 234}, 12hr: etc...}
             // It then takes this timebucketed points object and merges into comment.points (overwriting any previous point counts for this word)
-            const msInHr = 3600000;
-            const msIn12Hr = 43200000;
-            const msIn24Hr = 86400000;
             const thisWordPoints = self.newTimeBucketObject();
             const thisWordPointsRecord = self.newTimeBucketObject();
-            const now = Date.now();
             allFoundAtTstamps.forEach((thisFoundAtTstamp) => {
                 thisFoundAtTstamp = parseInt(thisFoundAtTstamp); // remember that thisFoundAtTstamp is actually a string
 
@@ -1038,7 +1041,9 @@ class TopCommentsStats {
         }); //end all2dGrams.forEach(
 
         Promise.all(wordRefSavePromises).then(() => {
-            if (cback) cback(allNew2dGramStrings);
+            commentModel.saveCommentObject(comment, self.redisClient, () => {
+                if (cback) cback(allNew2dGramStrings);
+            });
         });
     }
     extractAllWordCombos(wordRefs = [], minComboLength = 4) { // returns array of arrays of objects: [[{wordRef: wordRefObj, index: int}, etc...], [{wordRef: wordRefObj, index: int}, etc...], etc...]
@@ -1451,7 +1456,7 @@ class TopCommentsStats {
                 console.log(`Succesfully updated stats:topComments (started at ${thisRefreshTstamp}). Total duration: ${refreshDuration} seconds`);
 
                 const pointed2dGramRecordVals = Object.values(self.topCommentsWithPointed2dGramLastRefresh);
-                console.log(`${pointed2dGramRecordVals.length} comments earned points on ${sum(pointed2dGramRecordVals)} 2dGrams in the last ${refreshDuration} seconds.`);
+                console.log(`${pointed2dGramRecordVals.length} comments generated ${sum(pointed2dGramRecordVals)} new 2dGrams in the last ${refreshDuration} seconds.`);
                 self.topCommentsWithPointed2dGramLastRefresh = {};
             } else {
                 console.warn(`A cancelled topCommentsRefresh finally returned (started at ${thisRefreshTstamp}). Total duration: ${refreshDuration} seconds`);

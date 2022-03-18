@@ -206,7 +206,7 @@ class RedisClient {
     // This redisClient class extends all node_redis functions which are used by hashHype. This is so
     // we can inject DB selection logic before any redis command is executed. The below determineTargetDb
     // looks at what type of command it is, the key(space), and will in some cases consider other args or
-    // even intercept the command cback to perform post-functionality (e.g. after rpush, if a list is found
+    // even intercept the command cback to perform post-functionality (e.g. after zadd, if a set is found
     // to be above a certain length, then automatically save to the long-term database, etc).
     determineTargetDb(commandArgs) { // commandArgs is normalized via normalizeRedisCommandArgs. determineTargetDb returns dbName or null (to cancel original command execution)
         const self = this;
@@ -334,30 +334,7 @@ class RedisClient {
                             self[commandArgs.command].apply(self, commandArgs.reformCommandArgs());
                         });
                     }
-                    if (commandArgs.command === 'rpush') {
-
-                        // JWW stopping - this caused a full crash when I flushed short on dev. There is a recovery loop and when we attempt to restore a list it dups itself into a massive mess, extractWOrdsFromComments stalls because foundAt lists get too big.
-                        //                  prob need to manage the commands to be synchronous and tidy up the logic. Also see if the below zadd preserve logic is causing the "Could not zadd comment:70c0aa9b-2c5d-4aa1-a57b-41ed6499b7e3 to index:wordToComments:in_!!_3. Most likely, that comment id already existed in the sorted set." errors.
-
-                        // rpush returns the new list length in it's response. Compare this number to the configured preserveNamespaces.count param and re-save.
-                        const redisListLength = redisRes;
-                        preserveToNow(redisListLength);
-                        // rpush will create a new list if it does not yet exist. If this write command was against a key that got nuked from redis "short", the rpush
-                        // will wrongly succeed, and any future read commands against this key will also succeed with returning partial data (instead of falling back to recovering
-                        // the preseved data). Therefore, we will now attempt to sync presevered -> primary db ONLY IF this redisListLength was 1 (new list just created).
-                        if (redisListLength === 1) {
-                            const usePreserveToConfig = preserveToDbs[0]; // assume that if this key was configured to preserve to more than 1 db (rare), that they will all be in sync. Just use the first one.
-                            self.lrange(commandArgs.key, 0, -1, (resList) => {
-                                if (resList.length <= 1) return; // looks like this actually is a new list. Nothing was found in preserved DB.
-                                self.rpush(commandArgs.key, resList);
-                                console.log(`Restored ${commandArgs.key} redis list (length ${resList.length}) from preserved DB "${usePreserveToConfig.dbName}".`);
-                                if (self.restoredKeys.indexOf(commandArgs.key) !== -1 || self.restoredKeysLongRecord.indexOf(commandArgs.key) !== -1) self.restoredKeysLooping.push(commandArgs.key);
-                                self.restoredKeys.push(commandArgs.key);
-                            }, usePreserveToConfig.dbName);
-                        }
-                    }
                     if (commandArgs.command === 'zadd') {
-                        // Follows nearly identical logic to above rpush
                         const redisSortedSetLength = redisRes;
                         preserveToNow(redisSortedSetLength);
                         if (redisSortedSetLength === 1) {
@@ -389,11 +366,11 @@ class RedisClient {
         const cmdArgsObj = {
             command: '', // this must always be defined
             dbName: null, // this will be set by determineTargetDb
-            isReadOp: false, // if this is a get, lrange, etc, where a return value is expected in cback, then isReadOp will be true.
+            isReadOp: false, // if this is a get, zrange, etc, where a return value is expected in cback, then isReadOp will be true.
             key: null, // will not be defined in the case of batch commands (batch/mget/mset/etc)
             saveData: null, // string (set), array (zadd), array (zrem). will only be defined for write operations.
-            startIndex: null, // int. will only be defined for certain list commands (lrange, ltrim)
-            endIndex: null, // int. will only be defined for certain list commands (lrange, ltrim)
+            startIndex: null, // int. will only be defined for certain sorted set commands (zrange, ztrim)
+            endIndex: null, // int. will only be defined for certain sorted set commands (zrange, ztrim)
             ttlMs: null, // int (milliseconds). used for expire commands
             batchCmds: null, // array. a catch-all for any commands which receive an array of multiple commands (batch/mget/mset/etc)
             cback: null, // func. not all calls to a redis command are issued a cback
@@ -433,51 +410,6 @@ class RedisClient {
             };
             return cmdArgsObj;
         }
-        if (cmdArgsObj.command === 'rpush') {
-            cmdArgsObj.isReadOp = false;
-            cmdArgsObj.key = commandArgs[0];
-            cmdArgsObj.saveData = commandArgs[1] || null;
-            cmdArgsObj.cback = commandArgs[2] || null;
-            cmdArgsObj.reformCommandArgs = () => {
-                return [cmdArgsObj.key, cmdArgsObj.saveData, cmdArgsObj.cback, cmdArgsObj.dbName];
-            };
-            return cmdArgsObj;
-        }
-        if (cmdArgsObj.command === 'lrange') {
-            cmdArgsObj.isReadOp = true;
-            cmdArgsObj.key = commandArgs[0];
-            cmdArgsObj.startIndex = commandArgs[1];
-            if (typeof cmdArgsObj.startIndex !== 'number') cmdArgsObj.startIndex = null;
-            cmdArgsObj.endIndex = commandArgs[2];
-            if (typeof cmdArgsObj.endIndex !== 'number') cmdArgsObj.endIndex = null;
-            cmdArgsObj.cback = commandArgs[3] || null;
-            cmdArgsObj.reformCommandArgs = () => {
-                return [cmdArgsObj.key, cmdArgsObj.startIndex, cmdArgsObj.endIndex, cmdArgsObj.cback, cmdArgsObj.dbName];
-            };
-            return cmdArgsObj;
-        }
-        if (cmdArgsObj.command === 'llen') {
-            cmdArgsObj.isReadOp = true;
-            cmdArgsObj.key = commandArgs[0];
-            cmdArgsObj.cback = commandArgs[1] || null;
-            cmdArgsObj.reformCommandArgs = () => {
-                return [cmdArgsObj.key, cmdArgsObj.cback, cmdArgsObj.dbName];
-            };
-            return cmdArgsObj;
-        }
-        if (cmdArgsObj.command === 'ltrim') {
-            cmdArgsObj.isReadOp = false;
-            cmdArgsObj.key = commandArgs[0];
-            cmdArgsObj.startIndex = commandArgs[1];
-            if (typeof cmdArgsObj.startIndex !== 'number') cmdArgsObj.startIndex = null;
-            cmdArgsObj.endIndex = commandArgs[2];
-            if (typeof cmdArgsObj.endIndex !== 'number') cmdArgsObj.endIndex = null;
-            cmdArgsObj.cback = commandArgs[3] || null;
-            cmdArgsObj.reformCommandArgs = () => {
-                return [cmdArgsObj.key, cmdArgsObj.startIndex, cmdArgsObj.endIndex, cmdArgsObj.cback, cmdArgsObj.dbName];
-            };
-            return cmdArgsObj;
-        }
         if (cmdArgsObj.command === 'zadd') {
             cmdArgsObj.isReadOp = false;
             cmdArgsObj.key = commandArgs[0];
@@ -498,6 +430,15 @@ class RedisClient {
             cmdArgsObj.cback = commandArgs[3] || null;
             cmdArgsObj.reformCommandArgs = () => {
                 return [cmdArgsObj.key, cmdArgsObj.startIndex, cmdArgsObj.endIndex, cmdArgsObj.cback, cmdArgsObj.dbName];
+            };
+            return cmdArgsObj;
+        }
+        if (cmdArgsObj.command === 'zcard') {
+            cmdArgsObj.isReadOp = true;
+            cmdArgsObj.key = commandArgs[0];
+            cmdArgsObj.cback = commandArgs[1] || null;
+            cmdArgsObj.reformCommandArgs = () => {
+                return [cmdArgsObj.key, cmdArgsObj.cback, cmdArgsObj.dbName];
             };
             return cmdArgsObj;
         }
@@ -647,65 +588,6 @@ class RedisClient {
         });
     }
 
-    //////////
-    // Extended list functions DO NOT auto stringify/parse redis data. (that feature is only for redis string commands)
-    // These list functions will attempt to read/write data exactly as it comes from/to redis. (for example, tstamps in lists are returned as strings!)
-    rpush(key, pushObjects, cback, dbName) {
-        const self = this;
-        const normalizedArgs = self.normalizeRedisCommandArgs('rpush', arguments);
-        if (!dbName) dbName = self.determineTargetDb(normalizedArgs);
-        if (!dbName) return;
-        self.clients[dbName].db.rpush(normalizedArgs.key, normalizedArgs.saveData, (err, listLength) => {
-            if(err || !listLength) {
-                console.warn(`Could not rpush ${normalizedArgs.saveData.length} objects to redis list ${normalizedArgs.key}:`, normalizedArgs.saveData, err);
-                if (normalizedArgs.cback) normalizedArgs.cback(null);
-                return;
-            }
-            if (normalizedArgs.cback) normalizedArgs.cback(listLength);
-        });
-    }
-    // These list functions will attempt to read/write data exactly as it comes from/to redis. (for example, tstamps in lists are returned as strings!)
-    lrange(key, startIndex, endIndex, cback, dbName) {
-        const self = this;
-        const normalizedArgs = self.normalizeRedisCommandArgs('lrange', arguments);
-        if (!dbName) dbName = self.determineTargetDb(normalizedArgs);
-        if (!dbName) return;
-        self.clients[dbName].db.lrange(normalizedArgs.key, normalizedArgs.startIndex, normalizedArgs.endIndex, (err, listItems) => {
-            if(err || !listItems) {
-                console.warn(`Could not lrange redis list ${normalizedArgs.key}:`, err);
-                if (normalizedArgs.cback) normalizedArgs.cback([]);
-                return;
-            }
-            if (normalizedArgs.cback) normalizedArgs.cback(listItems);
-        });
-    }
-
-    llen(key, cback, dbName) {
-        const self = this;
-        const normalizedArgs = self.normalizeRedisCommandArgs('llen', arguments);
-        if (!dbName) dbName = self.determineTargetDb(normalizedArgs);
-        if (!dbName) return;
-        self.clients[dbName].db.llen(normalizedArgs.key, (err, length) => {
-            if(err || typeof length !== 'number') {
-                console.warn(`Could not llen redis list ${normalizedArgs.key}:`, err);
-                if (normalizedArgs.cback) normalizedArgs.cback(0);
-                return;
-            }
-            if (normalizedArgs.cback) normalizedArgs.cback(length);
-        });
-    }
-
-    ltrim(key, startIndex, endIndex, cback, dbName) {
-        const self = this;
-        const normalizedArgs = self.normalizeRedisCommandArgs('ltrim', arguments);
-        if (!dbName) dbName = self.determineTargetDb(normalizedArgs);
-        if (!dbName) return;
-        self.clients[dbName].db.ltrim(normalizedArgs.key, normalizedArgs.startIndex, normalizedArgs.endIndex, (err, res) => {
-            if (err) console.warn(err);
-            if (normalizedArgs.cback) normalizedArgs.cback(res);
-        });
-    }
-
     ////////
     // Up next, Sorted Set commands. This structure is used by index:wordToComments to maintain an ordered list of commentIds which
     // are scored using their createdAt tstamps. zrange can be used to extract onlt commentIds which fall in a certain timerange.
@@ -750,6 +632,21 @@ class RedisClient {
         } else {
             self.clients[dbName].db.zrange(normalizedArgs.key, normalizedArgs.startIndex, normalizedArgs.endIndex, 'BYSCORE', cmdCback);
         }
+    }
+
+    zcard(key, cback, dbName) {
+        const self = this;
+        const normalizedArgs = self.normalizeRedisCommandArgs('zcard', arguments);
+        if (!dbName) dbName = self.determineTargetDb(normalizedArgs);
+        if (!dbName) return;
+        self.clients[dbName].db.zcard(normalizedArgs.key, (err, length) => {
+            if(err || typeof length !== 'number') {
+                console.warn(`Could not zcard redis list ${normalizedArgs.key}:`, err);
+                if (normalizedArgs.cback) normalizedArgs.cback(0);
+                return;
+            }
+            if (normalizedArgs.cback) normalizedArgs.cback(length);
+        });
     }
 
     zrem(key, members, cback, dbName) {

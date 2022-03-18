@@ -106,7 +106,7 @@ const wordObjModel = {
         // All "foundAt" tstamps are stored to their own redis list at key: word:foo_!!_bar:foundAt
 
         ////////////
-        // We add the foundAt timestamp for this word, but ONLY if this is the first time this user commented it. This is to comply with the following rules:
+        // We add the foundAt timestamp for this word, but ONLY if this is the first time this user commented it. This is to comply with the following HashHype rule:
         //   - A user can never earn points for a word because they themselves re-commented that word (or users could artificially boost their own comments)
         //   - A user can only earn points ONCE for a word recommented by another user. A user can recomment it more than once (or two users could artificially boost eachothers comment)
         const wordToUsersIndexKey = `index:wordToUsers:${wordString}:${hostComment.author.name}`;
@@ -117,12 +117,18 @@ const wordObjModel = {
                 if (cback) cback();
                 return;
             }
-            const foundAtListKey = `word:${wordString}:foundAt`; // rpush auto creates list if it does not already exist
-            redisClient.rpush(foundAtListKey, [hostComment.foundAt], (listLength) => {
-                if (cback) cback();
 
+            const foundAtKey = `word:${wordString}:foundAt`;
+            redisClient.zadd(foundAtKey, [hostComment.foundAt, hostComment.foundAt], (itemsAddedCount) => { // value and score are the same (tstamp) in the case of word:foundAt sorted sets
+                if (itemsAddedCount === 0) {
+                    console.warn(`Could not zadd tstamp ${hostComment.foundAt} to ${foundAtKey} for comment:${hostComment.id}. Most likely, that tstamp already existed in the sorted set.`);
+                    if (cback) cback(false);
+                    return;
+                }
+                if (cback) cback(true);
                 ++self.wordCountLastInterval;
-                self.cleanupWordFoundAtLists.push(foundAtListKey);
+
+                self.cleanupWordFoundAtLists.push(foundAtKey);
                 self.initCleanupWordFoundAtListsInterval(redisClient);
             });
         });
@@ -163,7 +169,7 @@ const wordObjModel = {
             const cleanupWordFoundAtListsClone = [...new Set(self.cleanupWordFoundAtLists)]; // remove dups
             self.cleanupWordFoundAtLists = []; // reset
             const wordMaxAge = Date.now() - self.trackWordsFor;
-            self.execCleanupRedisTstampList(cleanupWordFoundAtListsClone, wordMaxAge, redisClient);
+            self.execCleanupRedisSortedSet(cleanupWordFoundAtListsClone, wordMaxAge, redisClient);
         }, self.cleanupWordFoundAtListsIntervalTime);
     },
 
@@ -178,27 +184,6 @@ const wordObjModel = {
             });
         });
     },
-
-    execCleanupRedisTstampList: function(listKeys, maxAge, redisClient) {
-        // JWW STOPPING - it's time to convert this to sorted set. makes for much easier trimming (instead of below where we get the entire list, loop through it, then resave a subset). Also... it looks like I'm comparing thisTstamp
-        // to an int when redis returns it as a string? Prob a bug.
-        
-        const self = wordObjModel;
-        // console.log(`execCleanupRedisTstampList: Redis word records will now be cleaned up for ${listKeys.length} words. They will be trimmed of all items older than ${(Date.now()-maxAge)/3600000}hrs...`);
-        listKeys.forEach((thisListKey) => {
-            redisClient.lrange(thisListKey, 0, -1, (allFoundAtTstamps) => {
-                let trimStart = 0; // the index in list at which tstamps stop being too old. These lists are sorted ascending.
-                allFoundAtTstamps.some((thisTstamp, thisTstampIndex) => {
-                    const isOldTstamp = thisTstamp < maxAge;
-                    if (!isOldTstamp) return true; // break from loop. We have looped through all the old tstamps.
-                    trimStart = thisTstampIndex;
-                });
-                if (trimStart === 0) return;
-                redisClient.ltrim(thisListKey, trimStart, -1);
-                // console.warn(`Trimmed ${trimStart} items from redis list: ${thisListKey}`);
-            });
-        });
-    }
 
 }; // end wordObjModel
 

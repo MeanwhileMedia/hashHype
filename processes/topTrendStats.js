@@ -21,8 +21,8 @@ class TopTrendStats {
         // end settings
 
         this.topTrendsStatsKey = 'stats:topTrends'; // The resulting computed data produced by this process
-        this.topCommentsStatsMinKey = 'stats:topComments'; // this process listens for changes to this object in initKeyspaceSubscriptions. It only needs the min version. The non min is huge and holds data only needed by topCommentStats process.
-        this.topCommentsStatsSnapshotIndexKey = `index:snapshotTstamps:${this.topCommentsStatsMinKey}`;
+        this.topCommentsStatsKey = 'stats:topComments'; // this process listens for changes to this object in initKeyspaceSubscriptions. It only needs the min version. The non min is huge and holds data only needed by topCommentStats process.
+        this.topCommentsStatsSnapshotIndexKey = `index:snapshotTstamps:${this.topCommentsStatsKey}`;
 
         // this.topTrends = this.newTopTrendsEntity();
 

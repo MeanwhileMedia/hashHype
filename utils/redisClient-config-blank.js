@@ -42,7 +42,7 @@ module.exports = {
                     'maxmemory-samples': 5,
 
                     // Pubsub settings
-                    'notify-keyspace-events': 'K$l',
+                    'notify-keyspace-events': 'K$z',
 
                     // Buffer limits. HashHype sets pubsub higher than default to allow for more data to be sent in messages. (redis default is 'pubsub 32mb 8mb 60')
                     'client-output-buffer-limit': 'pubsub 1024mb 256mb 60',
@@ -94,7 +94,7 @@ module.exports = {
                     'maxmemory-samples': 10,
 
                     // Pubsub settings
-                    // 'notify-keyspace-events': 'K$l',
+                    // 'notify-keyspace-events': 'K$z',
 
                     // Buffer limits. HashHype sets pubsub higher than default to allow for more data to be sent in messages. (redis default is 'pubsub 32mb 8mb 60')
                     'client-output-buffer-limit': 'pubsub 1024mb 256mb 60',

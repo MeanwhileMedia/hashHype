@@ -741,7 +741,11 @@ class ExtractWordsFromComments {
                 const thisSymbolWordStr = thisSymbolKey.split(':').slice(2).join(':');
                 const foundAtListKey = `word:${thisSymbolWordStr}:foundAt`;
                 symbolsFoundAtCountPromises.push(new Promise( (resolve, reject) => {
-                    self.redisClient.lrange(foundAtListKey, 0, -1, (allFoundAtTstamps) => {
+                    const now = Date.now();
+                    const msIn1Hr = 3600000;
+                    const msIn12Hr = 43200000;
+                    const msIn24Hr = 86400000;
+                    self.redisClient.zrange(foundAtListKey, now - msIn24Hr, now, (allFoundAtTstamps) => {
                         if (!allFoundAtTstamps || !allFoundAtTstamps.length) {
                             resolve();
                             return;
@@ -749,10 +753,9 @@ class ExtractWordsFromComments {
                         for (let [timeBucketKey, topSymbolObj] of Object.entries(comment.topSymbolHigh)) {
                             symbolsFoundAtCounts[timeBucketKey] = symbolsFoundAtCounts[timeBucketKey] || {};
 
-                            const now = Date.now();
-                            let maxAge = 3600000; // 1 hr
-                            if (timeBucketKey === '12Hr') maxAge = 43200000;
-                            if (timeBucketKey === '24Hr') maxAge = 86400000;
+                            let maxAge = msIn1Hr;
+                            if (timeBucketKey === '12Hr') maxAge = msIn12Hr;
+                            if (timeBucketKey === '24Hr') maxAge = msIn24Hr;
 
                             allFoundAtTstamps.forEach((thisFoundAtTstamp) => { // remember that thisFoundAtTstamp is actually a string
                                 thisFoundAtTstamp = parseInt(thisFoundAtTstamp);
