@@ -1,3 +1,5 @@
+import stopWords from '../stopWords.js';
+
 // For any process which must create wordRef objects to be stored to redis (wordRefs are usually part of comment objects. Never their own redis object entity.)
 const wordObjModel = {
 
@@ -35,6 +37,7 @@ const wordObjModel = {
             class: 'wordRef',
             word: props.word, // Stringified version (foo_!!_bar) of what would be the word.value prop on the actual word object. Can be used to form a redis key for word (word:foo_bar)
             type: props.type, // 'word', 'bigram', 'trigram', '2dGram'
+            isSymbolAlias: props.isSymbolAlias || false, // if this single word matched a symbolAlias during symbol extraction, it should be marked as such so it doesn't get double pointed (we add another wordRef for the actual symbol.symbol)
             rawWords: props.rawWords || [], // when rawWords is stored on a wordRef - it is an array of ONLY the unstemmed word sequence strings (space delimeted) which are found in THIS comment.
             hasSymbols: props.hasSymbols || [], // array of symbol object keys ['symbol:stock:gme', etc]
             index: props.index || [], // array of integer indexes which identify this word (props.word) location(s) within the comment.stemmedBody - used for generating 2dGrams
@@ -184,6 +187,59 @@ const wordObjModel = {
             });
         });
     },
+
+    getWordPointCount: function(wordRef, comment) { // alters wordRef in place
+        const self = wordObjModel;
+        let points = 0;
+
+        if (typeof wordRef.pointVal === 'number') {
+            return wordRef.pointVal; // we cache this calculation on the wordRef objects when possible
+        }
+
+        if (wordRef.isSymbolAlias) {
+            wordRef.pointVal = points;
+            return points; // if this isSymbolAlias then there will be another wordRef on this comment holding the actual symbol.symbol in wordRef.word. That wordRef should earn points, not this one.
+        }
+
+        let ignoreTokenCount = 0;
+
+        if (wordRef.type === 'word'){ // aka symbol. we ONLY store word:word objects when they matched a symbol in extractWOrdsFromComments process
+            points = 5;
+            if (wordRef.hasSymbols[0]) { // not all word symbol types get the same points
+                if (wordRef.hasSymbols[0].indexOf(':stock:') !== -1) points = 10;
+            }
+        }
+        if (wordRef.type === 'bigram') {
+            const theseTokens = wordRef.word.split('_!!_');
+            theseTokens.forEach((thisToken) => {
+                if (stopWords.ignore.indexOf(thisToken) !== -1) ++ignoreTokenCount;
+            });
+            points = 1 - ignoreTokenCount;
+        }
+        if (wordRef.type === 'trigram') {
+            const theseTokens = wordRef.word.split('_!!_');
+            theseTokens.forEach((thisToken) => {
+                if (stopWords.ignore.indexOf(thisToken) !== -1) ++ignoreTokenCount;
+            });
+            points = 2 - ignoreTokenCount;
+        }
+        if (wordRef.type === '2dGram') {
+            const theseTokens = wordRef.word.split('_!!_')
+            const seqCount = theseTokens.length;
+
+            // For 2dGrams, we handle ignoreTokenCount differently. We count the chars in each of our ignore tokens, and add them to our distance penalizer.
+            let distance = wordRef.distance;
+            theseTokens.forEach((thisToken) => {
+                if (stopWords.ignore.indexOf(thisToken) !== -1) distance = distance + thisToken.length;
+            });
+            // The avg distance measurement penalizes the point count. The higher the distance, the less meaningful this 2dGram.
+            points = (20 * seqCount) - distance;
+        }
+
+        const wordPointVal = Math.max(0, Math.floor(points));
+        wordRef.pointVal = wordPointVal; // update the wordRef so this point tally math is cached on the comment object
+        return wordPointVal;
+    } //end getWordPointCount
 
 }; // end wordObjModel
 

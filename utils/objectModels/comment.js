@@ -30,6 +30,11 @@ const commentObjModel = {
                 '12Hr': {},
                 '24Hr': {},
             },
+            pointsAdjust: props.pointsAdjust || { // the above point values with deductions from topCommentStats logic
+                '1Hr': {}, // {foo_bar: 342, other_word: etc...}
+                '12Hr': {},
+                '24Hr': {},
+            },
             totalPoints: props.totalPoints || { // summed totals from the above points attr.
                 '1Hr': 0,
                 '12Hr': 0,
@@ -45,6 +50,7 @@ const commentObjModel = {
                 '12Hr': null,
                 '24Hr': null,
             },
+            symbolStartPoints: props.symbolStartPoints || {}, // {'symbol:coin:HNT': 234, 'symbol:stock:GME': 9123, etc...} - points for ONLY symbols within this comment right when the comment is created. They are the points in the 1Hr prior to comment creation. Calculated only once in extractWordsFromComments
             symbols: props.symbols || [], // array of symbol objects. Not saved to DB as part of a comment:id object (see minimizeForDb), but will remain on comments that become part of a parent stat object.
             rank: props.rank || null, // int - if this comment happens to be part of stats:topComments, this rank will be set accordingly.
             rankAdjust: props.rankAdjust || null, // int - if this comment has rank, topCommentStats.js will also attempt to apply an "adjusted rank" based on historical data computed by topTrendStats.js. Note that this will not always be defined (even if rank is defined). More than one comment within stats:topComments may share the same rankAdjust.
@@ -116,7 +122,7 @@ const commentObjModel = {
         redisClient.del(`comment:${commentObj.id}`, () => {
             if (cback) cback();
         });
-    }
+    },
 
 }; // end commentObjModel
 

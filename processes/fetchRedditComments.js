@@ -23,7 +23,7 @@ class Reddit {
         this.redisClient = null;
 
         //This process keeps track of which comments were recently fetched it doesn't store duplicates to redis.
-        this.recentCommentRecordMaxLength = 50;
+        this.recentCommentRecordMaxLength = 1000;
         this.recentCommentRecord = [];
 
         console.log('A new fetchRedditComments process has just started...');
@@ -172,7 +172,7 @@ class Reddit {
             }
         }
 
-        // 3. HashHype has a "no all-caps" rule. These comments will often trigger false positive symbol matches (because stock/coin symbols are expected to be in all caps).
+        // 3. HashHype rule - no all-caps. These comments will often trigger false positive symbol matches (because stock/coin symbols are expected to be in all caps).
         //    Comments which no longer have case-based information become irrelevant when attempting to extract symbols and trends.
         const allCapsBody = rawComment.body.toUpperCase();
         if (allCapsBody === rawComment.body) {

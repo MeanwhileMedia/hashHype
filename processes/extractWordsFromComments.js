@@ -171,16 +171,20 @@ class ExtractWordsFromComments {
                         self.processNextQueuedNewRawCommentExtraction(curProcessingQueue);
                         return;
                     }
+                    if (self.isDiscardComment(comment)) {
+                        self.processNextQueuedNewRawCommentExtraction(curProcessingQueue);
+                        return;
+                    }
                     self.setStemmedCommentBody(comment, () => {
                         self.extractWordSequences(comment, () => {
-                            self.setHighAndLowSymbols(comment, () => {
+                            self.setSymbolStartPoints(comment, () => {
                                 commentModel.saveCommentObject(comment, self.redisClient, () => { // this must be done BEFORE saveAllWordsInComment because our other processes will be listening for word:foundAt events, then look for an associated comment:id object that hasn't yet been saved.
                                     // now proceed to save all word indexes before continuing to extraction on the next comment
                                     self.saveAllWordsInComment(comment, () => {
                                         self.processNextQueuedNewRawCommentExtraction(curProcessingQueue);
                                     });
                                 });
-                            }); // end setHighAndLowSymbols
+                            }); // end setSymbolStartPoints
                         }); // end extractWordSequences
                     }); // end setStemmedCommentBody
                 }); // end preserveSymbolsInCommentBody
@@ -266,16 +270,193 @@ class ExtractWordsFromComments {
     preserveSymbolsInCommentBody(comment, cback) {
         const self = this;
         comment.pendingSymbols = {};
-        self.preserveUrlsInCommentBody(comment, () => {
-            self.preserveEmojiSymbolsInCommentBody(comment, () => {
-                self.preserveFinanceSymbolsInCommentBody(comment, 'stock', () => {
-                    self.preserveFinanceSymbolsInCommentBody(comment, 'coin', () => {
-                        if (cback) cback();
+        self.preserveHashtagsInCommentBody(comment, () => {
+            self.preserveMentionsInCommentBody(comment, () => {
+                self.preserveUrlsInCommentBody(comment, () => {
+                    self.preserveEmojisInCommentBody(comment, () => {
+                        self.preserveFinanceSymbolsInCommentBody(comment, 'stock', () => {
+                            self.preserveFinanceSymbolsInCommentBody(comment, 'coin', () => {
+                                if (cback) cback();
+                            });
+                        });
                     });
                 });
             });
         });
     }
+
+    preserveHashtagsInCommentBody(comment, cback) { // alters comment in-place
+        const self = this;
+        // This function uses regex to locate #hashtags within the comment body, then temporarily stores their markdown in comment.pendingSymbols (not saved to redis).
+        // It then replaces the hashtag code strings within comment.body with a "hashtagUID" string (which natural.js will respect as a single token - already "stemmed").
+        // The comment.body can then be tokenized and stemmed in extractWordSequences without malforming the hashtag code or misinterpreting it as multiple tokens.
+        // After extractWordSequences has completed the word isolation logic (see "reducedTokensToStems") - the hashtags can be re-injected at their original location within
+        // comment.body (by doing a string replace against the hashtagUID that was originally assigned for each hashtagss code).
+        let commentBody = `${comment.normalizedBody}`; // We will preserve untouched body text for rendering, and format a temporary local copy for this function's hashtag extraction logic
+        const foundHashtags = {}; // {'#yolo': PendingSymbolEntity, etc...}
+
+        const hashtagMatches = Array.from(commentBody.matchAll(/#[^\s!@#$%^&*()=+\-./,[{\]};:'"?><]+/gm)); // All chars except whitespace, punctuation, and reserved code chars. https://regexr.com/6hq7m
+        hashtagMatches.forEach((thisHashtagMatch) => {
+            const thisHashtag = thisHashtagMatch[0];
+
+            // hashHype rule - a hashtag cannot be a number
+            const thisHashTagNoHash = thisHashtag.slice(1);
+            if (`${parseInt(thisHashTagNoHash.slice(1))}` === thisHashTagNoHash) return;
+
+            if (!foundHashtags[thisHashtag]) {
+                const hashtagAssocs = [];
+                if (comment.wordAssocs && comment.wordAssocs[thisHashtag]) {
+                    hashtagAssocs.push(comment.wordAssocs[thisHashtag]);
+                }
+                foundHashtags[thisHashtag] = self.newPendingSymbolEntity({
+                    token: thisHashtag,
+                    type: 'hashtag',
+                    normalizedToken: thisHashtag,
+                    symbolKey: `symbol:hashtag:${thisHashtag}`,
+                    assocs: hashtagAssocs
+                });
+            }
+        });
+
+        // const hashtagKeys = Object.keys(foundHashtags);
+        // if (hashtagKeys.length) console.log(`Found ${hashtagKeys.length} hashtags in comment:${comment.id}`, hashtagKeys);
+
+        const symbolSearchPromises = [];
+        Object.values(foundHashtags).forEach((thisPendingSymbolEntity) => {
+            symbolSearchPromises.push(new Promise( (resolve, reject) => {
+                // See if this hashtag symbol already exists in redis. If not, create now.
+                self.redisClient.get(thisPendingSymbolEntity.symbolKey, (symbol, actualAbsKey) => { // actualAbsKey will be defined when this .get followed an alias. Needed below.
+                    if(symbol) {
+                        // now that we have done a very basic symbol match against our redis key pattern, we will confirm the match by passing this token
+                        // into the symbols customizable match function.
+
+                        // In case this symbolKey actually pointed to a keyAlias, and the parent object was returned as symbol, correct the symbolKey now.
+                        if (actualAbsKey) thisPendingSymbolEntity.symbolKey = actualAbsKey;
+
+                        const isMatch = symbolModel.execMatch(symbol, thisPendingSymbolEntity.token);
+                        if(!isMatch) {
+                            resolve(thisPendingSymbolEntity);
+                            return;
+                        }
+                        // console.log(`comment:${comment.id} contained word ${thisToken} which matched an existing symbol ${symbolKey}`);
+                        thisPendingSymbolEntity.matchedSymbol = symbol;
+                        resolve(thisPendingSymbolEntity);
+                    } else {
+                        // redis Symbol object for this hashtag does not yet exist, create and save it now.
+                        const newSymbolObj = symbolModel.createSymbolObject({
+                            name: thisPendingSymbolEntity.normalizedToken,
+                            symbol: thisPendingSymbolEntity.token,
+                            type: 'hashtag',
+                            assocs: thisPendingSymbolEntity.assocs,
+                        });
+                        self.redisClient.set(thisPendingSymbolEntity.symbolKey, symbolModel.minimizeForDb(newSymbolObj), () => {
+                            // console.log(`Created new hashtag symbol object for ${thisPendingSymbolEntity.symbolKey}`);
+                            thisPendingSymbolEntity.matchedSymbol = newSymbolObj;
+                            resolve(thisPendingSymbolEntity);
+                        });
+                    }
+                });
+            }));
+        });
+
+        Promise.all(symbolSearchPromises).then((pendingSymbolEntities) => {
+            let idIncrement = 0;
+            pendingSymbolEntities.forEach((thisPendingSymbolEntity) => {
+                if (thisPendingSymbolEntity.matchedSymbol) {
+                    const thisHashtagUid = `hh__hashtag${++idIncrement}symbol__hh`; // JWW stopping - these are getting lowercased by stemToken and can't be matched later, but we want them uppercased to support isDiscardComment
+                    const thisHashtagCodeEscapedForRegex = thisPendingSymbolEntity.token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // the string we are matching against needs to be escaped for regex. https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
+                    const hashtagReplaceRegex = new RegExp(thisHashtagCodeEscapedForRegex, 'gm');
+                    self.replaceInCommentBody(comment, hashtagReplaceRegex, ` ${thisHashtagUid} `); // We pad with spaces to make sure natural.js treats this as an isolated token. i.e. non-spaced hashtags like "Hey i like hashtags!hashtag1symbolhashtag2symbolhashtag1symbol" would come out as 1 token
+                    comment.pendingSymbols[thisHashtagUid] = thisPendingSymbolEntity;
+                }
+            });
+            if (cback) cback();
+        });
+    } // end preserveHashtagsInCommentBody
+
+    preserveMentionsInCommentBody(comment, cback) { // alters comment in-place
+        const self = this;
+        // This function uses regex to locate @mentions within the comment body, then temporarily stores their markdown in comment.pendingSymbols (not saved to redis).
+        // It then replaces the mention code strings within comment.body with a "mentionUID" string (which natural.js will respect as a single token - already "stemmed").
+        // The comment.body can then be tokenized and stemmed in extractWordSequences without malforming the mention code or misinterpreting it as multiple tokens.
+        // After extractWordSequences has completed the word isolation logic (see "reducedTokensToStems") - the mentions can be re-injected at their original location within
+        // comment.body (by doing a string replace against the mentionUID that was originally assigned for each mentions code).
+        let commentBody = `${comment.normalizedBody}`; // We will preserve untouched body text for rendering, and format a temporary local copy for this function's mention extraction logic
+        const foundMentions = {}; // {'@yolo': PendingSymbolEntity, etc...}
+
+        const mentionMatches = Array.from(commentBody.matchAll(/@[^\s!@#$%^&*()=+\-./,[{\]};:'"?><]+/gm)); // All chars except whitespace, punctuation, and reserved code chars. https://regexr.com/6hq7m
+        mentionMatches.forEach((thisMentionMatch) => {
+            const thisMention = thisMentionMatch[0];
+            if (!foundMentions[thisMention]) {
+                const mentionAssocs = [];
+                if (comment.wordAssocs && comment.wordAssocs[thisMention]) {
+                    mentionAssocs.push(comment.wordAssocs[thisMention]);
+                }
+                foundMentions[thisMention] = self.newPendingSymbolEntity({
+                    token: thisMention,
+                    type: 'mention',
+                    normalizedToken: thisMention,
+                    symbolKey: `symbol:mention:${thisMention}`,
+                    assocs: mentionAssocs
+                });
+            }
+        });
+
+        // const mentionKeys = Object.keys(foundMentions);
+        // if (mentionKeys.length) console.log(`Found ${mentionKeys.length} mentions in comment:${comment.id}`, mentionKeys);
+
+        const symbolSearchPromises = [];
+        Object.values(foundMentions).forEach((thisPendingSymbolEntity) => {
+            symbolSearchPromises.push(new Promise( (resolve, reject) => {
+                // See if this mention symbol already exists in redis. If not, create now.
+                self.redisClient.get(thisPendingSymbolEntity.symbolKey, (symbol, actualAbsKey) => { // actualAbsKey will be defined when this .get followed an alias. Needed below.
+                    if(symbol) {
+                        // now that we have done a very basic symbol match against our redis key pattern, we will confirm the match by passing this token
+                        // into the symbols customizable match function.
+
+                        // In case this symbolKey actually pointed to a keyAlias, and the parent object was returned as symbol, correct the symbolKey now.
+                        if (actualAbsKey) thisPendingSymbolEntity.symbolKey = actualAbsKey;
+
+                        const isMatch = symbolModel.execMatch(symbol, thisPendingSymbolEntity.token);
+                        if(!isMatch) {
+                            resolve(thisPendingSymbolEntity);
+                            return;
+                        }
+                        // console.log(`comment:${comment.id} contained word ${thisToken} which matched an existing symbol ${symbolKey}`);
+                        thisPendingSymbolEntity.matchedSymbol = symbol;
+                        resolve(thisPendingSymbolEntity);
+                    } else {
+                        // redis Symbol object for this mention does not yet exist, create and save it now.
+                        const newSymbolObj = symbolModel.createSymbolObject({
+                            name: thisPendingSymbolEntity.normalizedToken,
+                            symbol: thisPendingSymbolEntity.token,
+                            type: 'mention',
+                            assocs: thisPendingSymbolEntity.assocs,
+                        });
+                        self.redisClient.set(thisPendingSymbolEntity.symbolKey, symbolModel.minimizeForDb(newSymbolObj), () => {
+                            // console.log(`Created new mention symbol object for ${thisPendingSymbolEntity.symbolKey}`);
+                            thisPendingSymbolEntity.matchedSymbol = newSymbolObj;
+                            resolve(thisPendingSymbolEntity);
+                        });
+                    }
+                });
+            }));
+        });
+
+        Promise.all(symbolSearchPromises).then((pendingSymbolEntities) => {
+            let idIncrement = 0;
+            pendingSymbolEntities.forEach((thisPendingSymbolEntity) => {
+                if (thisPendingSymbolEntity.matchedSymbol) {
+                    const thisMentionUid = `hh__mention${++idIncrement}symbol__hh`;
+                    const thisMentionCodeEscapedForRegex = thisPendingSymbolEntity.token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // the string we are matching against needs to be escaped for regex. https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
+                    const mentionReplaceRegex = new RegExp(thisMentionCodeEscapedForRegex, 'gm');
+                    self.replaceInCommentBody(comment, mentionReplaceRegex, ` ${thisMentionUid} `); // We pad with spaces to make sure natural.js treats this as an isolated token. i.e. non-spaced mentions like "Hey i like mentions!mention1symbolmention2symbolmention1symbol" would come out as 1 token
+                    comment.pendingSymbols[thisMentionUid] = thisPendingSymbolEntity;
+                }
+            });
+            if (cback) cback();
+        });
+    } // end preserveMentionsInCommentBody
 
     preserveUrlsInCommentBody(comment, cback) { // alters comment in-place
         const self = this;
@@ -386,7 +567,7 @@ class ExtractWordsFromComments {
             let idIncrement = 0;
             tokenSymbolResults.forEach((tokenSymbolResult) => {
                 if (tokenSymbolResult.matchedSymbol) {
-                    const thisUrlUid = `url${++idIncrement}symbol`;
+                    const thisUrlUid = `hh__url${++idIncrement}__hh`;
                     const thisUrlEscapedForRegex = escapeUrlForRegex(tokenSymbolResult.token); // the string we are matching against needs to be escaped for regex. https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
                     const newUrlRegex = new RegExp(thisUrlEscapedForRegex, 'gm'); // remember has to be double escaped cuz it's wrapped in string concat. https://regexr.com/5q5m8
                     self.replaceInCommentBody(comment, newUrlRegex, thisUrlUid);
@@ -436,9 +617,9 @@ class ExtractWordsFromComments {
 
                     let isMatch = symbolModel.execMatch(symbol, thisToken);
                     if(!isMatch) { // We manually support passing $ to the custom match function if a "$" token preceeded this stock symbol. Some custom match functions will require $ to be preset (when tokens withou $ are too too ambiguous)
-                        const tokenWithDollarSign = `$${thisToken}`; // dollar signs are stripped from tokenized body, so we manually add it now (IF we find that it was present in normalizedBody)
-                        if (comment.normalizedBody.indexOf(tokenWithDollarSign) !== -1) {
-                            isMatch = symbolModel.execMatch(symbol, tokenWithDollarSign);
+                        // dollar signs are stripped from tokenized body, so we manually add it now (IF we find that it was present in normalizedBody)
+                        if (new RegExp(`\\s\\$${thisToken}\\s`, 'gm').test(comment.normalizedBody)) { // https://regexr.com/6houn
+                            isMatch = symbolModel.execMatch(symbol, `$${thisToken}`);
                         }
                     }
 
@@ -457,7 +638,7 @@ class ExtractWordsFromComments {
             let idIncrement = 0;
             tokenSymbolResults.forEach((tokenSymbolResult) => {
                 if (tokenSymbolResult.matchedSymbol) {
-                    const thisStockUid = `${symbolType}${++idIncrement}symbol`;
+                    const thisStockUid = `hh__${symbolType}${++idIncrement}__hh`;
                     const stockSymbolRegex = new RegExp(`\\b${tokenSymbolResult.token}\\b`, 'gim'); // https://regexr.com/5rrbf
                     //comment.body = comment.body.replace(stockSymbolRegex, thisStockUid);
                     self.replaceInCommentBody(comment, stockSymbolRegex, thisStockUid);
@@ -469,7 +650,7 @@ class ExtractWordsFromComments {
 
     } // end preserveFinanceSymbolsInCommentBody
 
-    preserveEmojiSymbolsInCommentBody(comment, cback) { // alters comment in-place
+    preserveEmojisInCommentBody(comment, cback) { // alters comment in-place
         const self = this;
         // This function uses regex to locate emoji/emotes within the comment body, then temporarily stores their markdown in comment.pendingSymbols (not saved to redis).
         // It then replaces the emoji code strings within comment.body with a "emojiUID" string (which natural.js will respect as a single token - already "stemmed").
@@ -563,7 +744,7 @@ class ExtractWordsFromComments {
             let idIncrement = 0;
             pendingSymbolEntities.forEach((thisPendingSymbolEntity) => {
                 if (thisPendingSymbolEntity.matchedSymbol) {
-                    const thisEmojiUid = `emoji${++idIncrement}symbol`;
+                    const thisEmojiUid = `hh__emoji${++idIncrement}symbol__hh`;
                     const thisEmojiCodeEscapedForRegex = thisPendingSymbolEntity.token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // the string we are matching against needs to be escaped for regex. https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
                     const emojiReplaceRegex = new RegExp(thisEmojiCodeEscapedForRegex, 'gm');
                     self.replaceInCommentBody(comment, emojiReplaceRegex, ` ${thisEmojiUid} `); // We pad with spaces to make sure natural.js treats this as an isolated token. i.e. non-spaced emojis like "Hey i like emojis!emoji1symbolemoji2symbolemoji1symbol" would come out as 1 token
@@ -573,7 +754,7 @@ class ExtractWordsFromComments {
             });
             if (cback) cback();
         });
-    } // end preserveEmojiSymbolsInCommentBody
+    } // end preserveEmojisInCommentBody
 
     extractWordSequences(commentData, cback) {
         const self = this;
@@ -720,18 +901,33 @@ class ExtractWordsFromComments {
                 rawIndex: indexesOfWordInRawBody
             });
             commentData.words[sequenceKey] = wordRef;
+
+            // If this single word matched a symbol alias, it will have a hasSymbols entry that points to a symbolStr which is not equal to own sequenceKey. We must also store a wordRef on the comment for the actual symbol (or it will not fire foundAt tstamps, or be pointed on word)
+            if (wordType === 'word' && symbolsInWord && symbolsInWord.length) {
+                symbolsInWord.forEach((thisSymbolKey) => {
+                    const thisSymbolWordStr = thisSymbolKey.split(':').splice(2).join(':');
+                    if (thisSymbolWordStr === sequenceKey) return;
+                    const aliasSymbolWordRef = {...wordRef};
+                    wordRef.isSymbolAlias = true;
+                    if (commentData.words[thisSymbolWordStr]) return;
+                    aliasSymbolWordRef.word = thisSymbolWordStr;
+                    commentData.words[thisSymbolWordStr] = aliasSymbolWordRef;
+                });
+            }
+
         } // end for reducedTokensToStems loop
 
         if(cback) cback();
     } //end extractWordSequences
 
-    setHighAndLowSymbols(comment, cback) {
+    setSymbolStartPoints(comment, cback) {
         const self = this;
-        // In hashHype a single comment can only every earn points for a max of 2 symbols. We let those 2 symbols be the most common, and least common symbols found in this comment.
-        // The high and low symbols are set when the comment is made, and they don't change after that. This is to preserve the context in which the comment was originally
-        // made, and it also makes for a less volatile topComment set (where a top symbols value keeps jumping rank in our viz because a comments symbol keeps flip-flopping).
+        // This function points ONLY symbols within this comment right when the comment is created. These points are assigned to comment.symbolStartPoints. They are the points in the 1Hr prior to comment creation.
+        // Essentially, these points represent the context in which this comment was originally made.  It gives topCommentStats an idea for how to sort/rank a coment, and which symbol group(s) it should belong to.
+        // These points are only calculated once (during a comment's initial word extraction), and because they don't change, they can be a useful record for seeing how each symbol grew during a comments duration.
+        const msIn1Hr = 3600000;
         const checkedSymbols = []; // a record of which symbols have already been counted so we don't sum the same symbol foundAts more than once.
-        const symbolsFoundAtCounts = {}; // {'1hr': {foo: 234, GME: 9123}, '12hr': etc...}
+        const symbolStartPoints = {}; // {'symbol:coin:HNT': 234, 'symbol:stock:GME': 9123, etc...}
         const symbolsFoundAtCountPromises = [];
         for (let [wordStr, thisWordRef] of Object.entries(comment.words)) {
             thisWordRef.hasSymbols.forEach((thisSymbolKey) => {
@@ -742,30 +938,14 @@ class ExtractWordsFromComments {
                 const foundAtListKey = `word:${thisSymbolWordStr}:foundAt`;
                 symbolsFoundAtCountPromises.push(new Promise( (resolve, reject) => {
                     const now = Date.now();
-                    const msIn1Hr = 3600000;
-                    const msIn12Hr = 43200000;
-                    const msIn24Hr = 86400000;
-                    self.redisClient.zrange(foundAtListKey, now - msIn24Hr, now, (allFoundAtTstamps) => {
+                    self.redisClient.zrange(foundAtListKey, now - msIn1Hr, now, (allFoundAtTstamps) => {
                         if (!allFoundAtTstamps || !allFoundAtTstamps.length) {
+                            symbolStartPoints[thisSymbolKey] = 0;
                             resolve();
                             return;
                         }
-                        for (let [timeBucketKey, topSymbolObj] of Object.entries(comment.topSymbolHigh)) {
-                            symbolsFoundAtCounts[timeBucketKey] = symbolsFoundAtCounts[timeBucketKey] || {};
-
-                            let maxAge = msIn1Hr;
-                            if (timeBucketKey === '12Hr') maxAge = msIn12Hr;
-                            if (timeBucketKey === '24Hr') maxAge = msIn24Hr;
-
-                            allFoundAtTstamps.forEach((thisFoundAtTstamp) => { // remember that thisFoundAtTstamp is actually a string
-                                thisFoundAtTstamp = parseInt(thisFoundAtTstamp);
-                                if (comment.foundAt === thisFoundAtTstamp) return; // comment can't earn points for itself (word:${wordRef.word})`);
-                                if(now - maxAge < thisFoundAtTstamp) {
-                                    symbolsFoundAtCounts[timeBucketKey][thisSymbolKey] = symbolsFoundAtCounts[timeBucketKey][thisSymbolKey] || 0;
-                                    symbolsFoundAtCounts[timeBucketKey][thisSymbolKey] = symbolsFoundAtCounts[timeBucketKey][thisSymbolKey] + 1;
-                                }
-                            });
-                        };
+                        const wordPointVal = wordModel.getWordPointCount(thisWordRef, comment);
+                        symbolStartPoints[thisSymbolKey] = allFoundAtTstamps.length * wordPointVal;
                         resolve();
                     }); // end self.redisClient.lrange
                 })); // end symbolsFoundAtCountPromises.push
@@ -773,35 +953,16 @@ class ExtractWordsFromComments {
         }; // end for (let [wordStr, thisWordRef] of Object.entries(comment.words)
 
         Promise.all(symbolsFoundAtCountPromises).then(() => {
-            // We now have our timebucketed symbolsFoundAtCounts. Loop through and determine high and low symbol for each bucket.
-            for (let [timeBucketKey, thisBucketSymbolsFoundAtCounts] of Object.entries(symbolsFoundAtCounts)) {
-                let highSymbol = {symbolKey: '', count: null};
-                let lowSymbol = {symbolKey: '', count: null};
-                for (let [symbolKey, foundAtCount] of Object.entries(thisBucketSymbolsFoundAtCounts)) {
-                    if (highSymbol.count === null || highSymbol.count < foundAtCount) {
-                        highSymbol = {symbolKey: symbolKey, count: foundAtCount};
-                    }
-                    if (lowSymbol.count === null || lowSymbol.count > foundAtCount) {
-                        lowSymbol = {symbolKey: symbolKey, count: foundAtCount};
-                    }
-                }
-                if (lowSymbol.symbolKey === highSymbol.symbolKey) lowSymbol = {symbolKey: '', count: null};
-                if (highSymbol.count !== null) {
-                    comment.topSymbolHigh[timeBucketKey] = highSymbol.symbolKey
-                }
-                if (lowSymbol.count !== null) {
-                    comment.topSymbolLow[timeBucketKey] = lowSymbol.symbolKey
-                }
-            };
-
-            if(cback) cback();
-        }); // end Promise.all(symbolsFoundAtCountPromises).then
+            comment.symbolStartPoints = symbolStartPoints;
+            if (cback) cback();
+        });
     }
 
     saveAllWordsInComment(comment, cback) {
         const self = this;
         const wordSavePromises = [];
-        Object.keys(comment.words).forEach((thisWordStr) => {
+        for (let [thisWordStr, thisWordRef] of Object.entries(comment.words)) {
+            if (thisWordRef.isSymbolAlias) continue; // We never fire foundAts for words that matched a symbolAlias. There will be another wordRef on this comment that has the actual symbol.symbol assigned to wordRef.word. That's the one that will register foundAts.
             wordSavePromises.push(new Promise( (resolve, reject) => {
                 // Add a foundAt tstamp for this word and save this comment to it's WordToCommentsIndex (creating one if it does not yet exist)
                 wordModel.addFoundAtTstampForWord(thisWordStr, comment, self.redisClient, () => { // this must be done BEFORE registerWordToCommentsIndex or the foundAt tstamp will be cancelled as dup word by same user.
@@ -810,7 +971,7 @@ class ExtractWordsFromComments {
                     });
                 });
             })); // end wordSavePromises.push
-        })
+        };
         Promise.all(wordSavePromises).then(() => {
             if (cback) cback();
         });
@@ -868,6 +1029,26 @@ class ExtractWordsFromComments {
         if (this.trainingNotRelevant) {
             const notRelWordIndex = this.trainingNotRelevant.words.findIndex((thisWord) => thisWord.word === wordString);
             if (notRelWordIndex !== -1) shouldDiscard = true;
+            return shouldDiscard;
+        }
+
+        return shouldDiscard;
+    }
+
+    isDiscardComment(comment) {
+        // this process includes rules around which comments should be included in trend analysis. Ie: comments that are too long... comments that look like bots or spam, etc.
+        // during this check, 'COMMENT IN CAPS HTTPS://TWITTER.COM/sdfWE8' is now 'COMMENT IN CAPS hh__url1symbol__hh'
+        // We can now temporarily remove all symbol placeholders, look at the remaining text, and run discard logic against it in isolation.
+        let shouldDiscard = false;
+        const commentBodySansSymbols = comment.normalizedBody.replaceAll(/hh__[^__hh]+__hh/gm, ''); // https://regexr.com/6hrm6
+
+        // 1. HashHype rule - no all-caps. We run the all caps discard check in our fetchComment processes too. However, we check again here after we have normalized and converted symbols into temporory ID placeholders.
+        // I.e: during this check, 'COMMENT IN CAPS HTTPS://TWITTER.COM/sdfWE8' is now 'COMMENT IN CAPS hh__url1symbol__hh'
+        // We can now temporarily remove all symbol placeholders, look at the remaining text, and run discard logic against it in isolation.
+        const allCapsBody = commentBodySansSymbols.toUpperCase();
+        if (allCapsBody === commentBodySansSymbols) {
+            shouldDiscard = true;
+            // console.warn(`comment:${comment.id} will be discarded because it was in all caps. body:`, comment.originalBody);
             return shouldDiscard;
         }
 

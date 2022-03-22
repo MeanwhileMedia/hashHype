@@ -171,6 +171,7 @@ class TopTrendStats {
                     const topSymbol = thisTopComment.symbols.find((symbol) => {
                         return symbolModel.generateRedisKey(symbol) === thisTopComment.topSymbolHigh['1Hr'];
                     });
+                    if (!topSymbol) return;
 
                     const thisTrend = trendModel.createTrendObject({
                         word: topSymbol.symbol,

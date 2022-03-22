@@ -293,6 +293,8 @@ class RedisClient {
                         return;
                     }
                     // console.log(`Executed redis ${commandArgs.command} command for key ${commandArgs.key} and returned a response from DB "${storeToDbs[curCmdExecIndex].dbName}". All target DBs:`, storeToDbs);
+
+                    // log if this data was recovered from a db that was not 1st in list. Also sync data back down if this is a string get.
                     if (curCmdExecIndex > 0) {
                         if (self.restoredKeys.indexOf(commandArgs.key) !== -1 || self.restoredKeysLongRecord.indexOf(commandArgs.key) !== -1) self.restoredKeysLooping.push(commandArgs.key);
                         self.restoredKeys.push(commandArgs.key);
@@ -301,6 +303,16 @@ class RedisClient {
                             self.set(commandArgs.key, redisRes);
                         }
                     }
+
+                    // Some string gets return a "keyAlias" object which is a reference to an abject at another key. Fetch the full object now, and let the cback know we followed an alias redirect.
+                    if (redisRes.class === 'keyAlias' && commandArgs.command === 'get') {
+                        self.get(redisRes.parentKey, (parentRedisObject) => {
+                            const actualAbsKey = redisRes.parentKey; // When following an alias, the cback receives a 2nd argument "actualAbsKey". This let's the cback code know that its get cmd followed an alias.
+                            if (origCback) origCback(parentRedisObject, actualAbsKey);
+                        });
+                        return;
+                    }
+
                     if (origCback) origCback(redisRes);
                 });
             };
@@ -541,15 +553,15 @@ class RedisClient {
                 return;
             }
 
-            // The get command also fulfills forwarded gets via the keyAlias redis object.
-            // Check if this response returned a keyAlias, and if so, fetch the parent now, and send THAT back to the cback.
-            if (redisObject.class === 'keyAlias') {
-                self.get(redisObject.parentKey, (parentRedisObject) => {
-                    const actualAbsKey = redisObject.parentKey; // When following an alias, the cback receives a 2nd argument "actualAbsKey". This let's the cback code know that its get cmd followed an alias.
-                    normalizedArgs.cback(parentRedisObject, actualAbsKey);
-                });
-                return;
-            }
+            // // The get command also fulfills forwarded gets via the keyAlias redis object.
+            // // Check if this response returned a keyAlias, and if so, fetch the parent now, and send THAT back to the cback.
+            // if (redisObject.class === 'keyAlias') {
+            //     self.get(redisObject.parentKey, (parentRedisObject) => {
+            //         const actualAbsKey = redisObject.parentKey; // When following an alias, the cback receives a 2nd argument "actualAbsKey". This let's the cback code know that its get cmd followed an alias.
+            //         normalizedArgs.cback(parentRedisObject, actualAbsKey);
+            //     });
+            //     return;
+            // }
 
             if (normalizedArgs.cback) normalizedArgs.cback(redisObject);
         });

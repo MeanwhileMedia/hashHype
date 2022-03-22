@@ -52,7 +52,7 @@ class AdminTrain extends React.Component {
         if (this.state.accordionCollapsed.indexOf('Username') !== -1) usernameSection = null;
 
         let wordsSection = [];
-        const sortedWords = Object.entries(this.props.topComment.points['1Hr']).sort((a, b) => {
+        const sortedWords = Object.entries(this.props.topComment.pointsAdjust['1Hr']).sort((a, b) => {
             return b[1] - a[1];
         });
         sortedWords.forEach((word) => {
@@ -88,7 +88,7 @@ class AdminTrain extends React.Component {
                 );
             }
             const rowLabel = (
-                <><p>{symbol.name} <b>({`${symbol.type}:${symbolText}`})</b></p></>
+                <><p>{symbol.name} <b>({`${symbol.type}:`}{symbolText})</b></p></>
             );
             const deletePrompt = (
                 <>

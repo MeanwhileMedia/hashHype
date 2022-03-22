@@ -195,7 +195,7 @@ class HbClientSocketDbResponses_admin {
                     const newAliasObject = keyAliasModel.createKeyAliasObject({parentKey: symbolRedisKey});
                     self.redisClient.get(aliasRedditKey, (existingObjAtKey) => {
                         if (existingObjAtKey) {
-                            console.warn(`Can't save reddit keyAlias object because an object already exists at that key (${aliasRedditKey}).`)
+                            console.warn(`WARN! Will now save a keyAlias object at key ${aliasRedditKey}. This will overwrite an existing object:`, existingObjAtKey);
                         }
                         console.warn(`Now saving new symbol alias: ${aliasRedditKey} -> ${symbolRedisKey}`);
                         self.redisClient.set(aliasRedditKey, newAliasObject);
