@@ -22,7 +22,7 @@ class FetchTwitterComments {
         self.initCommentCountInterval();
 
         //This process keeps track of which comments were recently fetched it doesn't store duplicates to redis.
-        self.recentCommentRecordMaxLength = 200;
+        self.recentCommentRecordMaxLength = 1000;
         self.recentCommentRecord = [];
 
         console.log('A new fetchTwitterComments process has just started...');
@@ -54,8 +54,8 @@ class FetchTwitterComments {
     initTwitterSampleStream(cback) {
         this.twitterApiClientStream = this.twitterApiClient.v2.sampleStream({
             autoConnect: false,
-            'expansions': ['author_id'], //['author_id', 'attachments.media_keys'],
-            'tweet.fields': ['created_at', 'lang'],
+            'expansions': ['author_id', 'referenced_tweets.id'], //['author_id', 'attachments.media_keys'],
+            'tweet.fields': ['created_at', 'lang', 'referenced_tweets'],
             'user.fields': ['username'],
             // 'media.fields': ['type', 'url', 'preview_image_url']
         });
@@ -98,6 +98,9 @@ class FetchTwitterComments {
 
             if (self.isDupComment(data.data.id)) return;
 
+            // console.log('New tweet:', util.inspect(data, {depth: 5, colors: true}));
+            // See bottom of this file for sample tweet data format
+
             const author = data.includes.users.find(user => user.id === data.data.author_id);
             if (!author) console.warn(`Could not identify author username on tweet. Will be discarded:`, util.inspect(data, {depth: 5, colors: true}));
 
@@ -110,11 +113,40 @@ class FetchTwitterComments {
                 // wordAssocs: wordAssocs
             });
 
+            if (data.data.referenced_tweets && data.data.referenced_tweets.length) {
+                self.extendRetweetedText(data, rawComment) // alters rawComment in-place
+            }
+
             if (self.isDiscardComment(rawComment)) return;
 
             self.storeCommentToRedis(rawComment);
         });
-    }
+    } // end initTwitterSampleStreamListeners
+
+    extendRetweetedText(data, rawComment) { // alters rawComment in-place
+        // If this is a retweet, twitter will have sent us the shortened (140 chars) text in data.data.text. Since we want the full thing,
+        // we will look at data.includes.tweets, locate the text from the retweeted tweet, then replace data.data.text with the full text.
+        if (!data.data.referenced_tweets) return;
+        let retweetedId = data.data.referenced_tweets.find((thisRefTweet) => thisRefTweet.type === 'retweeted');
+        if (!retweetedId || !data.includes.tweets || !data.includes.tweets.length) return;
+        if (!data.includes.users || !data.includes.users.length) return;
+
+        retweetedId = retweetedId.id;
+        const retweeted = data.includes.tweets.find((thisIncTweet) => thisIncTweet.id === retweetedId);
+        if (!retweeted) return;
+
+        // We don't want to lose the initial "RT @user:" data, but we also don't want it to be hardcoded to comment body. Assign the quoted username to our comment object.
+        // 'RT @HemantBishnoi: BlackBulbul #birding #birdphotography #BirdsSeenIn2022 #birds #natgeo #bbcearth #nikonphotography #Nikon #strabopixelclu…'
+        // becomes
+        // 'BlackBulbul #birding #birdphotography #BirdsSeenIn2022 #birds #natgeo #bbcearth #nikonphotography #Nikon #strabopixelclub #wildlife #TwitterNatureCommunity #BBCWildlifePOTD #camera #NatureBeauty #NaturePhotography #TwitterNatureCommunity #NatureLovers #IndiAves #NikonD850 #bird https://t.co/s4IOLs133y'
+        // and
+        // rawComment.quotedAuthor.name == 'HemantBishnoi'
+        const quotedAuthor = data.includes.users.find((thisUser) => thisUser.id === retweeted.author_id);
+        rawComment.body = retweeted.text;
+        rawComment.originalBody = retweeted.text;
+        rawComment.isQuoted = true;
+        rawComment.quotedAuthor = {name: quotedAuthor.username};
+    } // end extendRetweetedText
 
     storeCommentToRedis(rawComment) {
         const self = this;
@@ -203,3 +235,41 @@ class FetchTwitterComments {
 
 const twitter = new FetchTwitterComments();
 export default FetchTwitterComments;
+
+
+// Sample tweet data format:
+// {
+//     data: {
+//         author_id: '1302522113866203137',
+//         created_at: '2022-03-23T16:04:23.000Z',
+//         id: '1506663156705337353',
+//         lang: 'en',
+//         referenced_tweets: [ { type: 'retweeted', id: '1506644615352533002' } ],
+//         text: 'RT @Mztiifaah: Naija hood rep reality show is starting by the 27th of March and I can’t help but anticipate ��the struggle to win the grand…'
+//     },
+//     includes: {
+//         users: [
+//             {
+//                 id: '1302522113866203137',
+//                 name: 'Psycho ���' ,
+//                 username: 'wtfbangz'
+//             },
+//             {
+//                 id: '792833491578880000',
+//                 name: 'INNOCENT SINNER ��'  ,
+//                 username: 'Mztiifaah'
+//             }
+//         ],
+//         tweets: [
+//             {
+//                 author_id: '792833491578880000',
+//                 created_at: '2022-03-23T14:50:43.000Z',
+//                 id: '1506644615352533002',
+//                 lang: 'en',
+//                 text: 'Naija hood rep reality show is starting by the 27th of March and I can’t help but anticipate ��th e struggle to win the grand prize of 35M and a brand new car among 21 housemates is gon be mad fun\n' +
+//                 'I’m really excited about this one �� @naijahoodrep \n' +
+//                 '#BackToBase https://t.co/ftjrB5w6Dy'
+//             }
+//         ]
+//     }
+// }

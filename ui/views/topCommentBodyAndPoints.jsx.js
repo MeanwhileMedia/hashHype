@@ -341,8 +341,10 @@ class TopCommentBodyAndPoints extends React.Component {
         for (const [pointedWordStr, points] of Object.entries(self.props.topComment.pointsAdjust['1Hr'])) {
             if (!points) continue;
             ++pointedWordCount;
-            totalOtherUserCount = totalOtherUserCount + (points/self.props.topComment.words[pointedWordStr].pointVal);
+            const unadjustedPoints = self.props.topComment.points['1Hr'][pointedWordStr];
+            totalOtherUserCount = totalOtherUserCount + (unadjustedPoints/self.props.topComment.words[pointedWordStr].pointVal);
         }
+        totalOtherUserCount = Math.ceil(totalOtherUserCount);
 
         const overallPointsSummary = (
             <p style={css.topCommentBodyAndPoints_pointsInfo_body}>This comment is ranked

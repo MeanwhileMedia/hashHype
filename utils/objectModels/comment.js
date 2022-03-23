@@ -21,6 +21,8 @@ const commentObjModel = {
             normalizedBody: props.normalizedBody || null, // this is comment.body with contractions expanded + more. See extractWordsFromComments.sanitizeAndNormalizeCommentBody
             stemmedBody: props.stemmedBody || null, // the comment.body passed through natural.PorterStemmer. Lets us know how our code understood the comment.body
             author: props.author || {name: null},
+            isQuoted: props.isQuoted || false, // if this was a quote/recomment/retweet, this will be true
+            quotedAuthor: props.quotedAuthor || {name: null}, // if this was a quote/recomment/retweet, then this will have the username of the author of the original tweet.
             createdUtc: props.createdUtc || Date.now(), // when the comment was posted (ms). When available, this prop is read from source API. Therefore, this tstamp IS NOT used in our comment pointing algo (we use foundAt - a tstamp hashHype controls)
             foundAt: props.foundAt || Date.now(), // when the comment registered to hashHype
             words: props.words || {}, // object with wordRef objects for vals { 'word_!!_1': wordRef1, 'other_!!_word_!!_GME': wordRef2, etc}
@@ -123,6 +125,36 @@ const commentObjModel = {
             if (cback) cback();
         });
     },
+
+    cloneCommentForNewSymbolGroup: function(commentObj) {
+        // When a comment object is being pointed by topCommentStats and it's found to have more than 1 symbol type, it must be allowed to compete with other comments within each symbol type group.
+        // To allow this, we first do a shallow clone of the comment, but some properties must be deep cloned because the 2 comments will diverge and can't hold shared refs. This props are topSymbols, points, and others related to topCommentStats pointing logic.
+        // This is not the prettiest code, but it's meant to be as performant as possible (cpu)
+        let commentClone = {...commentObj};
+        delete commentClone.points;
+        delete commentClone.pointsAdjust;
+        delete commentClone.topSymbolHigh;
+        delete commentClone.topSymbolLow;
+        commentClone = commentObjModel.ensureCommentObjectDefaults(commentClone);
+        
+        commentClone.points['1Hr'] = {...commentObj.points['1Hr']}
+        commentClone.points['12Hr'] = {...commentObj.points['12Hr']}
+        commentClone.points['24Hr'] = {...commentObj.points['24Hr']}
+
+        commentClone.pointsAdjust['1Hr'] = {...commentObj.points['1Hr']}
+        commentClone.pointsAdjust['12Hr'] = {...commentObj.points['12Hr']}
+        commentClone.pointsAdjust['24Hr'] = {...commentObj.points['24Hr']}
+
+        commentClone.topSymbolHigh['1Hr'] = commentObj.topSymbolHigh['1Hr'];
+        commentClone.topSymbolHigh['12Hr'] = commentObj.topSymbolHigh['12Hr'];
+        commentClone.topSymbolHigh['24Hr'] = commentObj.topSymbolHigh['24Hr'];
+
+        commentClone.topSymbolLow['1Hr'] = commentObj.topSymbolHigh['1Hr'];
+        commentClone.topSymbolLow['12Hr'] = commentObj.topSymbolHigh['12Hr'];
+        commentClone.topSymbolLow['24Hr'] = commentObj.topSymbolHigh['24Hr'];
+
+        return commentClone;
+    }
 
 }; // end commentObjModel
 

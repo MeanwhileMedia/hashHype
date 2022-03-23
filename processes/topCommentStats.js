@@ -28,13 +28,15 @@ class TopCommentsStats {
         this.pendingWordFoundAtKeyspaceChannels = {}; // a local record of which '__keyspace@0__:word:*:foundAt' channels have already emitted messages during this refreshTopComments interval. No channel will be acted on twice during one interval.
         this.trackCommentsFor = 3600000; // ms (1hr) How long will we keep updating redis comment objects with recurring word points
 
-        this.topWordsCounts = {}; // {foo_bar: 35, baz: 100, etc...} // caches counts for words found to be both top, or not.
-        this.topWordsCountsMaxLength = 1000;
+        this.topWordsCounts = []; // [['foo_bar', 35], [baz, 100], etc...] // caches counts for words found to be both top, or not.
+        this.topWordsCountsIndex = {} //  {foo_bar: indexOfCountWithinTopWordsCounts, baz: 101, etc...} - this object just helps our lookup into topWordsCounts which is an ordered array
+        this.topWordsCountsMaxLength = 100000; // should be a multiple of 10
         this.topWordsMinCount = 100; // Will start high at process init. Better to slowly adjust down than have an immidate memory overflow (cuz of trying to process too many comments based on too many word occurances)
         this.topWordsRefreshInterval = null;
-        this.topWordsRefreshIntervalTime = 5000;
+        this.topWordsRefreshIntervalTime = 10000;
         this.lastIntervalTotalWordsCount = 0; // total new words that we reported via pubsub '__keyspace@0__:word:*:foundAt' in the last ${topWordsRefreshIntervalTime}ms
         this.lastIntervalTopWordsCount = 0; // How many words were deemed top words in the last ${topWordsRefreshIntervalTime}ms? for logging/debugging the impact of our "isTopWord" logic.
+        this.lastIntervalTopWordsCached = 0; // how many isTopWord lookups had cached values in topWordsCounts
         this.minAvgPercentTopWords = 20; // If the rolling average of percent of words which are deemed top words falls below this number, topWordsMinCount will be adjust down in increments until we start hitting our min percent.
         this.groupSizeForAvgPercentTopWords = 5; // We will store the percentage of words which were topWords for this many topWordsRefreshIntervals. After, the averaged percentage becomes part of the logic to update topWordsMinCount.
 
@@ -111,14 +113,18 @@ class TopCommentsStats {
         const self = this;
 
         // If this word is found in the locally cached this.topWordCounts, can return bool to cback immediately.
-        const thisTopWordCount = self.topWordsCounts[wordString];
+        const thisTopWordCount = self.topWordsCounts[self.topWordsCountsIndex[wordString]];
         if (thisTopWordCount) {
-            if (thisTopWordCount >= self.topWordsMinCount) {
+            ++self.lastIntervalTopWordsCached;
+            // console.log(wordString, ' topWordsCounts was cached');
+            if (thisTopWordCount[1] >= self.topWordsMinCount) {
                 if (cback) cback(true);
             } else {
                 if (cback) cback(false);
             }
             return;
+        } else {
+            // console.log(wordString, ' topWordsCounts was not cached');
         }
 
         // HashHype rule - a foundAt occurance for a 2dGram will ALWAYS trigger a point recalculation for all comments which share it.
@@ -133,7 +139,18 @@ class TopCommentsStats {
         // This incoming word was not yet cached to this.topWordCounts. Fetch the "foundAt" redis list length now.
         const wordFoundAtKey = `word:${wordString}:foundAt`;
         self.redisClient.zcard(wordFoundAtKey, (thisFoundAtListLength) => {
-            self.topWordsCounts[wordString] = thisFoundAtListLength;
+            // Here is where we maintain a max length of our self.topWordsCounts record
+            if (self.topWordsCounts.length >= self.topWordsCountsMaxLength) {
+                const expiredTopWordsCounts = self.topWordsCounts.splice(0, self.topWordsCountsMaxLength*0.1); // delete the oldest stored values first. Do so in batches of 10% so we don't end up splicing in every single loop.
+                expiredTopWordsCounts.forEach((thisTopWordCount) => {
+                    delete self.topWordsCountsIndex[thisTopWordCount[0]];
+                });
+            }
+
+            const thisCountIndex = self.topWordsCounts.push([wordString, thisFoundAtListLength]) - 1;
+            self.topWordsCountsIndex[wordString] = thisCountIndex;
+            //self.topWordsCounts[wordString] = thisFoundAtListLength;
+
             if (thisFoundAtListLength >= self.topWordsMinCount) {
                 if (cback) cback(true);
             } else {
@@ -144,33 +161,38 @@ class TopCommentsStats {
         // Set an interval to take care of dups and re-fetch the foundAt list lengths for all words which already exist on this.topWords
         if(self.topWordsRefreshInterval) return;
         self.topWordsRefreshInterval = setInterval(() => {
-            // First sort our cached self.topWordsCounts. We Will take the smallest one to establish a topWordsMinCount (see setTopWordsMinCount)
-            const topWordsCountsEntries = Object.entries(self.topWordsCounts);
-            topWordsCountsEntries.sort(function(a, b) { // sorts descending
-                return b[1] - a[1];
-            });
+            // First we will update self.topWordsMinCount via self.setTopWordsMinCount(). The new value is used below as we trim self.topWordsCounts.
+            self.setTopWordsMinCount();
 
-            let refreshCountForWords = topWordsCountsEntries.map(x => x[0]);
-            refreshCountForWords = refreshCountForWords.slice(0, self.topWordsCountsMaxLength);
-            self.setTopWordsMinCount(refreshCountForWords);
-
-            // console.log(`Will now refresh current top words:`, refreshCountForWords);
-            self.topWordsCounts = {};
-            refreshCountForWords.forEach((thisTopWord) => {
-                self.isTopWord(thisTopWord);
+            // Now loop through topWordsCounts and only keep the words which did NOT meet the topWordsMinCount. They are the ones that need to be recounted next time they occur.
+            const newTopWordsCounts = [];
+            const newTopWordsCountsIndex = {};
+            self.topWordsCounts.forEach((thisTopWordCount) => {
+                if (thisTopWordCount[1] >= self.topWordsMinCount) { // we know that this word has already pased our min count and won't likely dip below in the immediate future. Keep it's cached record.
+                    const newIndex = newTopWordsCounts.push(thisTopWordCount) + 1;
+                    newTopWordsCountsIndex[thisTopWordCount[0]] = newIndex;
+                } else if (thisTopWordCount[1] < self.topWordsMinCount * 0.5) { // we know that this word was well below our min count and won't likely jump above it in the immediate future. Keep it's cached record.
+                    const newIndex = newTopWordsCounts.push(thisTopWordCount) + 1;
+                    newTopWordsCountsIndex[thisTopWordCount[0]] = newIndex;
+                }
             });
+            self.topWordsCounts = newTopWordsCounts;
+            self.topWordsCountsIndex = newTopWordsCountsIndex;
         }, self.topWordsRefreshIntervalTime);
     }
 
-    setTopWordsMinCount(refreshCountForWords) {
+    setTopWordsMinCount() {
         const self = this;
 
         // First calc/log the percent of words which were deemed top words in the last topWordsRefreshInterval
         const percentTopWords = Math.floor((self.lastIntervalTopWordsCount / self.lastIntervalTotalWordsCount) * 100);
         console.log(`Current topWordsMinCount: ${self.topWordsMinCount}`);
-        console.log(`Total top words in last ${self.topWordsRefreshIntervalTime}ms: ${self.lastIntervalTopWordsCount}/${self.lastIntervalTotalWordsCount} (${percentTopWords}%)`);
+        console.log(`Total top words in last ${self.topWordsRefreshIntervalTime/1000} seconds: ${self.lastIntervalTopWordsCount}/${self.lastIntervalTotalWordsCount} (${percentTopWords}%)`);
+        const percentCachedTopWordCounts = Math.floor((self.lastIntervalTopWordsCached / self.lastIntervalTotalWordsCount) * 100);
+        console.log(`Currently hodling cached foundAt counts for ${self.topWordsCounts.length} words. ${self.lastIntervalTopWordsCached}/${self.lastIntervalTotalWordsCount} (${percentCachedTopWordCounts}%) isTopWord lookups returned cached values in the last ${self.topWordsRefreshIntervalTime/1000} seconds.`);
         self.lastIntervalTotalWordsCount = 0; // reset counters now
         self.lastIntervalTopWordsCount = 0;
+        self.lastIntervalTopWordsCached = 0;
         self.pendingWordFoundAtKeyspaceChannels = {};
 
         // Next try to calculate a rolling average percent of words which were deeemed topWords (if we have enough data). We use that number to adjust our new topWordsMinCount.
@@ -203,7 +225,6 @@ class TopCommentsStats {
 
         const pendingCommentIdsToWords = self.pendingCommentIdsToWords;
         self.pendingCommentIdsToWords = {};
-        self.pendingWordFoundAtKeyspaceChannels = {};
 
         // To ensure hardware stability, topCommentStats will only process a max number of comments for each loop of refreshTopComments (if self.maxCommentsPerTopCommentsRefresh is not null).
         // We will not discard any current this.topComments.comments within this trimming logic. They must all be repointed every time.
@@ -515,7 +536,8 @@ class TopCommentsStats {
                 };
                 if (lowSymbol.symbolKey === highSymbol.symbolKey) lowSymbol = {symbolKey: '', count: null};
                 if (highSymbol.count !== null) {
-                    commentClone = JSON.parse(JSON.stringify(comment));
+                    // commentClone = JSON.parse(JSON.stringify(comment));
+                    commentClone = commentModel.cloneCommentForNewSymbolGroup(comment);
                     commentClone.topSymbolHigh['1Hr'] = highSymbol.symbolKey
                 }
                 if (lowSymbol.count !== null) {

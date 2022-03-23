@@ -224,6 +224,12 @@ class ExtractWordsFromComments {
         self.replaceInCommentBody(comment, /\u{2026}+/gum, '...'); // \u{2026} is the unicode for "…" charchter (a single charachter of 3 dots - elipses). This trips up urlNormalize and will now be converted into 3 "." chars.
         self.replaceInCommentBody(comment, '&amp;', '&'); // decode the & sign
 
+        // Now make adjustments that will ONLY apply to comment.normalizedBody. These changes will mutate the comment body so the words can be more easily extracted. However,
+        // these changes are too invasive for comment.body (which is eventually rendered in UI).
+
+        // Twitter cuts off tweets at 140 chars when it is a retweet, then add's the "..." mid-word. If we end up with one of these, the truncated word can sometimes wronlgy match a symbol. So, we will remove the truncated word completely.
+        comment.normalizedBody = comment.normalizedBody.replace(/\s[^\s]+\.\.\.$/g, ''); // https://regexr.com/6i18v 
+
         // expand contractions BUT ONLY on comment.normalizedBody.
         let bodyTokens = naturalWordTokenizerPreserveContractions.tokenize(comment.normalizedBody);
         const normalizedBodyTokens = [];
