@@ -55,6 +55,9 @@ class TopCommentsStats {
         this.commentsCountForLastTopCommentsRefresh = null; // used to track and dynamically set maxCommentsPerTopCommentsRefresh when we have overlapping calls to storeNewTopCommentsStats
         this.maxCommentsPerTopCommentsRefreshResetTimeout = null; // The maxCommentsPerTopCommentsRefresh is manually reset to null after a timeout so that it can be recalculated under current load.
         this.maxCommentsPerTopCommentsRefreshResetTimeoutLength = 60000*10; // every 10 minutes AFTER there were no storeNewTopCommentsStats overlaps
+        this.onlyDiscardOverflowCommentsFromSources = ['twitter_sampleStream']; // when our hardware lags and is set, refreshTopComments discards random comments. Set onlyDiscardOverflowCommentsFromSources to ensure the discarded comments must have a specific comment.source, like "twitter_sampleStream". Set to empty array and all sources are eligible to be discarded.
+        this.quotedCommentsAreNeverTopComments = true; // set to true and any time comment.isQuoted == true it will not be considered for topComment, and will not generate 2dGrams. These comments do still go through extractWordsFromComments though, so their words generate foundAt tstamps.
+        this.quotedCommentsDiscardCount = 0; // for logging
 
         this.topCommentsWithPointed2dGramLastRefresh = {}; // for logging 2dGram activity {commentId: int, etc} (where int is the number of 2dGrams on that comment that earned points, even if 0 points)
 
@@ -189,7 +192,7 @@ class TopCommentsStats {
         console.log(`Current topWordsMinCount: ${self.topWordsMinCount}`);
         console.log(`Total top words in last ${self.topWordsRefreshIntervalTime/1000} seconds: ${self.lastIntervalTopWordsCount}/${self.lastIntervalTotalWordsCount} (${percentTopWords}%)`);
         const percentCachedTopWordCounts = Math.floor((self.lastIntervalTopWordsCached / self.lastIntervalTotalWordsCount) * 100);
-        console.log(`Currently hodling cached foundAt counts for ${self.topWordsCounts.length} words. ${self.lastIntervalTopWordsCached}/${self.lastIntervalTotalWordsCount} (${percentCachedTopWordCounts}%) isTopWord lookups returned cached values in the last ${self.topWordsRefreshIntervalTime/1000} seconds.`);
+        console.log(`Currently cached foundAt counts for ${self.topWordsCounts.length} words. ${self.lastIntervalTopWordsCached}/${self.lastIntervalTotalWordsCount} (${percentCachedTopWordCounts}%) isTopWord lookups returned cached values in the last ${self.topWordsRefreshIntervalTime/1000} seconds.`);
         self.lastIntervalTotalWordsCount = 0; // reset counters now
         self.lastIntervalTopWordsCount = 0;
         self.lastIntervalTopWordsCached = 0;
@@ -288,13 +291,23 @@ class TopCommentsStats {
             allNewComments.forEach((thisNewComment, thisNewCommentIndex) => {
                 const thisNewCommentId = getAllCommentIds[thisNewCommentIndex];
                 allCommentGetPromises.push(new Promise((resolve, reject) => {
-                    if (thisNewComment && discardCommentIds.indexOf(thisNewComment.id) !== -1) { // we must send the full comment object to removeCommentFromAll or it won't be cleared from it's associated wordToComment indexes.
+                    const discardIt = () => {
                         self.removeCommentFromAll({comment: thisNewComment}, () => {
                             delete pendingCommentIdsToWords[thisNewComment.id];
                             ++totalCommentsDiscarded;
                             resolve(null);
                         });
-                        return;
+                    }
+                    if (thisNewComment && discardCommentIds.indexOf(thisNewComment.id) !== -1) { // we must send the full comment object to removeCommentFromAll or it won't be cleared from it's associated wordToComment indexes.
+                        if (self.onlyDiscardOverflowCommentsFromSources.length) {
+                            if (self.onlyDiscardOverflowCommentsFromSources.indexOf(thisNewComment.source) !== -1) {
+                                discardIt();
+                                return;
+                            }
+                        } else {
+                            discardIt();
+                            return;
+                        }
                     }
                     checkAndRestoreComment(thisNewComment, thisNewCommentId, resolve);
                 }));
@@ -556,10 +569,8 @@ class TopCommentsStats {
     calcTotalPointsForPendingTopComments() {
         const self = this;
         // Sum total points for this comment into timebuckets
-        // pendingTopComments.forEach((thisComment) => {
         Object.values(self.pendingTopComments).flat().forEach((thisComment) => {
 
-            //const correctedCommentPoints = JSON.parse(JSON.stringify(thisComment.points)); // Make all corrections on a seperate object then set back to thisComment.pointsAdjust after all computations are complete
             const correctedCommentPoints = self.newTimeBucketObject()
             for (const [timeBucketKey, pointsByWord] of Object.entries(correctedCommentPoints)) {
                 correctedCommentPoints[timeBucketKey] = {...thisComment.points[timeBucketKey]};
@@ -1196,6 +1207,13 @@ class TopCommentsStats {
         // This process includes rules around which comments should be excluded in trend analysis. Ie: comments that are from not relevant users
         let shouldDiscard = false;
 
+        if (this.quotedCommentsAreNeverTopComments && comment.isQuoted) {
+            shouldDiscard = true;
+            // console.warn(`Discarded quoted comment:${comment.id}`);
+            ++this.quotedCommentsDiscardCount;
+            return;
+        }
+
         // Check the comment age. Delete if it's too old.
         const isYoungComment = Date.now() - comment.foundAt < this.trackCommentsFor;
         if (!isYoungComment) {
@@ -1465,6 +1483,9 @@ class TopCommentsStats {
                 const pointed2dGramRecordVals = Object.values(self.topCommentsWithPointed2dGramLastRefresh);
                 console.log(`${pointed2dGramRecordVals.length} comments generated ${sum(pointed2dGramRecordVals)} new 2dGrams in the last ${refreshDuration} seconds.`);
                 self.topCommentsWithPointed2dGramLastRefresh = {};
+
+                if (self.quotedCommentsDiscardCount) console.log(`Discarded ${this.quotedCommentsDiscardCount} quoted comments in the last ${refreshDuration} seconds.`);
+                self.quotedCommentsDiscardCount = 0;
             } else {
                 console.warn(`A cancelled topCommentsRefresh finally returned (started at ${thisRefreshTstamp}). Total duration: ${refreshDuration} seconds`);
             }

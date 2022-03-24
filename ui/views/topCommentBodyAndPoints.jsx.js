@@ -437,8 +437,12 @@ class TopCommentBodyAndPoints extends React.Component {
     getAuthorEl() {
         const css = styles.generate(self);
         if (this.state.expandPointsInfo) return null;
+        let renderAuthorName = this.props.topComment.author.name;
+        if (this.props.topComment.isQuoted && this.props.topComment.quotedAuthor && this.props.topComment.quotedAuthor.name) {
+            renderAuthorName = this.props.topComment.quotedAuthor.name;
+        }
         return (
-            <span style={css.topCommentBodyAndPoints_author}>@{this.props.topComment.author.name || ''}</span>
+            <span style={css.topCommentBodyAndPoints_author}>@{renderAuthorName}</span>
         )
     }
 
