@@ -1211,7 +1211,7 @@ class TopCommentsStats {
             shouldDiscard = true;
             // console.warn(`Discarded quoted comment:${comment.id}`);
             ++this.quotedCommentsDiscardCount;
-            return;
+            return shouldDiscard;
         }
 
         // Check the comment age. Delete if it's too old.

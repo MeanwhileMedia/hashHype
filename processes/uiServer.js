@@ -332,7 +332,7 @@ const uiServer = {
                 const adminCodeStatus = hbCodeChecker.shouldServeFEAdminAsset(koaCtx);
                 if (adminCodeStatus.shouldServe) {
                     console.log(`Forwarding socket message to hbClientSocketDbResponses_admin for admin user ${adminCodeStatus.adminInfo.name}...`);
-                    self.hbClientSocketDbResponses_admin[message.channel](message, socket);
+                    self.hbClientSocketDbResponses_admin[message.channel](message, socket, adminCodeStatus);
                     return true;
                 }
             }

@@ -57,6 +57,7 @@ const hbCodeChecker = {
             if (uiServerCtx.request.ip && adminUserInfo.ip && uiServerCtx.request.ip.match(adminUserInfo.ip)) {
                 adminCodeStatus.shouldServe = true;
                 adminCodeStatus.adminInfo = hbCodeCheckerConfig.secretUserInfo[adminUid];
+                adminCodeStatus.matchedIp = uiServerCtx.request.ip;
             }
         }
         return adminCodeStatus;

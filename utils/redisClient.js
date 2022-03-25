@@ -603,6 +603,7 @@ class RedisClient {
     ////////
     // Up next, Sorted Set commands. This structure is used by index:wordToComments to maintain an ordered list of commentIds which
     // are scored using their createdAt tstamps. zrange can be used to extract onlt commentIds which fall in a certain timerange.
+    // NOTE: Values are NEVER automatically JSON stringified/parsed in any sorted set commands. If JSON is being added to set, it should be handled before passing to extended redis commands.
     // https://github.com/NodeRedis/node-redis/blob/09f0fe822862baf0f2a5d2b37537babffaae66d8/test/commands/zadd.spec.js
     zadd(key, addObjects, cback, dbName) {
         // addObjects = [item1Points, item1StrValue, item2Points, item2StrValue, etc...]
