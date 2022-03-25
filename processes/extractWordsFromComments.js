@@ -228,7 +228,7 @@ class ExtractWordsFromComments {
         // these changes are too invasive for comment.body (which is eventually rendered in UI).
 
         // Twitter cuts off tweets at 140 chars when it is a retweet, then add's the "..." mid-word. If we end up with one of these, the truncated word can sometimes wronlgy match a symbol. So, we will remove the truncated word completely.
-        comment.normalizedBody = comment.normalizedBody.replace(/\s[^\s]+\.\.\.$/g, ''); // https://regexr.com/6i18v 
+        comment.normalizedBody = comment.normalizedBody.replace(/\s[^\s]+\.\.\.$/g, ''); // https://regexr.com/6i18v
 
         // expand contractions BUT ONLY on comment.normalizedBody.
         let bodyTokens = naturalWordTokenizerPreserveContractions.tokenize(comment.normalizedBody);
@@ -339,7 +339,7 @@ class ExtractWordsFromComments {
                         // In case this symbolKey actually pointed to a keyAlias, and the parent object was returned as symbol, correct the symbolKey now.
                         if (actualAbsKey) thisPendingSymbolEntity.symbolKey = actualAbsKey;
 
-                        const isMatch = symbolModel.execMatch(symbol, thisPendingSymbolEntity.token);
+                        const isMatch = symbolModel.execMatch(symbol, thisPendingSymbolEntity.token, comment);
                         if(!isMatch) {
                             resolve(thisPendingSymbolEntity);
                             return;
@@ -369,7 +369,7 @@ class ExtractWordsFromComments {
             let idIncrement = 0;
             pendingSymbolEntities.forEach((thisPendingSymbolEntity) => {
                 if (thisPendingSymbolEntity.matchedSymbol) {
-                    const thisHashtagUid = `hh__hashtag${++idIncrement}symbol__hh`; // JWW stopping - these are getting lowercased by stemToken and can't be matched later, but we want them uppercased to support isDiscardComment
+                    const thisHashtagUid = `hh__hashtag${++idIncrement}symbol__hh`;
                     const thisHashtagCodeEscapedForRegex = thisPendingSymbolEntity.token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // the string we are matching against needs to be escaped for regex. https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
                     const hashtagReplaceRegex = new RegExp(thisHashtagCodeEscapedForRegex, 'gm');
                     self.replaceInCommentBody(comment, hashtagReplaceRegex, ` ${thisHashtagUid} `); // We pad with spaces to make sure natural.js treats this as an isolated token. i.e. non-spaced hashtags like "Hey i like hashtags!hashtag1symbolhashtag2symbolhashtag1symbol" would come out as 1 token
@@ -423,7 +423,7 @@ class ExtractWordsFromComments {
                         // In case this symbolKey actually pointed to a keyAlias, and the parent object was returned as symbol, correct the symbolKey now.
                         if (actualAbsKey) thisPendingSymbolEntity.symbolKey = actualAbsKey;
 
-                        const isMatch = symbolModel.execMatch(symbol, thisPendingSymbolEntity.token);
+                        const isMatch = symbolModel.execMatch(symbol, thisPendingSymbolEntity.token, comment);
                         if(!isMatch) {
                             resolve(thisPendingSymbolEntity);
                             return;
@@ -539,7 +539,7 @@ class ExtractWordsFromComments {
                         // In case this symbolKey actually pointed to a keyAlias, and the parent object was returned as symbol, correct the symbolKey now.
                         if (actualAbsKey) tokenSymbolResult.symbolKey = actualAbsKey;
 
-                        const isMatch = symbolModel.execMatch(symbol, thisUrl);
+                        const isMatch = symbolModel.execMatch(symbol, thisUrl, comment);
                         if(!isMatch) {
                             resolve(tokenSymbolResult);
                             return;
@@ -621,11 +621,11 @@ class ExtractWordsFromComments {
                     // In case this symbolKey actually pointed to a keyAlias, and the parent object was returned as symbol, correct the symbolKey now.
                     if (actualAbsKey) tokenSymbolResult.symbolKey = actualAbsKey;
 
-                    let isMatch = symbolModel.execMatch(symbol, thisToken);
+                    let isMatch = symbolModel.execMatch(symbol, thisToken, comment);
                     if(!isMatch) { // We manually support passing $ to the custom match function if a "$" token preceeded this stock symbol. Some custom match functions will require $ to be preset (when tokens withou $ are too too ambiguous)
                         // dollar signs are stripped from tokenized body, so we manually add it now (IF we find that it was present in normalizedBody)
                         if (new RegExp(`\\s\\$${thisToken}\\s`, 'gm').test(comment.normalizedBody)) { // https://regexr.com/6houn
-                            isMatch = symbolModel.execMatch(symbol, `$${thisToken}`);
+                            isMatch = symbolModel.execMatch(symbol, `$${thisToken}`, comment);
                         }
                     }
 
@@ -720,7 +720,7 @@ class ExtractWordsFromComments {
                         // In case this symbolKey actually pointed to a keyAlias, and the parent object was returned as symbol, correct the symbolKey now.
                         if (actualAbsKey) thisPendingSymbolEntity.symbolKey = actualAbsKey;
 
-                        const isMatch = symbolModel.execMatch(symbol, thisPendingSymbolEntity.token);
+                        const isMatch = symbolModel.execMatch(symbol, thisPendingSymbolEntity.token, comment);
                         if(!isMatch) {
                             resolve(thisPendingSymbolEntity);
                             return;

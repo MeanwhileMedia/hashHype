@@ -15,10 +15,15 @@ const symbolObjModel = {
             exchange: props.exchange || null, //nyse, etc // read-only
             assocs: props.assocs || [], // [{assoc: 'http://imgUrl.jpg', type: 'img'}, etc..] - link this symbol to one or more associations with greater context - i.e. an image url for an emoji symbol, etc
 
-            // When extractWordsFromComments is checking each comment token to see if it's a symbol, tokens within the symbolAlias array will also produce a match (in addition to symbol.symbol).
+            // When extractWordsFromComments is checking each comment token to see if it's a symbol (via the symbol's own symbol.match function), tokens within the symbolAlias array will also produce a match (in addition to symbol.symbol).
             // i.e. it performs a redis 'get symbol:stock:GME' to confirm a symbol, but we might also want 'get symbol:stock:gamestop' to assign that symbol to the comment. The string 'gamestop'
             // is added to the symbolAlias array via the adminTrain UI (by customizing the get function). Otherwise, symbolAlias is always null.
-            symbolAlias: props.symbolAlias || null,
+            symbolAlias: props.symbolAlias || null, // symbolAlias words are case sensitive. They SHOULD NOT contain spaces or special chars as they are meant to match a symbolAlias redis object with key "symbol:stock:gamestop"
+            // Essentially the opposite of symbolAlias, symbolNemesis, when set, is an array of word strings. However, when the symbol.match function is run, it can check if any of these "nemesis" words
+            // exist ANYWHERE in the comment.body. If they are found, then symbol.match returns false. This is useful in situation where there's symbol which should match a rather common word, but only when that common word is not part of a known false context.
+            // i.e: The stock symbol "F" (Form Motors), which has symbolAlias "Ford" will often match against other names, so we can set symbolNemesis to ['Francis', 'Coppola'] to ensure it's only a match in the car context
+            symbolNemesis: props.symbolNemesis || null, // symbolNemesis words are case sensitive. symbolNemesis strings CAN contain spaces or special chars if absolutley necessary (since they are matched against comment body), but this is bad practice. Try to make them simple single word strings like symbolAlias.
+
             // Similar to symbolAlias, prettyName can be set via the adminTrain UI (by customizing the get function).  Otherwise, prettyName is always null. This is the name that will render in UI when showing this symbol.
             prettyName:  props.prettyName || null,
             // The following accessor functions are stored to redis as strings. the get and match functions are customizable via adminTrain UI.
@@ -66,11 +71,11 @@ const symbolObjModel = {
         return symbol.funcdSymbolData;
     },
 
-    execMatch: function(symbol, matchAgainst) {
-        const execFunc = new Function(`const execFunc = (props, matchAgainst) => { ${symbol.match} }; return execFunc.apply(undefined, arguments);`);
+    execMatch: function(symbol, matchAgainst, comment) {
+        const execFunc = new Function(`const execFunc = (props, matchAgainst, comment) => { ${symbol.match} }; return execFunc.apply(undefined, arguments);`);
         let matchOutcome;
         try {
-            matchOutcome = execFunc(symbolObjModel.execGet(symbol), matchAgainst);
+            matchOutcome = execFunc(symbolObjModel.execGet(symbol), matchAgainst, comment);
         } catch (error) {
             console.warn(`Symbol (${symbol.symbol}) match function ran with error:`, error);
             matchOutcome = false;
@@ -90,7 +95,7 @@ Required return value: props (object)
 return props;`,
 
             'match': `/*
-Args available: (props, matchAgainst)
+Args available: (props, matchAgainst, comment)
 Required return value: isMatch (boolean)
 */
 let isMatch = false;

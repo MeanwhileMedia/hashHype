@@ -291,6 +291,21 @@ class HbClientSocketDbResponses_admin {
                 });
             }
 
+            // Now check if this admin edit resulted in any new props.symbolNemesis
+            if (funcdSymbolData && funcdSymbolData.symbolNemesis && Array.isArray(funcdSymbolData.symbolNemesis)) {
+                console.warn(`A symbolNemesis was defined for ${symbolRedisKey} (${funcdSymbolData.symbolNemesis}).`)
+                symbolRedisData.symbolNemesis = funcdSymbolData.symbolNemesis; // so it saves as a top level prop on the symbol object too
+                historyObjects.push(self.newTrainingHistoryObj({
+                    actionName: 'editSymbolFunction',
+                    objectChanged: symbolRedisKey,
+                    keysChanged: ['symbolNemesis'],
+                    actions: [['set', funcdSymbolData.symbolNemesis]],
+                    tstamp: now,
+                    adminName: adminCodeStatus.adminInfo.name,
+                    adminIp: adminCodeStatus.matchedIp
+                }));
+            }
+
             // Now check if this admin edit resulted in a new symbol.prettyName
             if (funcdSymbolData && funcdSymbolData.prettyName) {
                 console.warn(`A prettyName was defined for ${symbolRedisKey} (${funcdSymbolData.prettyName}).`)
