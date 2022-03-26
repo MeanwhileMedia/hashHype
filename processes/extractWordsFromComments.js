@@ -970,11 +970,8 @@ class ExtractWordsFromComments {
         for (let [thisWordStr, thisWordRef] of Object.entries(comment.words)) {
             if (thisWordRef.isSymbolAlias) continue; // We never fire foundAts for words that matched a symbolAlias. There will be another wordRef on this comment that has the actual symbol.symbol assigned to wordRef.word. That's the one that will register foundAts.
             wordSavePromises.push(new Promise( (resolve, reject) => {
-                // Add a foundAt tstamp for this word and save this comment to it's WordToCommentsIndex (creating one if it does not yet exist)
-                wordModel.addFoundAtTstampForWord(thisWordStr, comment, self.redisClient, () => { // this must be done BEFORE registerWordToCommentsIndex or the foundAt tstamp will be cancelled as dup word by same user.
-                    wordModel.registerWordToCommentsIndex(thisWordStr, comment, self.redisClient, () => {
-                        resolve();
-                    });
+                wordModel.registerWordOccurance(thisWordStr, comment, self.redisClient, () => {
+                    resolve();
                 });
             })); // end wordSavePromises.push
         };

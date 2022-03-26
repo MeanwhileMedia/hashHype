@@ -142,17 +142,8 @@ class TopCommentsStats {
         // This incoming word was not yet cached to this.topWordCounts. Fetch the "foundAt" redis list length now.
         const wordFoundAtKey = `word:${wordString}:foundAt`;
         self.redisClient.zcard(wordFoundAtKey, (thisFoundAtListLength) => {
-            // Here is where we maintain a max length of our self.topWordsCounts record
-            if (self.topWordsCounts.length >= self.topWordsCountsMaxLength) {
-                const expiredTopWordsCounts = self.topWordsCounts.splice(0, self.topWordsCountsMaxLength*0.1); // delete the oldest stored values first. Do so in batches of 10% so we don't end up splicing in every single loop.
-                expiredTopWordsCounts.forEach((thisTopWordCount) => {
-                    delete self.topWordsCountsIndex[thisTopWordCount[0]];
-                });
-            }
-
             const thisCountIndex = self.topWordsCounts.push([wordString, thisFoundAtListLength]) - 1;
             self.topWordsCountsIndex[wordString] = thisCountIndex;
-            //self.topWordsCounts[wordString] = thisFoundAtListLength;
 
             if (thisFoundAtListLength >= self.topWordsMinCount) {
                 if (cback) cback(true);
@@ -171,14 +162,20 @@ class TopCommentsStats {
             const newTopWordsCounts = [];
             const newTopWordsCountsIndex = {};
             self.topWordsCounts.forEach((thisTopWordCount) => {
-                if (thisTopWordCount[1] >= self.topWordsMinCount) { // we know that this word has already pased our min count and won't likely dip below in the immediate future. Keep it's cached record.
-                    const newIndex = newTopWordsCounts.push(thisTopWordCount) + 1;
-                    newTopWordsCountsIndex[thisTopWordCount[0]] = newIndex;
-                } else if (thisTopWordCount[1] < self.topWordsMinCount * 0.5) { // we know that this word was well below our min count and won't likely jump above it in the immediate future. Keep it's cached record.
-                    const newIndex = newTopWordsCounts.push(thisTopWordCount) + 1;
-                    newTopWordsCountsIndex[thisTopWordCount[0]] = newIndex;
+                if (thisTopWordCount[1] < self.topWordsMinCount * 0.3) { // we know that this word was well below our min count and won't likely jump above it in the immediate future. Keep it's cached record until it naturally overflows because of self.topWordsCountsMaxLength.
+                    newTopWordsCounts.push(thisTopWordCount);
                 }
             });
+            if (newTopWordsCounts.length >= self.topWordsCountsMaxLength) {
+                // rememeber that we only ever push to topWordsCounts, so the oldest entries will always be at the beginning. We will also remove 20% more than we need to to ensure we stay below the limit through the next refreshTopComments loops.
+                const removeCount = (newTopWordsCounts.length - self.topWordsCountsMaxLength) + (self.topWordsCountsMaxLength * 0.2);
+                newTopWordsCounts.splice(0, removeCount);
+            }
+            // Now we have to build our newTopWordsCountsIndex because we are about to set a new self.topWordsCounts
+            newTopWordsCounts.forEach((thisTopWordCount, newIndex) => {
+                newTopWordsCountsIndex[thisTopWordCount[0]] = newIndex;
+            });
+
             self.topWordsCounts = newTopWordsCounts;
             self.topWordsCountsIndex = newTopWordsCountsIndex;
         }, self.topWordsRefreshIntervalTime);
@@ -1043,12 +1040,9 @@ class TopCommentsStats {
                 // console.warn(`comment:${comment.id} earned a new 2dGram: ${this2dGram.word}`, this2dGram)
                 comment.words[this2dGram.word] = this2dGram; // This comment will be saved at the bottom of refreshTopComments
                 wordRefSavePromises.push(new Promise( (resolve, reject) => {
-                    // Add a foundAt tstamp for this word and save this comment to it's WordToCommentsIndex (creating one if it does not yet exist)
-                    wordModel.addFoundAtTstampForWord(this2dGram.word, comment, self.redisClient, () => { // this must be done BEFORE registerWordToCommentsIndex or the foundAt tstamp will be cancelled as dup word by same user.
-                        wordModel.registerWordToCommentsIndex(this2dGram.word, comment, self.redisClient, () => {
-                            allNew2dGramStrings.push(this2dGram.word);
-                            resolve();
-                        });
+                    wordModel.registerWordOccurance(this2dGram.word, comment, self.redisClient, () => {
+                        allNew2dGramStrings.push(this2dGram.word);
+                        resolve();
                     });
                 })); // end wordRefSavePromises.push
             }

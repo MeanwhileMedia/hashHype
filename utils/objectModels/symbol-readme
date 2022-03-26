@@ -1,0 +1,34 @@
+Below strings should be exactly copy/pasted when using adminTrain UI to edit a symbols get/match functions.
+
+
+/* 1. This symbol ticker overlaps a ticker on another financial symbol. Other symbol takes precedence. This symbol will match against props.symbolAlias only. - HashHype edit #845 */
+
+/* 1. This symbol ticker overlaps a ticker on another financial symbol. Other symbol takes precedence. This symbol ALSO does not have any unique strings for props.symbolAlias. This symbol will be lost in conversation! - HashHype edit #855 */
+
+/* 1. Exact ticker symbol match, BUT requires prepended $ - HashHype edit #625 */
+if (matchAgainst === '$'+props.symbol) {
+    isMatch = true;
+    return isMatch;
+}
+
+/* 1. Symbol is rejected if comment.body matches one of our manually defined symbol nemesis. Case sensitive. This rule must come first.  */
+if (props.symbolNemesis && props.symbolNemesis.length && comment && comment.body) {
+    const bodyHasNemesisWord = props.symbolNemesis.find((nemesisWord) => {
+        return comment.body.indexOf(nemesisWord) !== -1;
+    });
+    if (bodyHasNemesisWord) {
+        isMatch = false;
+        return isMatch;
+    }
+}
+
+/* 1. This symbol has a manually assigned pretty name which will render instead of props.name - HashHype edit #184  */
+props.prettyName = 'Gamestop';
+
+
+/* 1. This symbol has manually assigned symbol aliases (case sensitive) - HashHype edit #417 */
+props.symbolAlias = ['gamestop'];
+
+
+/* 1. This symbol has manually assigned symbol nemesis (case sensitive) - HashHype edit #392 */
+props.symbolNemesis = ['Copolla'];
