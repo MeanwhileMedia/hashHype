@@ -3,7 +3,8 @@ import {exec} from 'child_process';
 import {nextTick} from 'process';
 import diskUsage from 'diskusage';
 import yargs from 'yargs';
-import level from 'level'; // https://github.com/Level/leveldown#api
+import levelup from 'levelup';
+import rocksdb from 'rocksdb';
 import { v4 as uuidv4 } from 'uuid';
 import { mean } from 'mathjs';
 
@@ -23,7 +24,7 @@ class LevelDBClient {
         }
         self.redisClient = opts.redisClient;
 
-        self.levelDbDir = path.resolve(process.cwd(), '..', 'hashHypeArchive'); // IMPORTANT - this directory must be above our main hashHype app directory or it will be nuked during our deploy process
+        self.levelDbDir = path.resolve(process.cwd(), '..', 'hashHype_archive'); // IMPORTANT - this directory must be above our main hashHype app directory or it will be nuked during our deploy process
 
         // pubSubUidSubscriptions is used as a temporary record for getViaPubSub requests. The levelDBMaster is instructed to publish the value fetched from levelDB
         // to a unique one-time-use channel that the requesting process is waiting to hear back on.
@@ -103,7 +104,9 @@ class LevelDBClient {
         }
 
         console.log(`levelDBMaster will now attempt to open levelDB ${self.levelDbDir} ...`);
-        self.openedLevelDB = level(self.levelDbDir, {}, (err, db) => {
+        self.openedLevelDB = levelup(rocksdb(self.levelDbDir), {
+            infoLogLevel: 'info'
+        }, (err, db) => {
             if (err) {
                 console.error(`ERR! Could not connect to "${self.levelDbDir}" levelDb.`, err);
                 retry();
@@ -215,6 +218,10 @@ class LevelDBClient {
                 if (cback) cback(null);
                 return;
             }
+            if (!valJson) { // will be undefined when it isn't found in rocksDB. return null
+                if (cback) cback(null);
+                return;
+            }
 
             let val;
             if (parseJson) {
@@ -227,6 +234,7 @@ class LevelDBClient {
                 }
             } else {
                 val = valJson;
+                if (typeof val !== 'string') val = val.toString(); // rocksDB returns Uint8Array buffer. Caller expects JSON string. Convert now.
             }
             if (cback) cback(val);
         });
@@ -274,6 +282,11 @@ class LevelDBClient {
             // console.warn(`LevelDBClient just ran ${readSpeed} read commands per second (rps). The average is ${Math.ceil(mean(self.readSpeedHistory))}rps.`);
 
             allValsJson.forEach((thisValJson, thisValIndex) => {
+                if (!thisValJson) { // will be undefined when it isn't found in rocksDB. return null
+                    if (pendingReadQueue[thisValIndex].cback) pendingReadQueue[thisValIndex].cback(null);
+                    return;
+                }
+
                 let val;
                 if (pendingReadQueue[thisValIndex].parseJson) {
                     try {
@@ -285,6 +298,7 @@ class LevelDBClient {
                     }
                 } else {
                     val = thisValJson;
+                    if (typeof val !== 'string') val = val.toString(); // rocksDB returns Uint8Array buffer. Caller expects JSON string. Convert now.
                 }
                 if (pendingReadQueue[thisValIndex].cback) pendingReadQueue[thisValIndex].cback(val);
             });
@@ -311,7 +325,7 @@ class LevelDBClient {
         }
         self.openedLevelDB.put(key, JSON.stringify(valObj), (err) => {
             if (err) {
-                console.error(`Failed to set ${levelDBArchiveKey}`);
+                console.error(`Failed to set ${key}`);
                 if (cback) cback(false);
             } else {
                 if (cback) cback(true);
@@ -353,12 +367,13 @@ class LevelDBClient {
 
     compactRange(start, end, cback) {
         const self = this;
+        console.warn(`Will now compact range of keys: ${start} -> ${end}`);
         self.openedLevelDB.compactRange(start, end, (err) => {
             if (err) {
                 console.error('LevelDB compactRange error:', err);
                 if (cback) cback(false);
             } else {
-                console.warn('LevelDB compactRange garbage collection.')
+                console.warn('Completed LevelDB compactRange garbage collection.')
                 if (cback) cback(true);
             }
         });
@@ -382,117 +397,105 @@ class LevelDBClient {
         }, self.diskCheckIntervalTime);
     }
 
-    ensureDBDiskUsageIsWithinBounds(cback, evictingKey, snapshotTstampIndex, deleteBatchSize) {
+    ensureDBDiskUsageIsWithinBounds(cback, evictingKey, snapshotTstampIndex, deleteBatchSize, deletedKeys = []) {
         const self = this;
         evictingKey = evictingKey || self.diskCheckCorrectionDeletesArchivedKey;
         const minDeleteBatchSize = 10;
         const maxDeleteBatchSize = 1000;
 
-        self.getDbDiskUsage((startingDiskUsageObj) => {
-            if (startingDiskUsageObj.dbDiskUsage < self.gbToBytes(self.diskCheckMaxDiskUsage) && !deleteBatchSize) {
-                console.log(`LevelDB ${self.levelDbDir} is within acceptable disk usage: ${Math.round(self.bytesToGb(startingDiskUsageObj.dbDiskUsage)*1000)/1000}GB used of ${self.diskCheckMaxDiskUsage}GB available`);
+        if (!snapshotTstampIndex) {
+            // this must be the first iteration an we have not yet established an array of snapshot keys to be deleted in loop. Do now.
+            self.get(`index:snapshotTstamps:${evictingKey}`, (gotSnapshotTstampIndex) => {
+                if (!gotSnapshotTstampIndex) {
+                    console.warn(`Could not find index:snapshotTstamps:${evictingKey} in redis. There may not yet be any snapshots saved for this key yet.`);
+                    if (cback) cback();
+                    return;
+                }
+
+                self.ensureDBDiskUsageIsWithinBounds(cback, evictingKey, gotSnapshotTstampIndex, minDeleteBatchSize, deletedKeys);
+            });
+            return;
+        }
+
+        self.getDbDiskUsage(`${evictingKey}:${snapshotTstampIndex[0]}`, `${evictingKey}:${snapshotTstampIndex[snapshotTstampIndex.length-1]}`, (startingDiskUsageBytes) => {
+            if (startingDiskUsageBytes < self.gbToBytes(self.diskCheckMaxDiskUsage) && !deletedKeys.length) { // if deletedKeys has length, then we are in-flight DB deletions to meet self.diskCheckCorrectionDiskUsage
+                console.log(`LevelDB ${self.levelDbDir} is within acceptable disk usage: ${Math.round(self.bytesToGb(startingDiskUsageBytes)*1000)/1000}GB used of ${self.diskCheckMaxDiskUsage}GB available`);
                 if (cback) cback(); // disk usage is OK
                 return;
             }
+            console.warn(`LevelDB ${self.levelDbDir} is too large. Disk usage: ${Math.round(self.bytesToGb(startingDiskUsageBytes)*1000)/1000}GB used of ${self.diskCheckMaxDiskUsage}GB available`);
 
-            if (!snapshotTstampIndex) {
-                // this must be the first iteration an we have not yet established an array of snapshot keys to be deleted in loop. Do now.
-                self.get(`index:snapshotTstamps:${evictingKey}`, (gotSnapshotTstampIndex) => {
-                    if (!gotSnapshotTstampIndex) {
-                        console.warn(`Could not find index:snapshotTstamps:${evictingKey} in redis. There may not yet be any snapshots saved for this key yet.`);
-                        if (cback) cback();
-                        return;
-                    }
-                    console.warn(`At start of ensureDBDiskUsageIsWithinBounds, there were ${gotSnapshotTstampIndex.length} snapshots of ${evictingKey}`);
-                    self.ensureDBDiskUsageIsWithinBounds(cback, evictingKey, gotSnapshotTstampIndex, minDeleteBatchSize);
-                });
+            console.warn(`At start of ensureDBDiskUsageIsWithinBounds, there were ${snapshotTstampIndex.length} snapshots of ${evictingKey}`);
+            if (snapshotTstampIndex.length < deleteBatchSize) {
+                console.warn(`Cannot attempt to delete a batch of ${deleteBatchSize} snapshots when index:snapshotTstamps:${evictingKey} only points to ${snapshotTstampIndex.length} keys. Possible index corruption. Please inspect...`);
                 return;
             }
 
             const batchCmds = [];
             for (let batchCmdCount = 0; batchCmdCount < deleteBatchSize; batchCmdCount++) {
-                batchCmds.push({ type: 'del', key: `${evictingKey}:${snapshotTstampIndex.shift()}` });
+                const thisKey = `${evictingKey}:${snapshotTstampIndex.shift()}`;
+                batchCmds.push({type: 'del', key: thisKey});
+                deletedKeys.push(thisKey);
             }
-            self.batch(batchCmds, (success) => {
-                if (!success) {
-                    console.warn(`ensureDBDiskUsageIsWithinBounds failed to delete a batch of ${batchCmds.length} snapshot keys.`);
-                    if (cback) cback();
-                    return;
-                }
-                console.warn(`ensureDBDiskUsageIsWithinBounds deleted ${batchCmds.length} keys.`);
 
-                // Must now re-save the index:snapshotTstamps array to levelDB (with the deleted tstamps removed)
-                self.set(`index:snapshotTstamps:${evictingKey}`, snapshotTstampIndex, () => {
-                    // compactRange must be run so that levelDB will permanently delete the files which hold the vals for the now deleted keys (before we take our getDbDiskUsage measurement)
-                    self.compactRange(batchCmds[0].key, batchCmds[batchCmds.length-1].key, () => {
+            // First re-save the index:snapshotTstamps array to levelDB (with the about-to-be-deleted tstamps removed)
+            self.set(`index:snapshotTstamps:${evictingKey}`, snapshotTstampIndex, () => {
+                self.batch(batchCmds, (success) => {
+                    if (!success) {
+                        console.warn(`ensureDBDiskUsageIsWithinBounds failed to delete a batch of ${batchCmds.length} snapshot keys.`);
+                        if (cback) cback();
+                        return;
+                    }
+                    console.warn(`ensureDBDiskUsageIsWithinBounds deleted ${batchCmds.length} keys.`);
 
-                        self.getDbDiskUsage((endingDiskUsageObj) => {
-                            const dbDiskUsageGb = Math.round(self.bytesToGb(startingDiskUsageObj.dbDiskUsage)*1000)/1000; // just for logging
-                            const dbCorrectionDiskUsageBytes = self.gbToBytes(self.diskCheckCorrectionDiskUsage);
-                            if (endingDiskUsageObj.dbDiskUsage < dbCorrectionDiskUsageBytes) {
-                                console.warn(`SUCCESS! LevelDB ${self.levelDbDir} has been corrected to acceptable disk usage: ${dbDiskUsageGb}GB`);
+                    self.getDbDiskUsage(`${evictingKey}:${snapshotTstampIndex[0]}`, `${evictingKey}:${snapshotTstampIndex[snapshotTstampIndex.length-1]}`, (endingDiskUsageBytes) => {
+                        const dbCorrectionDiskUsageBytes = self.gbToBytes(self.diskCheckCorrectionDiskUsage);
+                        const endingDBDiskUsageGb = Math.round(self.bytesToGb(endingDiskUsageBytes)*1000)/1000; // just for logging
+                        if (endingDiskUsageBytes < dbCorrectionDiskUsageBytes) {
+                            console.warn(`SUCCESS! LevelDB ${self.levelDbDir} has been corrected to acceptable disk usage: ${endingDBDiskUsageGb}GB`);
+                            self.compactRange(deletedKeys[0], deletedKeys[deletedKeys.length-1], () => {
                                 if (cback) cback();
-                                return;
-                            }
+                            });
+                            return;
+                        }
 
-                            const bytesDifference = startingDiskUsageObj.dbDiskUsage - endingDiskUsageObj.dbDiskUsage;
-                            const estBytesPerKey = bytesDifference / deleteBatchSize;
-                            const bytesStillNeedToBeDeleted = endingDiskUsageObj.diskSize - dbCorrectionDiskUsageBytes;
-                            console.warn(`ensureDBDiskUsageIsWithinBounds estimates that the previous delete batch (${batchCmds.length}) freed ${bytesDifference}bytes. Each ${evictingKey} snapshot is approximately ${estBytesPerKey}bytes.`)
+                        const bytesDifference = startingDiskUsageBytes - endingDiskUsageBytes;
+                        const estBytesPerKey = bytesDifference / deleteBatchSize;
+                        const bytesStillNeedToBeDeleted = endingDiskUsageBytes - dbCorrectionDiskUsageBytes;
+                        console.warn(`ensureDBDiskUsageIsWithinBounds estimates that the previous delete batch (${batchCmds.length}) freed ${bytesDifference}bytes. Each ${evictingKey} snapshot is approximately ${estBytesPerKey}bytes.`)
 
-                            if (bytesDifference <= 0) {
-                                console.warn(`Detected that a levelDB delete command did not result in any freed bytes. There may be an error in our disk space measurement, or other unknown issue. Will stop the ensureDBDiskUsageIsWithinBounds loop at risk of deleting all keys.`);
-                                if (cback) cback();
-                                return;
-                            }
+                        if (bytesDifference <= 0) {
+                            console.warn(`Detected that a levelDB delete command did not result in any freed bytes. There may be an error in our disk space measurement, or other unknown issue. Will stop the ensureDBDiskUsageIsWithinBounds loop at risk of deleting all keys.`);
+                            if (cback) cback();
+                            return;
+                        }
 
-                            let estNextDeleteBatchSize = (bytesStillNeedToBeDeleted / estBytesPerKey) / 2; // we cut this estimated number in half because better to loop more times than accidentally delete too much data in a single loop.
-                            estNextDeleteBatchSize = Math.floor(Math.max(estNextDeleteBatchSize, minDeleteBatchSize));
-                            estNextDeleteBatchSize = Math.min(estNextDeleteBatchSize, maxDeleteBatchSize);
+                        let estNextDeleteBatchSize = (bytesStillNeedToBeDeleted / estBytesPerKey) / 2; // we cut this estimated number in half because better to loop more times than accidentally delete too much data in a single loop.
+                        estNextDeleteBatchSize = Math.floor(Math.max(estNextDeleteBatchSize, minDeleteBatchSize));
+                        estNextDeleteBatchSize = Math.min(estNextDeleteBatchSize, maxDeleteBatchSize);
 
-                            // Loop this function again to check diskUsage readings and continue deletions if necc.
-                            console.warn(`LevelDB ${self.levelDbDir} is still too large (${dbDiskUsageGb}GB). Will delete ${estNextDeleteBatchSize} ${evictingKey} snapshot keys...`);
-                            self.ensureDBDiskUsageIsWithinBounds(cback, evictingKey, snapshotTstampIndex, estNextDeleteBatchSize);
-                        });
+                        // Loop this function again to check diskUsage readings and continue deletions if necc.
+                        console.warn(`LevelDB ${self.levelDbDir} is still too large (${endingDBDiskUsageGb}GB). Need to free ${Math.round(self.bytesToGb(bytesStillNeedToBeDeleted)*1000)/1000}GB. Will delete ${estNextDeleteBatchSize} ${evictingKey} snapshot keys...`);
+                        self.ensureDBDiskUsageIsWithinBounds(cback, evictingKey, snapshotTstampIndex, estNextDeleteBatchSize, deletedKeys);
+                    });
 
-                    }); // end self.compactRange
-                }); // end self.set(`index:snapshotTstamps
-            }); // end self.batch(
+                }); // end self.batch(
+            }); // end self.set(`index:snapshotTstamps
 
         }); // end self.getDbDiskUsage
     } // end ensureDBDiskUsageIsWithinBounds
 
-    getDbDiskUsage(cback) {
+    getDbDiskUsage(startKey, endKey, cback) {
         const self = this;
-        const archiveDbHealthLogObj = {
-            envname: argv.envname,
-            dir: self.levelDbDir,
-            dbDiskUsage: null, // int, bytes
-            diskSize: null, // int, bytes
-            diskLeft: null // int, bytes
-        }
-        exec(`du -b ${self.levelDbDir}`, (error, stdout, stderr) => {
-            if (error || stderr) {
-                console.error(`du -b ${self.levelDbDir} error.`, error, stderr);
-                // Disk may have been busy, or changing. Wait 10s and try again.
-                console.warn(`Will attempt to getDbDiskUsage again after 10s...`);
-                setTimeout(() => {
-                    self.getDbDiskUsage(cback);
-                }, 10000);
-                return;
+        console.log(`Will now get approximate size on disk of all keys from ${startKey} -> ${endKey}`);
+        self.openedLevelDB.approximateSize(startKey, endKey, (err, size) => {
+            if (err) {
+                console.warn(`getDbDiskUsage approximateSize returned error:`, err);
+                if (cback) cback(null);
+                return null;
             }
-            archiveDbHealthLogObj.dbDiskUsage = parseInt(stdout);
-
-            diskUsage.check('/', function(err, diskInfo) {
-                if (err) {
-                    console.log('Could not check disk usage', err);
-                } else {
-                    archiveDbHealthLogObj.diskSize = diskInfo.total;
-                    archiveDbHealthLogObj.diskLeft = diskInfo.available;
-                }
-                if (cback) cback(archiveDbHealthLogObj);
-            });
-        });
+            if (cback) cback(size);
+        })
     }
 
     gbToBytes(gb) {

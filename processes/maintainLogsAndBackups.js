@@ -4,6 +4,7 @@ import path from 'path';
 import yargs from 'yargs';
 import pm2 from 'pm2';
 import {google} from 'googleapis';
+import diskUsage from 'diskusage';
 import RedisClient from '../utils/redisClient.js';
 import LevelDBClient from '../utils/levelDBClient.js';
 import gDriveConfig from '../utils/googleClient-config.js';
@@ -264,15 +265,19 @@ class MaintainLogsAndBackups {
 
     initArchiveDbHealthLogInterval() {
         const self = this;
-        self.levelDbClient.getDbDiskUsage((archiveDbHealthLogObj) => {
-            console.log(`Archive DB info at time ${Date.now()} :`, archiveDbHealthLogObj);
-            if (parseInt(archiveDbHealthLogObj.diskLeft)/1048576 < 2000) { // less than 2gb starts logging warnings
-                console.warn(`WARNING! This disk is running out of space. ${parseInt(archiveDbHealthLogObj.diskLeft) / parseInt(diskInfo.total)}% of space remains...`);
+        diskUsage.check('/', function(err, diskInfo) {
+            if (err) {
+                console.log('Could not check disk usage', err);
+                return;
+            }
+            console.log(`Disk usage info at time ${Date.now()} :`, diskInfo);
+            if (parseInt(diskInfo.available)/1048576 < 2000) { // less than 2gb starts logging warnings
+                console.warn(`WARNING! This disk is running out of space. ${parseInt(diskInfo.available) / parseInt(diskInfo.total)}% of space remains...`);
                 if (!self.sentDiskSpaceWarningEmail) {
                     self.sentDiskSpaceWarningEmail = true;
                     const emailType = 'diskWarning';
                     const emailMsgObj = self.nodeMailer.emails[emailType];
-                    emailMsgObj.setEmailBody(archiveDbHealthLogObj, emailMsgObj);
+                    emailMsgObj.setEmailBody(diskInfo, emailMsgObj);
                     self.nodeMailer.sendEmail(emailMsgObj, emailType);
                 }
             }
@@ -519,11 +524,11 @@ class MaintainLogsAndBackups {
         self.getPm2HealthLog((pm2HealthObjArray) => {
             self.getDbHealthLog((dbInfoObjArray) => {
                 if (self.monitorArchiveDbForEnvnames.indexOf(argv.envname) !== -1) {
-                    self.levelDbClient.getDbDiskUsage((archiveDbInfoObj) => {
+                    diskUsage.check('/', function(err, diskInfo) {
                         const statusObj = {
                             pm2: pm2HealthObjArray,
                             redis: dbInfoObjArray,
-                            levelDB: archiveDbInfoObj
+                            disk: diskInfo
                         }
                         const emailType = 'maintenaceStatus';
                         const emailMsgObj = self.nodeMailer.emails[emailType];

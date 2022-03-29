@@ -39,48 +39,18 @@ class ArchiveKeysToDisk {
                     if (!thisTstamp) return;
                     const levelDBArchiveKey = `${thisRedisObjKey}:${thisTstamp}`;
                     self.redisClient.get(thisRedisObjKey, (topCommentsObj) => {
+                        //loadTestDb(thisRedisObjKey, topCommentsObj);
                         self.levelDbClient.set(levelDBArchiveKey, topCommentsObj, (success) => {
                             if (!success) {
                                 console.error(`Failed to snapshot a key to levelDB archive (${levelDBArchiveKey})`);
                                 return;
                             }
                             console.log(`Saved new ${levelDBArchiveKey} snapshot to key archive DB.`);
-                            self.saveTstampToIndex(thisRedisObjKey, thisTstamp);
+                            self.saveTstampsToIndex(thisRedisObjKey, [thisTstamp]);
                         });
                     });
                 }
             }, // end `__keyspace@0__:${self.topCommentsStatsMinKey}`: {
-
-            // '__keyspace@0__:stats:topTrends': { // JWW TODO - if we find a need to archive stats:topTrends, levelDB client DB eviction logic will need to be updated. See "diskCheckCorrectionDeletesArchivedKey"
-            //     snapshotTstampInterval: 10000, // how long between each snapshot. The snapshot tstamps are generated as denominations of this num.
-            //     genTstamp: () => {
-            //         // Each redis key that is defined here (to be snapshotted to levelDB) is saved to archive key ${objectKey}:${tstampRoundedToDenomination}
-            //         // 'stats:topComments' has snapshots saved in 10s denominations
-            //         const now = Date.now();
-            //         const thisTstamp = now - (now % self.redisKeyspaceSubscriptions['__keyspace@0__:stats:topTrends'].snapshotTstampInterval);
-            //
-            //         this.lastUsedTstamp = this.lastUsedTstamp || 0;
-            //         if (thisTstamp === this.lastUsedTstamp) return null;
-            //         this.lastUsedTstamp = thisTstamp;
-            //         return thisTstamp;
-            //     },
-            //     action: () => {
-            //         const thisRedisObjKey = 'stats:topTrends';
-            //         const thisTstamp = self.redisKeyspaceSubscriptions['__keyspace@0__:stats:topTrends'].genTstamp();
-            //         if (!thisTstamp) return;
-            //         const levelDBArchiveKey = `${thisRedisObjKey}:${thisTstamp}`;
-            //         self.redisClient.get(thisRedisObjKey, (topTrendsObj) => {
-            //             self.levelDbClient.set(levelDBArchiveKey, topTrendsObj, (success) => {
-            //                 if (!success) {
-            //                     console.error(`Failed to snapshot a key to levelDB archive (${levelDBArchiveKey})`);
-            //                     return;
-            //                 }
-            //                 console.log(`Saved new ${levelDBArchiveKey} snapshot to key archive DB.`);
-            //                 self.saveTstampToIndex(thisRedisObjKey, thisTstamp);
-            //             });
-            //         });
-            //     }
-            // } // end '__keyspace@0__:stats:topTrends'
 
         };
 
@@ -140,14 +110,14 @@ class ArchiveKeysToDisk {
         });
     }
 
-    saveTstampToIndex(thisArchivedObjKey, tstamp, cback) {
+    saveTstampsToIndex(thisArchivedObjKey, tstamps = [], cback) {
         // We must also save all archive snapshot tstamps to the index:snapshotTstamps:${redisObjectKey} object which is used later as a record of all snapshot tstamps so they can
         // be easily browsed, or deleted later (if the archive DB gets to big). Sorted chronologically ascending
         const self = this;
         const tstampIndexKey = `index:snapshotTstamps:${thisArchivedObjKey}`;
         self.levelDbClient.get(tstampIndexKey, (archiveIndex) => { // archiveIndex is array
             if (!archiveIndex) archiveIndex = [];
-            archiveIndex.push(tstamp);
+            archiveIndex = archiveIndex.concat(tstamps);
             // console.log(`${tstampIndexKey.split(':').slice(2).join(':')} has been archived to LevelDb ${archiveIndex.length} times:`, archiveIndex);
             self.levelDbClient.set(tstampIndexKey, archiveIndex, (success) => {
                 if (!success) console.warn(`Failed to set ${tstampIndexKey} to levelDB.`);
@@ -176,6 +146,41 @@ class ArchiveKeysToDisk {
                 if (cback) cback();
             });
         });
+    }
+
+    loadTestDb(objKey, sampleDataOb) {
+        const jwwFillDb = (count = 0) => {
+            const fillBatchSize = 100;
+            self.isFilling = true;
+            let thisRoundCount = 0;
+            const now = Date.now()
+            count = count + fillBatchSize;
+            if (count >= 10000) {
+                self.isFilling = false;
+                return;
+            }
+            if (count % 100 === 0) console.log('Current fake object set count:', count);
+            let thisRoundCompleteCount = 0;
+            const thisRoundTstamps = [];
+            while (thisRoundCount < fillBatchSize) {
+                ++thisRoundCount;
+                const thisTstamp = now+thisRoundCount;
+                thisRoundTstamps.push(thisTstamp);
+                const thisKey = `${objKey}:${thisTstamp}`;
+                self.levelDbClient.set(thisKey, sampleDataOb, (success) => {
+                    ++thisRoundCompleteCount;
+                    if (thisRoundCompleteCount >= fillBatchSize) {
+                        self.saveTstampsToIndex(objKey, thisRoundTstamps, () => {
+                            jwwFillDb(count)
+                        });
+                    }
+                });
+            }
+        }
+        if (!self.isFilling) {
+            console.warn(`Will now fill rocksDB with 10000 more fake objects`);
+            jwwFillDb();
+        }
     }
 
 }

@@ -162,7 +162,7 @@ class TopCommentsStats {
             const newTopWordsCounts = [];
             const newTopWordsCountsIndex = {};
             self.topWordsCounts.forEach((thisTopWordCount) => {
-                if (thisTopWordCount[1] < self.topWordsMinCount * 0.3) { // we know that this word was well below our min count and won't likely jump above it in the immediate future. Keep it's cached record until it naturally overflows because of self.topWordsCountsMaxLength.
+                if (thisTopWordCount[1] < self.topWordsMinCount * 0.5) { // we know that this word was well below our min count and won't likely jump above it in the immediate future. Keep it's cached record until it naturally overflows because of self.topWordsCountsMaxLength.
                     newTopWordsCounts.push(thisTopWordCount);
                 }
             });

@@ -183,7 +183,7 @@ class TopTrendStats {
 
                     const rankHistory = [];
                     topCommentStatsSnapshots.forEach((thisTopCommentStatsSnapshot) => {
-                        if (!thisTopCommentStatsSnapshot[1].comments[symbolTypeGroup]) return;
+                        if (!thisTopCommentStatsSnapshot || !thisTopCommentStatsSnapshot[1] || !thisTopCommentStatsSnapshot[1].comments[symbolTypeGroup]) return;
 
                         const thisRankHistoryRecord = [thisTopCommentStatsSnapshot[0], null];
                         thisTopCommentStatsSnapshot[1].comments[symbolTypeGroup].some((thisTopComment, thisTopCommentIndex) => {

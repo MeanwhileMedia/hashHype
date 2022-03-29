@@ -32,3 +32,7 @@ props.symbolAlias = ['gamestop'];
 
 /* 1. This symbol has manually assigned symbol nemesis (case sensitive) - HashHype edit #392 */
 props.symbolNemesis = ['Copolla'];
+
+
+/* 1. This symbol has manually assigned symbol nemesis (case sensitive) - HashHype edit #392 */
+props.symbolNemesis = ['Coin', 'coin', 'token', 'Crypto', 'crypto', 'BTC', 'ETH'];

@@ -234,9 +234,14 @@ class ExtractWordsFromComments {
         let bodyTokens = naturalWordTokenizerPreserveContractions.tokenize(comment.normalizedBody);
         const normalizedBodyTokens = [];
         bodyTokens.forEach((thisToken) => {
+            if (!Number.isNaN(parseInt(thisToken))) return; // don't try to expand contractions when toekn can be interpreted as a number (i.e. "it was in the 100's")
             let thisNormalizedToken = [thisToken];
-            // NOTE that naturalNormalizer will also wrongly convert plural and possesive use of "'" into an expanded contraction. Leaving as-is for now. JWW TODO
-            if (Number.isNaN(parseInt(thisToken))) thisNormalizedToken = naturalNormalizer(thisToken); // don't try to expand contractions when toekn can be interpreted as a number (i.e. "it was in the 100's")
+            try {
+                thisNormalizedToken = naturalNormalizer(thisToken); // NOTE that naturalNormalizer will also wrongly convert plural and possesive use of "'" into an expanded contraction. Leaving as-is for now. JWW TODO
+            } catch (e) {
+                console.warn(`Error while running naturalNormalizer on token: "${thisToken}"`);
+                return;
+            }
             normalizedBodyTokens.push(thisNormalizedToken.join(' '));
         });
         normalizedBodyTokens.forEach((thisNormalizedToken, index) => {
