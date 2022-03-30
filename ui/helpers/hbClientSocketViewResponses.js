@@ -42,7 +42,7 @@ var hbClientSocketViewResponses = {
     }
 
     hbClientSocketViewResponses.activeViewChangeEvents[socketChangeEventName] = function (message) {
-      console.log('Model change sent from server. View will now update.', message.data.absKey, message.data);
+      // console.log('Model change sent from server. View will now update.', message.data.absKey, message.data);
       if (typeof viewInstance.receiveNewState === 'function') {
         viewInstance.receiveNewState(message.data);
       }
