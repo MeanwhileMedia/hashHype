@@ -64,7 +64,7 @@ class MigrateRDB {
     downloadAndStoreTargetRDB(cback) {
         const self = this;
         const fromRDBFilenames = {
-            short: `${self.cliArgs.from}-00000-short.rdb`,
+            // short: `${self.cliArgs.from}-00000-short.rdb`,
             long: `${self.cliArgs.from}-00000-long.rdb`
         };
         self.googleDriveClient.files.list({
