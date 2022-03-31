@@ -62,7 +62,7 @@ class MaintainLogsAndBackups {
         self.archiveLogsInterval = null;
         self.archiveLogsIntervalTime = 60000*10; // backup today's log file to cloud once per 10 minutes
         self.archiveRDBInterval = null;
-        self.archiveRDBIntervalTime = 60000*30; // backup all redis rdb files to cloud twice/hr. Uses day tstamp naming pattern.
+        self.archiveRDBIntervalTime = 60000*60; // backup all redis rdb files to cloud once/hr. Uses day tstamp naming pattern.
 
         self.cloudArchiveCleanupInterval = null;
         self.cloudArchiveCleanupIntervalTime = 60000*720; // twice per 24hrs crawl the files backed up to cloud (google drive) - both logs and rdbs. Delete files older than X days.

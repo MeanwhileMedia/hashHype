@@ -31,7 +31,7 @@ class TopCommentsStats {
         this.topWordsCounts = []; // [['foo_bar', 35], [baz, 100], etc...] // caches counts for words found to be both top, or not.
         this.topWordsCountsIndex = {} //  {foo_bar: indexOfCountWithinTopWordsCounts, baz: 101, etc...} - this object just helps our lookup into topWordsCounts which is an ordered array
         this.topWordsCountsMaxLength = 100000; // should be a multiple of 10
-        this.topWordsMinCount = 100; // Will start high at process init. Better to slowly adjust down than have an immidate memory overflow (cuz of trying to process too many comments based on too many word occurances)
+        this.topWordsMinCount = 10; // Try to start with a reasonable number at process init. Better to slowly adjust down than have an immidate memory overflow (cuz of trying to process too many comments based on too many word occurances). However, if you set too high, no new topCommentStats data will save/render until it has time to adjust down.
         this.topWordsRefreshInterval = null;
         this.topWordsRefreshIntervalTime = 10000;
         this.lastIntervalTotalWordsCount = 0; // total new words that we reported via pubsub '__keyspace@0__:word:*:foundAt' in the last ${topWordsRefreshIntervalTime}ms
