@@ -28,6 +28,12 @@ class RedisClient {
         self.restoredKeyCountInterval = null;
         self.initRestoredKeyCountInterval();
 
+        self.activePreservingSortedSets = {}; // {"word:GME:foundAt": setLength, etc..} a map of keys pointing to sorted sets which were all found to be long enough to be written to a preserve DB. (redisClientConfig.preserveNamespaces matched a key, and the set at that key had length >= preserveNamespaces.count)
+        self.activePreservingSortedSetsPubSubChannel = 'change:activePreservingSortedSets'; // our manual pubsub channel so processes can keep activePreservingSortedSets in sync with one another
+        self.activePreservingSortedSetsMaxLength = 10000;
+        self.activePreservingSortedSetsSyncInterval = null;
+        self.activePreservingSortedSetsSyncIntervalLength = 5000;
+
         let didFirstOnConnect = 0;
         this.initAllClients(() => {
             if (didFirstOnConnect) {
@@ -35,6 +41,8 @@ class RedisClient {
             }
             ++didFirstOnConnect;
             if (opts.onConnect) opts.onConnect();
+
+            self.initActivePreservingSortedSetsSyncInterval();
         });
     }
 
@@ -202,6 +210,55 @@ class RedisClient {
         }, self.restoredKeyCountIntervalLength);
     }
 
+    initActivePreservingSortedSetsSyncInterval() {
+        const self = this;
+        if (self.activePreservingSortedSetsSyncInterval) return;
+        self.activePreservingSortedSetsSyncInterval = setInterval(() => {
+            const activePreservingSortedSetsLength = Object.keys(self.activePreservingSortedSets).length;
+            console.log(`Currently preserving ${activePreservingSortedSetsLength} sorted sets which matched redis preserveNamespaces configs.`);
+            if (activePreservingSortedSetsLength >= self.activePreservingSortedSetsMaxLength) {
+                console.warn(`activePreservingSortedSets is too long! Potential memory leak. Please inspect...`);
+            }
+
+            // Alert all processes (including self) of changes we made to our local activePreservingSortedSets (because all processes must keep it in sync)
+            const changes = {
+                added: self.addedActivePreservingSortedSets || [],
+                removed: self.removedActivePreservingSortedSets || []
+            };
+            self.publish(self.activePreservingSortedSetsPubSubChannel, changes);
+            self.addedActivePreservingSortedSets = [];
+            self.removedActivePreservingSortedSets = [];
+        }, self.activePreservingSortedSetsSyncIntervalLength);
+
+        self.addPubSubListenerForActivePreservingSortedSets();
+    }
+    addPubSubListenerForActivePreservingSortedSets() {
+        const self = this;
+        self.on('message', (channel, message) => {
+            if (channel !== self.activePreservingSortedSetsPubSubChannel) return;
+            const changes = JSON.parse(message);
+            changes.added.forEach((thisAdded) => {
+                self.activePreservingSortedSets[thisAdded.setKey] = thisAdded.setLength;
+            });
+            changes.removed.forEach((thisRemoved) => {
+                delete self.activePreservingSortedSets[thisRemoved.setKey];
+            });
+        });
+        self.subscribe(self.activePreservingSortedSetsPubSubChannel);
+    }
+    addActivePreservingSortedSet(setKey, setLength) {
+        const self = this;
+        // Keep track of add/remove changes because we will send out a pubsub message to alert other processes (and self) of these changes inside activePreservingSortedSetsSyncInterval. All processes must keep this object in sync.
+        self.addedActivePreservingSortedSets = self.addedActivePreservingSortedSets || [];
+        self.addedActivePreservingSortedSets.push({setKey, setLength});
+    }
+    removeActivePreservingSortedSet(setKey, setLength) {
+        const self = this;
+        self.removedActivePreservingSortedSets = self.removedActivePreservingSortedSets || [];
+        self.removedActivePreservingSortedSets.push({setKey, setLength});
+    }
+
+
     ///////
     // This redisClient class extends all node_redis functions which are used by hashHype. This is so
     // we can inject DB selection logic before any redis command is executed. The below determineTargetDb
@@ -259,7 +316,7 @@ class RedisClient {
             commandExecs.push((execCback) => {
                 commandArgs.dbName = thisStoreConf.dbName;
                 commandArgs.cback = (redisRes) => {
-                    if (execCback) execCback(redisRes);
+                    if (execCback) execCback(redisRes, commandArgs.dbName);
                     if (thisStoreConf.ttl) self.pexpire(commandArgs.key, thisStoreConf.ttl, null, thisStoreConf.dbName);
                 };
                 self[commandArgs.command].apply(self, commandArgs.reformCommandArgs());
@@ -273,7 +330,7 @@ class RedisClient {
                     commandArgs.dbName = thisPreserveConf.dbName;
                     commandArgs.cback = (redisRes) => {
                         // if (redisRes) console.log(`Could not find redis key in primary DB. Recovered ${commandArgs.key} from preserved data in "${thisPreserveConf.dbName}" DB.`);
-                        if (execCback) execCback(redisRes);
+                        if (execCback) execCback(redisRes, commandArgs.dbName);
                         if (thisPreserveConf.ttl) self.pexpire(commandArgs.key, thisPreserveConf.ttl, null, thisPreserveConf.dbName);
                     };
                     self[commandArgs.command].apply(self, commandArgs.reformCommandArgs());
@@ -281,7 +338,7 @@ class RedisClient {
             });
             let curCmdExecIndex = 0;
             const nextCmdExec = (thisCmdExec) => {
-                thisCmdExec((redisRes) => {
+                thisCmdExec((redisRes, foundInDbName) => {
                     if (redisRes === null || redisRes === 0) {
                         ++curCmdExecIndex;
                         if (combinedCmdExecs[curCmdExecIndex]) {
@@ -294,13 +351,32 @@ class RedisClient {
                     }
                     // console.log(`Executed redis ${commandArgs.command} command for key ${commandArgs.key} and returned a response from DB "${storeToDbs[curCmdExecIndex].dbName}". All target DBs:`, storeToDbs);
 
-                    // log if this data was recovered from a db that was not 1st in list. Also sync data back down if this is a string get.
+                    // log if this data was recovered from a db that was not 1st in list. Also sync data back down for certain commands.
                     if (curCmdExecIndex > 0) {
                         if (self.restoredKeys.indexOf(commandArgs.key) !== -1 || self.restoredKeysLongRecord.indexOf(commandArgs.key) !== -1) self.restoredKeysLooping.push(commandArgs.key);
                         self.restoredKeys.push(commandArgs.key);
                         if (commandArgs.command === 'get') {
                             // console.warn(`A recovered redis string (get) will be synced (set) to all DBs after recovery: ${commandArgs.key}`);
                             self.set(commandArgs.key, redisRes);
+                        }
+                        if (commandArgs.command === 'zcard') {
+                            console.warn(`A recovered redis sorted set will be synced (zadd) to all DBs after recovery from ${foundInDbName} db: ${commandArgs.key}`);
+                            self.zrange(commandArgs.key, 0, Infinity, (resSet) => {
+                                self.zadd(commandArgs.key, resSet.reverse()); // zadd expects the reverse arg sig to what zrange returns [points1, val1, points2, val2]
+                                if (self.restoredKeys.indexOf(commandArgs.key) !== -1 || self.restoredKeysLongRecord.indexOf(commandArgs.key) !== -1) self.restoredKeysLooping.push(commandArgs.key);
+                                self.restoredKeys.push(commandArgs.key);
+                            }, foundInDbName, 'WITHSCORES');
+                        }
+                    }
+
+                    // If this was a zcard read, then this is when we act on preserveToDbs write logic. This is because our preserveNamespaces.count prop for sets depends on knowing the set's length. However,
+                    // zadd does not return the set length, it returns how many items were added. This is why we have to work our preserve logic during the zcard read command.
+                    if (commandArgs.command === 'zcard' && preserveToDbs.length) {
+                        const minCountToPreserveSet = preserveToDbs[0].count;
+                        if (redisRes >= minCountToPreserveSet) {
+                            // We hold an obj in live memory of all set keys which exceeded our min count setting. All zadd commands check this object to see if they should write to preserve DB too.
+                            // console.warn(`Will now begin preserving (db ${preserveToDbs[0].dbName}) all new zadds to key ${commandArgs.key} which has a length of ${redisRes}`);
+                            self.addActivePreservingSortedSet(commandArgs.key, redisRes);
                         }
                     }
 
@@ -322,7 +398,7 @@ class RedisClient {
             // If this is not a isReadOp command, and we just need to write to multiple DBs, then run all promises concurrently and execute provided cback once they all resolve.
             let didCallOrigCback = false; // we are gonna call this asap (with the first response from our set of commandExecs)
             commandExecs.forEach((thisCmdExec) => {
-                thisCmdExec((redisRes) => {
+                thisCmdExec((redisRes, foundInDbName) => {
                     // We simplify things by just returning the response to the command from the first DB it was executed on. The assumption
                     // is that when a command is configured to be sent to multiple dbs, those dbs should be in sync and return the same response.
                     // console.log(`Executed redis ${commandArgs.command} command for key ${commandArgs.key} to multiple DBs:`, storeToDbs);
@@ -334,7 +410,7 @@ class RedisClient {
                     const preserveToNow = (countForThisData) => {
                         preserveToDbs.forEach((thisPreserveToConfig) => {
                             if (countForThisData < thisPreserveToConfig.count) {
-                                if (commandArgs.command !== 'del') { // the del command should always run on all DBS (including preserved) or else there will be a delete/recover loop
+                                if (commandArgs.command !== 'del') { // destructive commands should always run on all DBS (including preserved) or else they will fall out of sync and there could be a delete/recover loop
                                     return;
                                 }
                             }
@@ -346,26 +422,18 @@ class RedisClient {
                             self[commandArgs.command].apply(self, commandArgs.reformCommandArgs());
                         });
                     }
-                    if (commandArgs.command === 'zadd') {
-                        const redisSortedSetLength = redisRes;
-                        preserveToNow(redisSortedSetLength);
-                        if (redisSortedSetLength === 1) {
-                            const usePreserveToConfig = preserveToDbs[0];
-                            self.zrange(commandArgs.key, 0, Infinity, (resSet) => {
-                                if (resSet.length <= 1) return; // looks like this actually is a new list. Nothing was found in preserved DB.
-                                self.zadd(commandArgs.key, resSet.reverse()); // zadd expects the reverse arg sig to what zrange returns [points1, val1, points2, val2]
-                                // console.log(`Restored ${commandArgs.key} redis sorted set (length ${resSet.length/2}) from preserved DB "${usePreserveToConfig.dbName}".`);
-                                if (self.restoredKeys.indexOf(commandArgs.key) !== -1 || self.restoredKeysLongRecord.indexOf(commandArgs.key) !== -1) self.restoredKeysLooping.push(commandArgs.key);
-                                self.restoredKeys.push(commandArgs.key);
-                            }, usePreserveToConfig.dbName, 'WITHSCORES');
-                        }
-                    }
                     if (commandArgs.command === 'set' && commandArgs.saveData) {
                         // the extended set command (see below) automatically increments a "saveCount" integer every time the same object is saved. Compare that number to the configured preserveNamespaces.count param and re-save.
                         preserveToNow(commandArgs.saveData.saveCount || 0);
+                        return;
                     }
                     if (commandArgs.command === 'del') {
                         preserveToNow(0);
+                        return;
+                    }
+                    const preservedSortedSetLength = self.activePreservingSortedSets[commandArgs.key];
+                    if (preservedSortedSetLength && (commandArgs.command === 'zadd' || commandArgs.command === 'zrem' || commandArgs.command === 'zremrangebyscore')) {
+                        preserveToNow(preservedSortedSetLength);
                     }
                 });
             });
@@ -552,16 +620,6 @@ class RedisClient {
                 if (normalizedArgs.cback) normalizedArgs.cback(null);
                 return;
             }
-
-            // // The get command also fulfills forwarded gets via the keyAlias redis object.
-            // // Check if this response returned a keyAlias, and if so, fetch the parent now, and send THAT back to the cback.
-            // if (redisObject.class === 'keyAlias') {
-            //     self.get(redisObject.parentKey, (parentRedisObject) => {
-            //         const actualAbsKey = redisObject.parentKey; // When following an alias, the cback receives a 2nd argument "actualAbsKey". This let's the cback code know that its get cmd followed an alias.
-            //         normalizedArgs.cback(parentRedisObject, actualAbsKey);
-            //     });
-            //     return;
-            // }
 
             if (normalizedArgs.cback) normalizedArgs.cback(redisObject);
         });

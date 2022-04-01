@@ -742,7 +742,7 @@ class ExtractWordsFromComments {
                             assocs: thisPendingSymbolEntity.assocs,
                         });
                         self.redisClient.set(thisPendingSymbolEntity.symbolKey, symbolModel.minimizeForDb(newSymbolObj), () => {
-                            console.log(`Created new emoji symbol object for ${thisPendingSymbolEntity.symbolKey}`);
+                            // console.log(`Created new emoji symbol object for ${thisPendingSymbolEntity.symbolKey}`);
                             thisPendingSymbolEntity.matchedSymbol = newSymbolObj;
                             resolve(thisPendingSymbolEntity);
                         });
