@@ -28,19 +28,24 @@ class RedisClient {
         self.restoredKeyCountInterval = null;
         self.initRestoredKeyCountInterval();
 
-        self.activePreservingSortedSets = {}; // {"word:GME:foundAt": setLength, etc..} a map of keys pointing to sorted sets which were all found to be long enough to be written to a preserve DB. (redisClientConfig.preserveNamespaces matched a key, and the set at that key had length >= preserveNamespaces.count)
+        self.activePreservingSortedSets = {preservedKeys: {}}; // {"word:GME:foundAt": setLength, etc..} a map of keys pointing to sorted sets which were all found to be long enough to be written to a preserve DB. (redisClientConfig.preserveNamespaces matched a key, and the set at that key had length >= preserveNamespaces.count)
         self.activePreservingSortedSetsPubSubChannel = 'change:activePreservingSortedSets'; // our manual pubsub channel so processes can keep activePreservingSortedSets in sync with one another
+        self.activePreservingSortedSetsPeristKey = 'index:redisPreserved:activePreservingSortedSets';
         self.activePreservingSortedSetsMaxLength = 10000;
         self.activePreservingSortedSetsSyncInterval = null;
         self.activePreservingSortedSetsSyncIntervalLength = 5000;
 
         let didFirstOnConnect = 0;
-        this.initAllClients(() => {
+        self.initAllClients(() => {
             if (didFirstOnConnect) {
-                console.warn(`RedisClient has unexpectedly called it's opts.onConnect callback ${didFirstOnConnect} times! Please inspect.`)
+                console.warn(`RedisClient has unexpectedly called it's opts.onConnect callback ${didFirstOnConnect} times! Please inspect.`);
+                ++didFirstOnConnect;
+                return;
             }
-            ++didFirstOnConnect;
-            if (opts.onConnect) opts.onConnect();
+
+            self.restoreState(() => {
+                if (opts.onConnect) opts.onConnect();
+            });
 
             self.initActivePreservingSortedSetsSyncInterval();
         });
@@ -118,6 +123,80 @@ class RedisClient {
             if (cback) cback();
         });
     }
+
+
+    kill(cback) {
+        // Call this function right before the host process exits. EVERY process should be intercepting sigint and calling redisClient.kill
+        // This function holds important wrap-up routines vital to hashHype persistence across restarts.
+        const self = this;
+
+        if (!argv.redisDBMaster) { // All routines from here down are only run by the single redisDBMaster process (as specified in CLI arg - see machine single.config.js)
+            if (cback) cback();
+            return;
+        }
+
+        //1. Save our live self.activePreservingSortedSets object to redis as JSON. Because this is a massive object, and an expensive routine, it's only done when a process starts (get), and ends (set).
+        console.log(`redisDBMaster will now save activePreservingSortedSets to redis before shutting down...`);
+        self.set(self.activePreservingSortedSetsPeristKey, self.activePreservingSortedSets, () => {
+            if (cback) cback();
+        });
+    }
+    restoreState(cback) {
+        // essentially the reverse of above kill method. Only called once at process init.
+        const self = this;
+
+        //1. Restore our live self.activePreservingSortedSets
+        self.get(self.activePreservingSortedSetsPeristKey, (activePreservingSortedSets) => {
+            if (!activePreservingSortedSets) {
+                if (cback) cback();
+                return;
+            }
+
+            self.activePreservingSortedSets = activePreservingSortedSets;
+            if (!argv.redisDBMaster) { // All routines from here down are only run by the single redisDBMaster process
+                if (cback) cback();
+                return;
+            }
+
+            // If this is redisDBMaster, we will now copy all preserved data from it's preserved DB to all lower DBs.
+            const restoreKeys = Object.keys(self.activePreservingSortedSets.preservedKeys);
+            console.log(`redisDBMaster will now restore activePreservingSortedSets from redis, and sync ${restoreKeys.length} sets to all matching DBs...`);
+
+            const restoreNextSet = (allSetKeys, curKeyIndex = 0) => {
+                const thisKey = allSetKeys[curKeyIndex];
+                if (!thisKey) {
+                    console.log(`Finished restoring ${allSetKeys.length} sorted sets to all DBs, and their lengths to local self.activePreservingSortedSets.`);
+                    if (cback) cback();
+                    return;
+                }
+
+                // find matching thisDbConfig.preserveNamespaces for this key
+                let preservedInDbName;
+                for (const [thisDbName, thisDbConfig] of Object.entries(self.redisDbConfigs)) {
+                    thisDbConfig.preserveNamespaces.some((preserveConf) => {
+                        if ( new RegExp(preserveConf.pattern).test(thisKey) ) {
+                            preservedInDbName = thisDbConfig.dbName;
+                            return true; // break some loop
+                        }
+                    });
+                };
+
+                self.zrange(thisKey, 0, Infinity, (resSet) => {
+                    if (!resSet || !resSet.length) {
+                        console.warn(`Attempted to restore a preserved set at key ${thisKey} but found no data.`);
+                        self.removeActivePreservingSortedSet(thisKey, null);
+                        restoreNextSet(allSetKeys, ++curKeyIndex);
+                        return;
+                    }
+                    self.zadd(thisKey, resSet.reverse(), () => { // zadd expects the reverse arg sig to what zrange returns [points1, val1, points2, val2]
+                        restoreNextSet(allSetKeys, ++curKeyIndex);
+                    });
+                }, preservedInDbName, 'WITHSCORES');
+            }
+            restoreNextSet(restoreKeys);
+        });
+    }
+
 
     initRemoteClient(dbName, cback) {
         // A process can connect to a DB defined within redisClient-config.js that isn't a part of this machine's argv.host_redis_dbs config. This type of client is "remote"
@@ -214,8 +293,8 @@ class RedisClient {
         const self = this;
         if (self.activePreservingSortedSetsSyncInterval) return;
         self.activePreservingSortedSetsSyncInterval = setInterval(() => {
-            const activePreservingSortedSetsLength = Object.keys(self.activePreservingSortedSets).length;
-            console.log(`Currently preserving ${activePreservingSortedSetsLength} sorted sets which matched redis preserveNamespaces configs.`);
+            const activePreservingSortedSetsLength = Object.keys(self.activePreservingSortedSets.preservedKeys).length;
+            // console.log(`Currently preserving ${activePreservingSortedSetsLength} sorted sets which matched redis preserveNamespaces configs.`);
             if (activePreservingSortedSetsLength >= self.activePreservingSortedSetsMaxLength) {
                 console.warn(`activePreservingSortedSets is too long! Potential memory leak. Please inspect...`);
             }
@@ -238,16 +317,17 @@ class RedisClient {
             if (channel !== self.activePreservingSortedSetsPubSubChannel) return;
             const changes = JSON.parse(message);
             changes.added.forEach((thisAdded) => {
-                self.activePreservingSortedSets[thisAdded.setKey] = thisAdded.setLength;
+                self.activePreservingSortedSets.preservedKeys[thisAdded.setKey] = thisAdded.setLength;
             });
             changes.removed.forEach((thisRemoved) => {
-                delete self.activePreservingSortedSets[thisRemoved.setKey];
+                delete self.activePreservingSortedSets.preservedKeys[thisRemoved.setKey];
             });
         });
         self.subscribe(self.activePreservingSortedSetsPubSubChannel);
     }
     addActivePreservingSortedSet(setKey, setLength) {
         const self = this;
+        if (self.activePreservingSortedSets.preservedKeys[setKey]) return; // it's already in our local record. Note that because we return here, the setLength value will be out-of-date on this process, and other processes.
         // Keep track of add/remove changes because we will send out a pubsub message to alert other processes (and self) of these changes inside activePreservingSortedSetsSyncInterval. All processes must keep this object in sync.
         self.addedActivePreservingSortedSets = self.addedActivePreservingSortedSets || [];
         self.addedActivePreservingSortedSets.push({setKey, setLength});
@@ -359,14 +439,6 @@ class RedisClient {
                             // console.warn(`A recovered redis string (get) will be synced (set) to all DBs after recovery: ${commandArgs.key}`);
                             self.set(commandArgs.key, redisRes);
                         }
-                        if (commandArgs.command === 'zcard') {
-                            console.warn(`A recovered redis sorted set will be synced (zadd) to all DBs after recovery from ${foundInDbName} db: ${commandArgs.key}`);
-                            self.zrange(commandArgs.key, 0, Infinity, (resSet) => {
-                                self.zadd(commandArgs.key, resSet.reverse()); // zadd expects the reverse arg sig to what zrange returns [points1, val1, points2, val2]
-                                if (self.restoredKeys.indexOf(commandArgs.key) !== -1 || self.restoredKeysLongRecord.indexOf(commandArgs.key) !== -1) self.restoredKeysLooping.push(commandArgs.key);
-                                self.restoredKeys.push(commandArgs.key);
-                            }, foundInDbName, 'WITHSCORES');
-                        }
                     }
 
                     // If this was a zcard read, then this is when we act on preserveToDbs write logic. This is because our preserveNamespaces.count prop for sets depends on knowing the set's length. However,
@@ -375,8 +447,18 @@ class RedisClient {
                         const minCountToPreserveSet = preserveToDbs[0].count;
                         if (redisRes >= minCountToPreserveSet) {
                             // We hold an obj in live memory of all set keys which exceeded our min count setting. All zadd commands check this object to see if they should write to preserve DB too.
-                            // console.warn(`Will now begin preserving (db ${preserveToDbs[0].dbName}) all new zadds to key ${commandArgs.key} which has a length of ${redisRes}`);
+                            // console.warn(`Zcard found a long set. Will now begin preserving (db ${preserveToDbs[0].dbName}) all new zadds to key ${commandArgs.key} which has a length of ${redisRes}`);
                             self.addActivePreservingSortedSet(commandArgs.key, redisRes);
+                        }
+                    }
+                    // Same as above, but for zrange the redisRes is an array of values. We can look at the length of that array and compare against preserveToDbs.count setting
+                    if (commandArgs.command === 'zrange' && preserveToDbs.length) {
+                        const minCountToPreserveSet = preserveToDbs[0].count;
+                        let valueCount = redisRes.length;
+                        if (commandArgs.withScores) valueCount = valueCount / 2;
+                        if (valueCount >= minCountToPreserveSet) {
+                            // console.warn(`Zrange found a long set. Will now begin preserving (db ${preserveToDbs[0].dbName}) all new zadds to key ${commandArgs.key} which has a length of ${valueCount}`);
+                            self.addActivePreservingSortedSet(commandArgs.key, valueCount);
                         }
                     }
 
@@ -431,7 +513,7 @@ class RedisClient {
                         preserveToNow(0);
                         return;
                     }
-                    const preservedSortedSetLength = self.activePreservingSortedSets[commandArgs.key];
+                    const preservedSortedSetLength = self.activePreservingSortedSets.preservedKeys[commandArgs.key];
                     if (preservedSortedSetLength && (commandArgs.command === 'zadd' || commandArgs.command === 'zrem' || commandArgs.command === 'zremrangebyscore')) {
                         preserveToNow(preservedSortedSetLength);
                     }
@@ -508,6 +590,7 @@ class RedisClient {
             cmdArgsObj.endIndex = commandArgs[2];
             if (typeof cmdArgsObj.endIndex !== 'number') cmdArgsObj.endIndex = null;
             cmdArgsObj.cback = commandArgs[3] || null;
+            cmdArgsObj.withScores = commandArgs[5] || null;
             cmdArgsObj.reformCommandArgs = () => {
                 return [cmdArgsObj.key, cmdArgsObj.startIndex, cmdArgsObj.endIndex, cmdArgsObj.cback, cmdArgsObj.dbName];
             };

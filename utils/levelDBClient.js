@@ -49,7 +49,6 @@ class LevelDBClient {
         // argv.levelDBMaster is passed via a cli arg (see machine config single.config.js) and specifies which process
         // will be the one to open a connection to our levelDB and respond to pubsub requests for a archive values. Only one process can be designated levelDBMaster.
         if (argv.levelDBMaster) {
-            self.interceptSigInt();
             self.openLevelDB((success) => {
                 if (!success) {
                     console.error(`ERR! levelDBMaster failed to open LevelDB ${self.levelDbDir}. All archive db logic is blocked!`);
@@ -63,18 +62,6 @@ class LevelDBClient {
             self.subscribeToRedisPubSubResponses();
             if (opts.onConnect) opts.onConnect();
         }
-    }
-
-    interceptSigInt() {
-        const self = this;
-        // By intercepting the SIGINT shutdown signal, this process can make sure all active uploads or long running disk copy commands complete before the process closes. https://pm2.keymetrics.io/docs/usage/signals-clean-restart/
-        process.on('SIGINT', function() {
-            console.warn(`LevelDb master must close open levelDB before killing process...`);
-            self.closeLevelDB(() => {
-                console.warn(`LevelDb master finished closing levelDB connection. Process can now exit.`);
-                process.exit(0);
-            });
-        });
     }
 
     openLevelDB(cback, retryCount = 0) {

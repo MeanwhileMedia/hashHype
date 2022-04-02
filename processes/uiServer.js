@@ -82,6 +82,7 @@ const uiServer = {
     ],
 
     init() {
+        uiServer.interceptSigInt();
         console.log('A new uiServer process has just started...');
         uiServer.initRedisClient( () => {
             uiServer.initKoaServer();
@@ -91,6 +92,27 @@ const uiServer = {
             uiServer.nodeMailer = new NodeMailer('joeATmeanwhile');
         });
     }, // init
+
+    interceptSigInt() {
+        const self = this;
+        // By intercepting the SIGINT shutdown signal, this process can call any wrap-up routines before the process closes. https://pm2.keymetrics.io/docs/usage/signals-clean-restart/
+        process.on('SIGINT', function() {
+            self.redisClient.kill(() => {
+                process.exit(0);
+            });
+        });
+    },
+
+    redisClient: null,
+    initRedisClient(cback) {
+        const self = uiServer;
+        self.redisClient = new RedisClient({
+            onConnect: (client) => {
+                console.log('Connected new redis client for ui server.');
+                if (cback) cback();
+            }
+        });
+    },
 
     initKoaServer() {
         const self = uiServer;
@@ -428,17 +450,6 @@ const uiServer = {
         }
         return decodedMessage;
     },
-
-    redisClient: null,
-    initRedisClient(cback) {
-        const self = uiServer;
-        self.redisClient = new RedisClient({
-            onConnect: (client) => {
-                console.log('Connected new redis client for ui server.');
-                if (cback) cback();
-            }
-        });
-    }
 
 }; // end uiServer
 

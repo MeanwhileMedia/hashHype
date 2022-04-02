@@ -57,10 +57,24 @@ class ArchiveKeysToDisk {
         self.changeEventThrottle = 5000; //ms, maximum for how often this process will run redisKeyspaceSubscriptions actions on any given channel
         self.changeEventTstamps = {}; // a record used below in subscribeToRedisKeyspaceEvents when determining if our changeEventThrottle time has elapsed yet.
 
+        self.interceptSigInt();
+
         console.log('A new archiveKeysToDisk process has just started...');
         self.initRedisClient(() => {
             self.initLevelDbClient(() => {
                 self.subscribeToRedisKeyspaceEvents();
+            });
+        });
+    }
+
+    interceptSigInt() {
+        const self = this;
+        // By intercepting the SIGINT shutdown signal, this process can call any wrap-up routines before the process closes. https://pm2.keymetrics.io/docs/usage/signals-clean-restart/
+        process.on('SIGINT', function() {
+            self.redisClient.kill(() => {
+                self.levelDbClient.closeLevelDB(() => {
+                    process.exit(0);
+                });
             });
         });
     }

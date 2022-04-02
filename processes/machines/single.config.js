@@ -55,7 +55,7 @@ const genConfigs = {
             {
                 name: 'archiveKeysToDisk',
                 script: './processes/archiveKeysToDisk.js',
-                args: `--envname=${argv.envname} --host_redis_dbs='${host_redis_dbsJson}' --levelDBMaster=true`,
+                args: `--envname=${argv.envname} --host_redis_dbs='${host_redis_dbsJson}' --levelDBMaster=true  --redisDBMaster=true`,
                 interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('archiveKeys', 'err'),
                 out_file: genConfigs.getLogPath('archiveKeys', 'out'),

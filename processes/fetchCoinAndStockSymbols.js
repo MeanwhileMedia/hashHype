@@ -14,10 +14,22 @@ class FetchCoinAndStockSymbols {
         }
         this.fetchLoopIntervalTime = 43200000; // every 12 hours
 
+        this.interceptSigInt();
+
         console.log('A new fetchCoinAndStockSymbols process has just started...');
         this.redisClient = null;
         this.initRedisClient(() => {
             self.initFetchLoop();
+        });
+    }
+
+    interceptSigInt() {
+        const self = this;
+        // By intercepting the SIGINT shutdown signal, this process can call any wrap-up routines before the process closes. https://pm2.keymetrics.io/docs/usage/signals-clean-restart/
+        process.on('SIGINT', function() {
+            self.redisClient.kill(() => {
+                process.exit(0);
+            });
         });
     }
 

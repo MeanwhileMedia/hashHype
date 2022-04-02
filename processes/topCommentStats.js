@@ -31,7 +31,7 @@ class TopCommentsStats {
         this.topWordsCounts = []; // [['foo_bar', 35], [baz, 100], etc...] // caches counts for words found to be both top, or not.
         this.topWordsCountsIndex = {} //  {foo_bar: indexOfCountWithinTopWordsCounts, baz: 101, etc...} - this object just helps our lookup into topWordsCounts which is an ordered array
         this.topWordsCountsMaxLength = 100000; // should be a multiple of 10
-        this.topWordsMinCount = 10; // Try to start with a reasonable number at process init. Better to slowly adjust down than have an immidate memory overflow (cuz of trying to process too many comments based on too many word occurances). However, if you set too high, no new topCommentStats data will save/render until it has time to adjust down.
+        this.topWordsMinCount = 20; // Try to start with a reasonable number at process init. Better to slowly adjust down than have an immediate memory overflow (cuz of trying to process too many comments based on too many word occurances). However, if you set too high, no new topCommentStats data will save/render until it has time to adjust down.
         this.topWordsRefreshInterval = null;
         this.topWordsRefreshIntervalTime = 10000;
         this.lastIntervalTotalWordsCount = 0; // total new words that we reported via pubsub '__keyspace@0__:word:*:foundAt' in the last ${topWordsRefreshIntervalTime}ms
@@ -61,6 +61,8 @@ class TopCommentsStats {
 
         this.topCommentsWithPointed2dGramLastRefresh = {}; // for logging 2dGram activity {commentId: int, etc} (where int is the number of 2dGrams on that comment that earned points, even if 0 points)
 
+        self.interceptSigInt();
+
         console.log('A new topCommentStats process has just started...');
         this.redisClient = null;
         self.initRedisClient(() => {
@@ -68,6 +70,16 @@ class TopCommentsStats {
                 if (topCommentStatsObj) self.topComments = topCommentStatsObj;
                 self.initKeyspaceSubscriptions();
                 self.syncTrainingNotRelevant();
+            });
+        });
+    }
+
+    interceptSigInt() {
+        const self = this;
+        // By intercepting the SIGINT shutdown signal, this process can call any wrap-up routines before the process closes. https://pm2.keymetrics.io/docs/usage/signals-clean-restart/
+        process.on('SIGINT', function() {
+            self.redisClient.kill(() => {
+                process.exit(0);
             });
         });
     }

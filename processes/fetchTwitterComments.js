@@ -25,6 +25,8 @@ class FetchTwitterComments {
         self.recentCommentRecordMaxLength = 1000;
         self.recentCommentRecord = [];
 
+        self.interceptSigInt();
+
         console.log('A new fetchTwitterComments process has just started...');
         self.initRedisClient(() => {
             self.syncTrainingNotRelevant();
@@ -32,6 +34,16 @@ class FetchTwitterComments {
                 self.initTwitterSampleStream(() => {
                     self.initTwitterSampleStreamListeners();
                 });
+            });
+        });
+    }
+
+    interceptSigInt() {
+        const self = this;
+        // By intercepting the SIGINT shutdown signal, this process can call any wrap-up routines before the process closes. https://pm2.keymetrics.io/docs/usage/signals-clean-restart/
+        process.on('SIGINT', function() {
+            self.redisClient.kill(() => {
+                process.exit(0);
             });
         });
     }

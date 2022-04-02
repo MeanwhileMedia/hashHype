@@ -31,6 +31,8 @@ class TopTrendStats {
             computeNewTopTrendsStats: throttle(this.computeNewTopTrendsStatsThrottleTime, this.computeNewTopTrendsStats).bind(this),
         };
 
+        self.interceptSigInt();
+
         console.log('A new topTrendStats process has just started...');
         this.redisClient = null;
         this.levelDbClient = null;
@@ -41,6 +43,16 @@ class TopTrendStats {
         });
     }
 
+    interceptSigInt() {
+        const self = this;
+        // By intercepting the SIGINT shutdown signal, this process can call any wrap-up routines before the process closes. https://pm2.keymetrics.io/docs/usage/signals-clean-restart/
+        process.on('SIGINT', function() {
+            self.redisClient.kill(() => {
+                process.exit(0);
+            });
+        });
+    }
+    
     initRedisClient(cback) {
         const self = this;
         this.redisClient = new RedisClient({

@@ -62,6 +62,8 @@ class ExtractWordsFromComments {
         this.commentCountDiscardedNoSymbol = 0; // a separate counter just for logging how many comments were discarded because newCommentsMustContainSymbol = true
         this.initCommentCountInterval();
 
+        self.interceptSigInt();
+
         console.log('A new extractWordsFromComments process has just started...');
         this.initRedisClient(() => {
             self.syncTrainingNotRelevant();
@@ -98,6 +100,16 @@ class ExtractWordsFromComments {
             console.log(`Discarded ${self.commentCountDiscardedNoSymbol} comments with 0 symbols in the last ${self.commentCountIntervalLength/1000} seconds.`)
             self.commentCountDiscardedNoSymbol = 0;
         }, self.commentCountIntervalLength);
+    }
+
+    interceptSigInt() {
+        const self = this;
+        // By intercepting the SIGINT shutdown signal, this process can call any wrap-up routines before the process closes. https://pm2.keymetrics.io/docs/usage/signals-clean-restart/
+        process.on('SIGINT', function() {
+            self.redisClient.kill(() => {
+                process.exit(0);
+            });
+        });
     }
 
     initRedisClient(cback) {
