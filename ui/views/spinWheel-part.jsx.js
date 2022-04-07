@@ -64,8 +64,7 @@ class SpinWheelPart extends React.Component {
         let topSymbol = self.props.data.topSymbolHigh['1Hr'] || self.props.data.topSymbolLow['1Hr'] || null;
         if (topSymbol) {
             self.props.data.symbols.forEach((thisSymbol) => {
-                const thisSymbolKey = `symbol:${thisSymbol.type}:${thisSymbol.symbol}`;
-                if (thisSymbolKey === topSymbol) topSymbol = thisSymbol;
+                if (thisSymbol.key === topSymbol) topSymbol = thisSymbol;
             });
         }
         if (!topSymbol) return symbolStatsEl;

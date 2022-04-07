@@ -88,7 +88,7 @@ class HbClientSocketDbResponses_admin {
 
 
         // get the wordToCommentsIndex and remove any points earned for this word from all host comments
-        const commentIndexKey = `index:wordToComments:${removeWord}`;
+        const commentIndexKey = `index:wordToComments:${self.redisClient.encodeStringForRedisKey(removeWord)}`;
         self.redisClient.zrange(commentIndexKey, 0, Infinity, (wordToCommentsIndex) => {
             if (!wordToCommentsIndex) return;
             // This is the last time we will use this wordToComments index since the word is being deleted. Delete index too.
@@ -233,10 +233,9 @@ class HbClientSocketDbResponses_admin {
         const opts = message.data;
         if (!opts || !opts.symbol || !opts.functionName || !opts.functionString) return;
         if (opts.functionName !== 'get' && opts.functionName !== 'match') return;
-        const symbolRedisKey = `symbol:${opts.symbol.type}:${opts.symbol.symbol}`
-        this.redisClient.get(symbolRedisKey, (symbolRedisData) => {
+        this.redisClient.get(opts.symbol.key, (symbolRedisData) => {
             if (!symbolRedisData) {
-                console.log(`Could not get ${symbolRedisKey}`);
+                console.log(`Could not get ${opts.symbol.key}`);
                 return;
             }
             // First run it in a try/catch before saving to redis - in case the edited function contains an error.
@@ -259,7 +258,7 @@ class HbClientSocketDbResponses_admin {
             }
             historyObjects.push(self.newTrainingHistoryObj({
                 actionName: 'editSymbolFunction',
-                objectChanged: symbolRedisKey,
+                objectChanged: opts.symbol.key,
                 keysChanged: [opts.functionName],
                 actions: [['set', opts.functionString]],
                 tstamp: now,
@@ -272,17 +271,17 @@ class HbClientSocketDbResponses_admin {
                 symbolRedisData.symbolAlias = funcdSymbolData.symbolAlias; // so it saves as a top level prop on the symbol object too
                 funcdSymbolData.symbolAlias.forEach((thisAliasStr) => {
                     const aliasRedditKey = `symbol:${symbolRedisData.type}:${thisAliasStr}`
-                    const newAliasObject = keyAliasModel.createKeyAliasObject({parentKey: symbolRedisKey});
+                    const newAliasObject = keyAliasModel.createKeyAliasObject({parentKey: opts.symbol.key});
                     self.redisClient.get(aliasRedditKey, (existingObjAtKey) => {
                         if (existingObjAtKey) {
                             console.warn(`WARN! Will now save a keyAlias object at key ${aliasRedditKey}. This will overwrite an existing object:`, existingObjAtKey);
                         }
-                        console.warn(`Now saving new symbol alias: ${aliasRedditKey} -> ${symbolRedisKey}`);
+                        console.warn(`Now saving new symbol alias: ${aliasRedditKey} -> ${opts.symbol.key}`);
                         self.redisClient.set(aliasRedditKey, newAliasObject);
                     });
                     historyObjects.push(self.newTrainingHistoryObj({
                         actionName: 'editSymbolFunction',
-                        objectChanged: symbolRedisKey,
+                        objectChanged: opts.symbol.key,
                         actions: [['redis_set', aliasRedditKey, JSON.stringify(newAliasObject)]],
                         tstamp: now,
                         adminName: adminCodeStatus.adminInfo.name,
@@ -293,11 +292,11 @@ class HbClientSocketDbResponses_admin {
 
             // Now check if this admin edit resulted in any new props.symbolNemesis
             if (funcdSymbolData && funcdSymbolData.symbolNemesis && Array.isArray(funcdSymbolData.symbolNemesis)) {
-                console.warn(`A symbolNemesis was defined for ${symbolRedisKey} (${funcdSymbolData.symbolNemesis}).`)
+                console.warn(`A symbolNemesis was defined for ${opts.symbol.key} (${funcdSymbolData.symbolNemesis}).`)
                 symbolRedisData.symbolNemesis = funcdSymbolData.symbolNemesis; // so it saves as a top level prop on the symbol object too
                 historyObjects.push(self.newTrainingHistoryObj({
                     actionName: 'editSymbolFunction',
-                    objectChanged: symbolRedisKey,
+                    objectChanged: opts.symbol.key,
                     keysChanged: ['symbolNemesis'],
                     actions: [['set', funcdSymbolData.symbolNemesis]],
                     tstamp: now,
@@ -308,11 +307,11 @@ class HbClientSocketDbResponses_admin {
 
             // Now check if this admin edit resulted in a new symbol.prettyName
             if (funcdSymbolData && funcdSymbolData.prettyName) {
-                console.warn(`A prettyName was defined for ${symbolRedisKey} (${funcdSymbolData.prettyName}).`)
+                console.warn(`A prettyName was defined for ${opts.symbol.key} (${funcdSymbolData.prettyName}).`)
                 symbolRedisData.prettyName = funcdSymbolData.prettyName; // so it saves as a top level prop on the symbol object too
                 historyObjects.push(self.newTrainingHistoryObj({
                     actionName: 'editSymbolFunction',
-                    objectChanged: symbolRedisKey,
+                    objectChanged: opts.symbol.key,
                     keysChanged: ['prettyName'],
                     actions: [['set', funcdSymbolData.prettyName]],
                     tstamp: now,
@@ -323,11 +322,11 @@ class HbClientSocketDbResponses_admin {
 
             // Looks legit, save now.
             console.log(`Saving ${opts.functionName}() function edit on symbol ${opts.symbol.symbol}:`, opts.functionString);
-            self.redisClient.set(symbolRedisKey, symbolModel.minimizeForDb(symbolRedisData));
+            self.redisClient.set(opts.symbol.key, symbolModel.minimizeForDb(symbolRedisData));
 
             self.saveTrainingNotRelevant(historyObjects); // even though this action didn't directly edit training:notRelevant, we still need to save the history objects to training:notRelevant:history
 
-        }); // end this.redisClient.get(symbolRedisKey
+        }); // end this.redisClient.get(opts.symbol.key
     }
 
     deleteWordFromCommentAndSave(removeWord, commentId, cback) { // send commentRedisKey to cback

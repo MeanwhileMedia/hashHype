@@ -34,8 +34,7 @@ class BarRaceBar extends React.Component {
         const hasTopSymbolKey = this.state.topComment.topSymbolHigh['1Hr'] || this.state.topComment.topSymbolLow['1Hr'] || null;
         if (hasTopSymbolKey) {
             hasTopSymbol = this.state.topComment.symbols.find(thisSymbol => {
-                const thisSymbolRedisKey = `symbol:${thisSymbol.type}:${thisSymbol.symbol}`;
-                return thisSymbolRedisKey === hasTopSymbolKey;
+                return thisSymbol.key === hasTopSymbolKey;
             });
         }
         if (hasTopSymbol) {

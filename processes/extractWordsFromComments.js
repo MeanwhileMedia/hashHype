@@ -174,6 +174,7 @@ class ExtractWordsFromComments {
                 self.processNextQueuedNewRawCommentExtraction(curProcessingQueue);
                 return;
             }
+
             self.sanitizeAndNormalizeCommentBody(comment, () => {
                 self.preserveSymbolsInCommentBody(comment, () => {
                     const foundSymbolsCount = Object.keys(comment.pendingSymbols).length;
@@ -335,7 +336,7 @@ class ExtractWordsFromComments {
                     token: thisHashtag,
                     type: 'hashtag',
                     normalizedToken: thisHashtag,
-                    symbolKey: `symbol:hashtag:${thisHashtag}`,
+                    symbolKey: `symbol:hashtag:${self.redisClient.encodeStringForRedisKey(thisHashtag)}`,
                     assocs: hashtagAssocs
                 });
             }
@@ -367,6 +368,7 @@ class ExtractWordsFromComments {
                     } else {
                         // redis Symbol object for this hashtag does not yet exist, create and save it now.
                         const newSymbolObj = symbolModel.createSymbolObject({
+                            key: thisPendingSymbolEntity.symbolKey,
                             name: thisPendingSymbolEntity.normalizedToken,
                             symbol: thisPendingSymbolEntity.token,
                             type: 'hashtag',
@@ -419,7 +421,7 @@ class ExtractWordsFromComments {
                     token: thisMention,
                     type: 'mention',
                     normalizedToken: thisMention,
-                    symbolKey: `symbol:mention:${thisMention}`,
+                    symbolKey: `symbol:mention:${self.redisClient.encodeStringForRedisKey(thisMention)}`,
                     assocs: mentionAssocs
                 });
             }
@@ -451,6 +453,7 @@ class ExtractWordsFromComments {
                     } else {
                         // redis Symbol object for this mention does not yet exist, create and save it now.
                         const newSymbolObj = symbolModel.createSymbolObject({
+                            key: thisPendingSymbolEntity.symbolKey,
                             name: thisPendingSymbolEntity.normalizedToken,
                             symbol: thisPendingSymbolEntity.token,
                             type: 'mention',
@@ -546,7 +549,7 @@ class ExtractWordsFromComments {
                 tokenSymbolResult.normalizedToken = normalizedUrl;
 
                 // Generate a symbol key from this URL and see if it already exists in redis. If not, create now.
-                const symbolKey = `symbol:url:${normalizedUrl}`;
+                const symbolKey = `symbol:url:${self.redisClient.encodeStringForRedisKey(normalizedUrl)}`;
                 tokenSymbolResult.symbolKey = symbolKey;
                 self.redisClient.get(symbolKey, (symbol, actualAbsKey) => { // actualAbsKey will be defined when this .get followed an alias. Needed below.
                     if(symbol) {
@@ -571,6 +574,7 @@ class ExtractWordsFromComments {
                         const firstSlashIndex = symbolName.indexOf('/');
                         if (firstSlashIndex !== -1) symbolName = symbolName.slice(0, firstSlashIndex);
                         const newSymbolObj = symbolModel.createSymbolObject({
+                            key: symbolKey,
                             name: symbolName || 'link', // name is required, so provide a fallback
                             symbol: normalizedUrl,
                             type: 'url',
@@ -614,7 +618,7 @@ class ExtractWordsFromComments {
         const tokenSymbolSearchPromises = [];
         commentTokens.forEach((thisToken, thisTokenIndex) => {
             tokenSymbolSearchPromises.push(new Promise( (resolve, reject) => {
-                const symbolKey = `symbol:${symbolType}:${thisToken}`; // `symbol:stock:GME` - stock symbol object keys always make the ticker caps
+                const symbolKey = `symbol:${symbolType}:${self.redisClient.encodeStringForRedisKey(thisToken)}`; // `symbol:stock:GME` - stock symbol object keys always make the ticker caps
                 const tokenSymbolResult = self.newPendingSymbolEntity({token: thisToken, normalizedToken: thisToken, symbolKey: symbolKey});
 
                 // Step 1: eliminate this word based on quick basic rules
@@ -697,7 +701,7 @@ class ExtractWordsFromComments {
                     token: thisEmojiCode,
                     type: 'emoji',
                     normalizedToken: thisEmojiCode,
-                    symbolKey: `symbol:emoji:${thisEmojiCode}`, // Note that our redis namespace delimeter is also a ":". We are creating the redis key symbol:emoji::happy_face: - this will not be a problem, but something to be aware of.
+                    symbolKey: `symbol:emoji:${self.redisClient.encodeStringForRedisKey(thisEmojiCode)}`, // Note that we convert : chars to '፥' when generating a redis key. So emoji ":smiling-face:" will become "፥smiling-face፥". This is because we reserve the : charachter as a redis key delimeter. The same is done for url symbols, and all keys
                     assocs: emojiAssocs
                 });
             }
@@ -714,7 +718,7 @@ class ExtractWordsFromComments {
                 token: thisEmojiCode,
                 type: 'emoji',
                 normalizedToken: thisEmojiCode,
-                symbolKey: `symbol:emoji:${thisEmojiCode}`, // Note that our redis namespace delimeter is also a ":". We are creating the redis key symbol:emoji::happy_face: - this will not be a problem, but something to be aware of.
+                symbolKey: `symbol:emoji:${self.redisClient.encodeStringForRedisKey(thisEmojiCode)}`,
                 assocs: [{assoc: emojiChar, type: 'unicode'}]
             });
             // In the case of unicode emojis, we also alter the comment body to show our custom shortcode format instead
@@ -748,6 +752,7 @@ class ExtractWordsFromComments {
                     } else {
                         // redis Symbol object for this emoji does not yet exist, create and save it now.
                         const newSymbolObj = symbolModel.createSymbolObject({
+                            key: thisPendingSymbolEntity.symbolKey,
                             name: thisPendingSymbolEntity.normalizedToken,
                             symbol: thisPendingSymbolEntity.token,
                             type: 'emoji',
@@ -958,7 +963,7 @@ class ExtractWordsFromComments {
                 checkedSymbols.push(thisSymbolKey);
 
                 const thisSymbolWordStr = thisSymbolKey.split(':').slice(2).join(':');
-                const foundAtListKey = `word:${thisSymbolWordStr}:foundAt`;
+                const foundAtListKey = wordModel.getWordFoundAtKey(thisWordRef, self.redisClient);
                 symbolsFoundAtCountPromises.push(new Promise( (resolve, reject) => {
                     const now = Date.now();
                     self.redisClient.zrange(foundAtListKey, now - msIn1Hr, now, (allFoundAtTstamps) => {
@@ -981,13 +986,15 @@ class ExtractWordsFromComments {
         });
     }
 
+    // saveAllWordsInComment(comment, pendingWordExtractionPubSubMsgs, cback) {
     saveAllWordsInComment(comment, cback) {
         const self = this;
         const wordSavePromises = [];
         for (let [thisWordStr, thisWordRef] of Object.entries(comment.words)) {
             if (thisWordRef.isSymbolAlias) continue; // We never fire foundAts for words that matched a symbolAlias. There will be another wordRef on this comment that has the actual symbol.symbol assigned to wordRef.word. That's the one that will register foundAts.
+
             wordSavePromises.push(new Promise( (resolve, reject) => {
-                wordModel.registerWordOccurance(thisWordStr, comment, self.redisClient, () => {
+                wordModel.registerWordOccurance(thisWordRef, comment, self.redisClient, () => {
                     resolve();
                 });
             })); // end wordSavePromises.push

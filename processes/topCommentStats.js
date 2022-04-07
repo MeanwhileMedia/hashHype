@@ -25,13 +25,13 @@ class TopCommentsStats {
         this.topComments = this.newTopCommentsEntity({absKey: this.topCommentsStatsFullKey});
 
         this.pendingCommentIdsToWords = {}; // these id's are roughly estimated to become topComments. Confirmed during refreshTopComments. {commentId1: ['word_!!_234', 'word_!!_foo'], etc}
-        this.pendingWordFoundAtKeyspaceChannels = {}; // a local record of which '__keyspace@0__:word:*:foundAt' channels have already emitted messages during this refreshTopComments interval. No channel will be acted on twice during one interval.
+        this.pendingFoundWords = {}; // a local record of which '__keyspace@0__:word:*:foundAt' channels have already emitted messages during this refreshTopComments interval. No channel will be acted on twice during one interval.
         this.trackCommentsFor = 3600000; // ms (1hr) How long will we keep updating redis comment objects with recurring word points
 
         this.topWordsCounts = []; // [['foo_bar', 35], [baz, 100], etc...] // caches counts for words found to be both top, or not.
         this.topWordsCountsIndex = {} //  {foo_bar: indexOfCountWithinTopWordsCounts, baz: 101, etc...} - this object just helps our lookup into topWordsCounts which is an ordered array
         this.topWordsCountsMaxLength = 100000; // should be a multiple of 10
-        this.topWordsMinCount = 20; // Try to start with a reasonable number at process init. Better to slowly adjust down than have an immediate memory overflow (cuz of trying to process too many comments based on too many word occurances). However, if you set too high, no new topCommentStats data will save/render until it has time to adjust down.
+        this.topWordsMinCount = 10; // Try to start with a reasonable number at process init. Better to slowly adjust down than have an immediate memory overflow (cuz of trying to process too many comments based on too many word occurances). However, if you set too high, no new topCommentStats data will save/render until it has time to adjust down.
         this.topWordsRefreshInterval = null;
         this.topWordsRefreshIntervalTime = 10000;
         this.lastIntervalTotalWordsCount = 0; // total new words that we reported via pubsub '__keyspace@0__:word:*:foundAt' in the last ${topWordsRefreshIntervalTime}ms
@@ -68,7 +68,7 @@ class TopCommentsStats {
         self.initRedisClient(() => {
             self.redisClient.get(self.topCommentsStatsFullKey, (topCommentStatsObj) => {
                 if (topCommentStatsObj) self.topComments = topCommentStatsObj;
-                self.initKeyspaceSubscriptions();
+                self.initWordPubSubSubscriptions();
                 self.syncTrainingNotRelevant();
             });
         });
@@ -94,44 +94,54 @@ class TopCommentsStats {
         });
     }
 
-    initKeyspaceSubscriptions() {
+    initWordPubSubSubscriptions() {
         const self = this;
-        this.redisClient.on('pmessage', function (matchedPattern, patternWithKey, action){ // If this event was sent as part of the set pattern subcribed keyspace event, then it's "patternWithKey" will be: __keyspace@0__:word:foo_!!_bar:foundAt
+        self.redisClient.on('pmessage', function (matchedPattern, patternWithKey, action){
             if (action !== 'zadd') return;
 
             // We will only run isTopWord and getWordToCommentsIndexForTimeRange once per word per storeNewTopCommentsStats interval (to save on mem/cpu).
-            if (self.pendingWordFoundAtKeyspaceChannels[patternWithKey]) return; // remember that self.pendingWordFoundAtKeyspaceChannels gets reset inside storeNewTopCommentsStats().
-            self.pendingWordFoundAtKeyspaceChannels[patternWithKey] = 1;
+            if (self.pendingFoundWords[patternWithKey]) return; // remember that self.pendingFoundWords gets reset inside storeNewTopCommentsStats().
+            self.pendingFoundWords[patternWithKey] = 1;
             ++self.lastIntervalTotalWordsCount;
 
-            const wordString = patternWithKey.replace(/__keyspace@0__:word:|:foundAt/g, '');
-            self.isTopWord(wordString, (isTopWord) => {
+            self.isTopWord(patternWithKey, (isTopWord) => {
                 if (!isTopWord) return;
                 ++self.lastIntervalTopWordsCount;
                 // Get all comments, less than 1hr old, which contain this word. For realtime point calculation, we only access new comments (to save on CPU).
-                self.getWordToCommentsIndexForTimeRange(wordString, self.trackCommentsFor, (wordToCommentsIndex) => {
+                let thisWordStr = patternWithKey.split(':');
+                thisWordStr = thisWordStr[thisWordStr.length-2];
+                self.getWordToCommentsIndexForTimeRange(thisWordStr, self.trackCommentsFor, (wordToCommentsIndex) => {
                     if (!wordToCommentsIndex) return;
                     wordToCommentsIndex.forEach((thisCommentId) => {
                         self.pendingCommentIdsToWords[thisCommentId] = self.pendingCommentIdsToWords[thisCommentId] || [];
-                        self.pendingCommentIdsToWords[thisCommentId].push(wordString); // We don't check for dups right now to save on cpu.
+                        self.pendingCommentIdsToWords[thisCommentId].push(thisWordStr); // We don't check for dups right now to save on cpu.
                     });
                     self.throttle.storeNewTopCommentsStats();
                 });
             });
         });
-        // Pattern listener for any time a new timestamp is pushed to a word's foundAt list
-        this.redisClient.psubscribe('__keyspace@0__:word:*:foundAt');
+        self.redisClient.psubscribe('__keyspace@0__:word:*:foundAt');
     }
 
-    isTopWord(wordString, cback) {
+    isTopWord(foundAtKeyspaceChannel, cback) {
         // Check the length of this words "foundAt" redis list to see if the words count is high enough to potentially effect topComments.
         const self = this;
 
+        // Certain types of words will always be considered topWords
+        if (foundAtKeyspaceChannel.indexOf('word:symbol:stock') !== -1 || foundAtKeyspaceChannel.indexOf('word:symbol:coin') !== -1) { // hashHype rule - certain symbols are always topWords.
+            if (cback) cback(true);
+            return;
+        }
+        if (foundAtKeyspaceChannel.indexOf('word:2dGram') !== -1) { // hashHype rule - 2dGrams are always topWords. 2dGram will usually have a lower foundAt count and can't be subjected to self.topWordsMinCount because it is dynamically set based on bigram/trigram occurance counts
+            if (cback) cback(true);
+            return;
+        }
+
         // If this word is found in the locally cached this.topWordCounts, can return bool to cback immediately.
-        const thisTopWordCount = self.topWordsCounts[self.topWordsCountsIndex[wordString]];
+        const thisTopWordCount = self.topWordsCounts[self.topWordsCountsIndex[foundAtKeyspaceChannel]];
         if (thisTopWordCount) {
             ++self.lastIntervalTopWordsCached;
-            // console.log(wordString, ' topWordsCounts was cached');
+            // console.log(wordFoundMessage.word, ' topWordsCounts was cached');
             if (thisTopWordCount[1] >= self.topWordsMinCount) {
                 if (cback) cback(true);
             } else {
@@ -139,23 +149,14 @@ class TopCommentsStats {
             }
             return;
         } else {
-            // console.log(wordString, ' topWordsCounts was not cached');
-        }
-
-        // HashHype rule - a foundAt occurance for a 2dGram will ALWAYS trigger a point recalculation for all comments which share it.
-        // This is because 2dGrams have high value, but often low foundAt counts. We want to make sure the comments which hold this 2dGram
-        // are given the chance to become a topComment even if they aren't being called up for one of their other words.
-        if (wordString.split('_!!_').length >= this.minTokenClusterLengthFor2dGram) {
-            // console.warn(`2dGrams are always topWords (${wordString})`)
-            if (cback) cback(true);
-            return;
+            // console.log(wordFoundMessage.word, ' topWordsCounts was not cached');
         }
 
         // This incoming word was not yet cached to this.topWordCounts. Fetch the "foundAt" redis list length now.
-        const wordFoundAtKey = `word:${wordString}:foundAt`;
+        const wordFoundAtKey = foundAtKeyspaceChannel.replace('__keyspace@0__:', '');
         self.redisClient.zcard(wordFoundAtKey, (thisFoundAtListLength) => {
-            const thisCountIndex = self.topWordsCounts.push([wordString, thisFoundAtListLength]) - 1;
-            self.topWordsCountsIndex[wordString] = thisCountIndex;
+            const thisCountIndex = self.topWordsCounts.push([foundAtKeyspaceChannel, thisFoundAtListLength]) - 1;
+            self.topWordsCountsIndex[foundAtKeyspaceChannel] = thisCountIndex;
 
             if (thisFoundAtListLength >= self.topWordsMinCount) {
                 if (cback) cback(true);
@@ -205,7 +206,7 @@ class TopCommentsStats {
         self.lastIntervalTotalWordsCount = 0; // reset counters now
         self.lastIntervalTopWordsCount = 0;
         self.lastIntervalTopWordsCached = 0;
-        self.pendingWordFoundAtKeyspaceChannels = {};
+        self.pendingFoundWords = {};
 
         // Next try to calculate a rolling average percent of words which were deeemed topWords (if we have enough data). We use that number to adjust our new topWordsMinCount.
         self.pendingTopWordsPercentsForAvg = self.pendingTopWordsPercentsForAvg || [];
@@ -459,7 +460,7 @@ class TopCommentsStats {
 
         //////////
         // Get every single timestamp for when this word was in any comment, then sort sort them into timebuckets and total the points
-        const foundAtListKey = `word:${wordRef.word}:foundAt`;
+        const foundAtListKey = wordModel.getWordFoundAtKey(wordRef, self.redisClient);
         const now = Date.now();
         const msInHr = 3600000;
         const msIn12Hr = 43200000;
@@ -1046,13 +1047,12 @@ class TopCommentsStats {
         const wordSavePromises = [];
         all2dGrams.forEach((this2dGram) => {
             this2dGram.word = this2dGram.word.join('_!!_'); // convert it to it's proper string form now.
-            const newWordAbsKey = wordModel.generateWordObjectKey(this2dGram.word);
             // add wordRef to comment
             if (!comment.words[this2dGram.word]) { // first check if already exists
                 // console.warn(`comment:${comment.id} earned a new 2dGram: ${this2dGram.word}`, this2dGram)
                 comment.words[this2dGram.word] = this2dGram; // This comment will be saved at the bottom of refreshTopComments
                 wordRefSavePromises.push(new Promise( (resolve, reject) => {
-                    wordModel.registerWordOccurance(this2dGram.word, comment, self.redisClient, () => {
+                    wordModel.registerWordOccurance(this2dGram, comment, self.redisClient, () => {
                         allNew2dGramStrings.push(this2dGram.word);
                         resolve();
                     });
@@ -1355,7 +1355,7 @@ class TopCommentsStats {
 
     getWordToCommentsIndexForTimeRange(wordString, maxAge = 3600000, cback) { // defaults to return only commentIds that are less than 1 hr old
         const self = this;
-        const thisIndexKey = `index:wordToComments:${wordString}`;
+        const thisIndexKey = `index:wordToComments:${self.redisClient.encodeStringForRedisKey(wordString)}`;
         const now = Date.now();
         self.redisClient.zrange(thisIndexKey, now - maxAge, now, (commentIdsInRange) => {
             if (cback) cback(commentIdsInRange);
@@ -1366,7 +1366,7 @@ class TopCommentsStats {
         const self = this;
         const zremPromises = [];
         associatedWords.forEach((wordString) => {
-            const thisIndexKey = `index:wordToComments:${wordString}`;
+            const thisIndexKey = `index:wordToComments:${self.redisClient.encodeStringForRedisKey(wordString)}`;
             zremPromises.push(new Promise( (resolve, reject) => {
                 self.redisClient.zrem(thisIndexKey, [commentId], () => {
                     resolve();

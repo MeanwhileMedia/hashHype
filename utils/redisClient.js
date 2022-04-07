@@ -28,7 +28,7 @@ class RedisClient {
         self.restoredKeyCountInterval = null;
         self.initRestoredKeyCountInterval();
 
-        self.activePreservingSortedSets = {preservedKeys: {}}; // {"word:GME:foundAt": setLength, etc..} a map of keys pointing to sorted sets which were all found to be long enough to be written to a preserve DB. (redisClientConfig.preserveNamespaces matched a key, and the set at that key had length >= preserveNamespaces.count)
+        self.activePreservingSortedSets = {preservedKeys: {}}; // {"word:GME:foundAt": setLength, etc..} a map of keys pointing to sorted sets which were all found to be long enough to be written to a preserve DB.
         self.activePreservingSortedSetsPubSubChannel = 'change:activePreservingSortedSets'; // our manual pubsub channel so processes can keep activePreservingSortedSets in sync with one another
         self.activePreservingSortedSetsPeristKey = 'index:redisPreserved:activePreservingSortedSets';
         self.activePreservingSortedSetsMaxLength = 10000;
@@ -66,7 +66,6 @@ class RedisClient {
                 redisPort: thisRedisConfig.serverArgs.port,
                 redisPassword: thisRedisConfig.serverArgs.requirepass,
                 storeNamespaces: thisRedisConfig.storeNamespaces,
-                preserveNamespaces: thisRedisConfig.preserveNamespaces
             };
         });
         return redisDbConfigs;
@@ -157,43 +156,6 @@ class RedisClient {
                 if (cback) cback();
                 return;
             }
-
-            // If this is redisDBMaster, we will now copy all preserved data from it's preserved DB to all lower DBs.
-            const restoreKeys = Object.keys(self.activePreservingSortedSets.preservedKeys);
-            console.log(`redisDBMaster will now restore activePreservingSortedSets from redis, and sync ${restoreKeys.length} sets to all matching DBs...`);
-
-            const restoreNextSet = (allSetKeys, curKeyIndex = 0) => {
-                const thisKey = allSetKeys[curKeyIndex];
-                if (!thisKey) {
-                    console.log(`Finished restoring ${allSetKeys.length} sorted sets to all DBs, and their lengths to local self.activePreservingSortedSets.`);
-                    if (cback) cback();
-                    return;
-                }
-
-                // find matching thisDbConfig.preserveNamespaces for this key
-                let preservedInDbName;
-                for (const [thisDbName, thisDbConfig] of Object.entries(self.redisDbConfigs)) {
-                    thisDbConfig.preserveNamespaces.some((preserveConf) => {
-                        if ( new RegExp(preserveConf.pattern).test(thisKey) ) {
-                            preservedInDbName = thisDbConfig.dbName;
-                            return true; // break some loop
-                        }
-                    });
-                };
-
-                self.zrange(thisKey, 0, Infinity, (resSet) => {
-                    if (!resSet || !resSet.length) {
-                        console.warn(`Attempted to restore a preserved set at key ${thisKey} but found no data.`);
-                        self.removeActivePreservingSortedSet(thisKey, null);
-                        restoreNextSet(allSetKeys, ++curKeyIndex);
-                        return;
-                    }
-                    self.zadd(thisKey, resSet.reverse(), () => { // zadd expects the reverse arg sig to what zrange returns [points1, val1, points2, val2]
-                        restoreNextSet(allSetKeys, ++curKeyIndex);
-                    });
-                }, preservedInDbName, 'WITHSCORES');
-            }
-            restoreNextSet(restoreKeys);
         });
     }
 
@@ -294,9 +256,9 @@ class RedisClient {
         if (self.activePreservingSortedSetsSyncInterval) return;
         self.activePreservingSortedSetsSyncInterval = setInterval(() => {
             const activePreservingSortedSetsLength = Object.keys(self.activePreservingSortedSets.preservedKeys).length;
-            // console.log(`Currently preserving ${activePreservingSortedSetsLength} sorted sets which matched redis preserveNamespaces configs.`);
+            if (argv.redisDBMaster) console.log(`Currently preserving ${activePreservingSortedSetsLength} sorted sets which matched redis preserveNamespaces configs.`);
             if (activePreservingSortedSetsLength >= self.activePreservingSortedSetsMaxLength) {
-                console.warn(`activePreservingSortedSets is too long! Potential memory leak. Please inspect...`);
+                console.warn(`activePreservingSortedSets is too long (${activePreservingSortedSetsLength} keys)! Potential memory leak. Please inspect...`);
             }
 
             // Alert all processes (including self) of changes we made to our local activePreservingSortedSets (because all processes must keep it in sync)
@@ -356,24 +318,19 @@ class RedisClient {
         /////////////
         // First determine which db(s) this command is configured to execute against. A key may be found to match a "storeNamespaces" pattern for multiple databases.
         const storeToDbs = [];
-        const preserveToDbs = [];
+        // const preserveToDbs = [];
         for (const [thisDbName, thisDbConfig] of Object.entries(self.redisDbConfigs)) {
             // 1. find matching thisDbConfig.storeNamespaces for this key
             if (!Array.isArray(thisDbConfig.storeNamespaces) || thisDbConfig.storeNamespaces.length === 0) continue;
             thisDbConfig.storeNamespaces.some((storeConf) => {
                 if ( new RegExp(storeConf.pattern).test(commandArgs.key) ) {
-                    storeConf.dbName = thisDbConfig.dbName;
-                    storeToDbs.push(storeConf);
-                    return true; // break some loop. We take use the first matching pattern only
-                }
-            });
-            // 2. find matching thisDbConfig.preserveNamespaces for this key
-            if (!Array.isArray(thisDbConfig.preserveNamespaces) || thisDbConfig.preserveNamespaces.length === 0) continue;
-            thisDbConfig.preserveNamespaces.some((preserveConf) => {
-                if ( new RegExp(preserveConf.pattern).test(commandArgs.key) ) {
-                    preserveConf.dbName = thisDbConfig.dbName;
-                    preserveToDbs.push(preserveConf)
-                    return true; // break some loop
+                    let isMatch = true;
+                    if (thisDbConfig.isMatch) isMatch = thisDbConfig.isMatch(commandArgs, self);
+                    if (isMatch) {
+                        storeConf.dbName = thisDbConfig.dbName;
+                        storeToDbs.push(storeConf);
+                        return true; // break some loop. We take use the first matching pattern only
+                    }
                 }
             });
         };
@@ -382,7 +339,7 @@ class RedisClient {
             console.warn(`Could not determine a target db name for ${commandArgs.command} command. Command args:`, commandArgs);
             return null;
         }
-        if (storeToDbs.length === 1 && preserveToDbs.length === 0) {
+        if (storeToDbs.length === 1) { // && preserveToDbs.length === 0) {
             // This only matched one target DB. No need for anything fancy or async, just return the db name to to command func so it can proceed.
             return storeToDbs[0].dbName;
         }
@@ -396,29 +353,16 @@ class RedisClient {
             commandExecs.push((execCback) => {
                 commandArgs.dbName = thisStoreConf.dbName;
                 commandArgs.cback = (redisRes) => {
-                    if (execCback) execCback(redisRes, commandArgs.dbName);
+                    if (execCback) execCback(redisRes, thisStoreConf);
                     if (thisStoreConf.ttl) self.pexpire(commandArgs.key, thisStoreConf.ttl, null, thisStoreConf.dbName);
                 };
                 self[commandArgs.command].apply(self, commandArgs.reformCommandArgs());
             });
         });
         if (commandArgs.isReadOp) {
-            // If this is a isReadOp command, then we will attempt to read from target db just one at a time and return the first non-null response. If one DB returns null, then move on to the next.
-            const preserveToExecs = [];
-            preserveToDbs.forEach((thisPreserveConf) => {
-                preserveToExecs.push((execCback) => {
-                    commandArgs.dbName = thisPreserveConf.dbName;
-                    commandArgs.cback = (redisRes) => {
-                        // if (redisRes) console.log(`Could not find redis key in primary DB. Recovered ${commandArgs.key} from preserved data in "${thisPreserveConf.dbName}" DB.`);
-                        if (execCback) execCback(redisRes, commandArgs.dbName);
-                        if (thisPreserveConf.ttl) self.pexpire(commandArgs.key, thisPreserveConf.ttl, null, thisPreserveConf.dbName);
-                    };
-                    self[commandArgs.command].apply(self, commandArgs.reformCommandArgs());
-                });
-            });
             let curCmdExecIndex = 0;
             const nextCmdExec = (thisCmdExec) => {
-                thisCmdExec((redisRes, foundInDbName) => {
+                thisCmdExec((redisRes, storeToDbConfig) => {
                     if (redisRes === null || redisRes === 0) {
                         ++curCmdExecIndex;
                         if (combinedCmdExecs[curCmdExecIndex]) {
@@ -431,35 +375,12 @@ class RedisClient {
                     }
                     // console.log(`Executed redis ${commandArgs.command} command for key ${commandArgs.key} and returned a response from DB "${storeToDbs[curCmdExecIndex].dbName}". All target DBs:`, storeToDbs);
 
-                    // log if this data was recovered from a db that was not 1st in list. Also sync data back down for certain commands.
+                    if (storeToDbConfig.onComplete) storeToDbConfig.onComplete(commandArgs, redisRes, self);
+
+                    // log if this data was recovered from a db that was not 1st in list. // Also sync data back down for certain commands.
                     if (curCmdExecIndex > 0) {
                         if (self.restoredKeys.indexOf(commandArgs.key) !== -1 || self.restoredKeysLongRecord.indexOf(commandArgs.key) !== -1) self.restoredKeysLooping.push(commandArgs.key);
                         self.restoredKeys.push(commandArgs.key);
-                        if (commandArgs.command === 'get') {
-                            // console.warn(`A recovered redis string (get) will be synced (set) to all DBs after recovery: ${commandArgs.key}`);
-                            self.set(commandArgs.key, redisRes);
-                        }
-                    }
-
-                    // If this was a zcard read, then this is when we act on preserveToDbs write logic. This is because our preserveNamespaces.count prop for sets depends on knowing the set's length. However,
-                    // zadd does not return the set length, it returns how many items were added. This is why we have to work our preserve logic during the zcard read command.
-                    if (commandArgs.command === 'zcard' && preserveToDbs.length) {
-                        const minCountToPreserveSet = preserveToDbs[0].count;
-                        if (redisRes >= minCountToPreserveSet) {
-                            // We hold an obj in live memory of all set keys which exceeded our min count setting. All zadd commands check this object to see if they should write to preserve DB too.
-                            // console.warn(`Zcard found a long set. Will now begin preserving (db ${preserveToDbs[0].dbName}) all new zadds to key ${commandArgs.key} which has a length of ${redisRes}`);
-                            self.addActivePreservingSortedSet(commandArgs.key, redisRes);
-                        }
-                    }
-                    // Same as above, but for zrange the redisRes is an array of values. We can look at the length of that array and compare against preserveToDbs.count setting
-                    if (commandArgs.command === 'zrange' && preserveToDbs.length) {
-                        const minCountToPreserveSet = preserveToDbs[0].count;
-                        let valueCount = redisRes.length;
-                        if (commandArgs.withScores) valueCount = valueCount / 2;
-                        if (valueCount >= minCountToPreserveSet) {
-                            // console.warn(`Zrange found a long set. Will now begin preserving (db ${preserveToDbs[0].dbName}) all new zadds to key ${commandArgs.key} which has a length of ${valueCount}`);
-                            self.addActivePreservingSortedSet(commandArgs.key, valueCount);
-                        }
                     }
 
                     // Some string gets return a "keyAlias" object which is a reference to an abject at another key. Fetch the full object now, and let the cback know we followed an alias redirect.
@@ -474,49 +395,21 @@ class RedisClient {
                     if (origCback) origCback(redisRes);
                 });
             };
-            const combinedCmdExecs = commandExecs.concat(preserveToExecs);
+            //const combinedCmdExecs = commandExecs.concat(preserveToExecs);
+            const combinedCmdExecs = commandExecs;
             nextCmdExec(combinedCmdExecs[curCmdExecIndex]);
         } else {
             // If this is not a isReadOp command, and we just need to write to multiple DBs, then run all promises concurrently and execute provided cback once they all resolve.
             let didCallOrigCback = false; // we are gonna call this asap (with the first response from our set of commandExecs)
             commandExecs.forEach((thisCmdExec) => {
-                thisCmdExec((redisRes, foundInDbName) => {
+                thisCmdExec((redisRes, storeToDbConfig) => {
                     // We simplify things by just returning the response to the command from the first DB it was executed on. The assumption
                     // is that when a command is configured to be sent to multiple dbs, those dbs should be in sync and return the same response.
                     // console.log(`Executed redis ${commandArgs.command} command for key ${commandArgs.key} to multiple DBs:`, storeToDbs);
                     if (!didCallOrigCback && origCback) origCback(redisRes);
                     didCallOrigCback = true;
 
-                    // Now execute our preserveNamespaces logic - which will vary depending on what type of write command was just executed.
-                    if (preserveToDbs.length === 0) return;
-                    const preserveToNow = (countForThisData) => {
-                        preserveToDbs.forEach((thisPreserveToConfig) => {
-                            if (countForThisData < thisPreserveToConfig.count) {
-                                if (commandArgs.command !== 'del') { // destructive commands should always run on all DBS (including preserved) or else they will fall out of sync and there could be a delete/recover loop
-                                    return;
-                                }
-                            }
-                            commandArgs.dbName = thisPreserveToConfig.dbName;
-                            commandArgs.cback = () => {
-                                // console.log(`Preserved ${commandArgs.key} ${commandArgs.command} write command to ${commandArgs.dbName} DB...`)
-                                if (thisPreserveToConfig.ttl) self.pexpire(commandArgs.key, thisPreserveToConfig.ttl, null, thisPreserveToConfig.dbName);
-                            };
-                            self[commandArgs.command].apply(self, commandArgs.reformCommandArgs());
-                        });
-                    }
-                    if (commandArgs.command === 'set' && commandArgs.saveData) {
-                        // the extended set command (see below) automatically increments a "saveCount" integer every time the same object is saved. Compare that number to the configured preserveNamespaces.count param and re-save.
-                        preserveToNow(commandArgs.saveData.saveCount || 0);
-                        return;
-                    }
-                    if (commandArgs.command === 'del') {
-                        preserveToNow(0);
-                        return;
-                    }
-                    const preservedSortedSetLength = self.activePreservingSortedSets.preservedKeys[commandArgs.key];
-                    if (preservedSortedSetLength && (commandArgs.command === 'zadd' || commandArgs.command === 'zrem' || commandArgs.command === 'zremrangebyscore')) {
-                        preserveToNow(preservedSortedSetLength);
-                    }
+                    if (storeToDbConfig.onComplete) storeToDbConfig.onComplete(commandArgs, redisRes, self);
                 });
             });
         }
@@ -725,7 +618,9 @@ class RedisClient {
         if (!dbName) dbName = self.determineTargetDb(normalizedArgs);
         if (!dbName) return;
         self.clients[dbName].db.set(normalizedArgs.key, JSON.stringify(normalizedArgs.saveData), (err) => {
-            if (err) console.warn(err);
+            if (err) {
+                console.warn(`Could not set ${normalizedArgs.key} object to redis on DB ${dbName}.`, err);
+            }
             if (normalizedArgs.cback) normalizedArgs.cback();
         });
     }
@@ -755,7 +650,7 @@ class RedisClient {
         if (!dbName) return;
         self.clients[dbName].db.zadd(normalizedArgs.key, normalizedArgs.saveData, (err, itemsAddedCount) => {
             if(err || typeof itemsAddedCount !== 'number') {
-                console.warn(`Could not zadd ${normalizedArgs.saveData.length/2} objects to redis sorted set ${normalizedArgs.key}:`, normalizedArgs.saveData, err);
+                console.warn(`Could not zadd ${normalizedArgs.saveData.length/2} objects to redis sorted set ${normalizedArgs.key} on DB ${dbName}.`, normalizedArgs.saveData, err);
                 if (normalizedArgs.cback) normalizedArgs.cback(null);
                 return;
             }
@@ -990,6 +885,21 @@ class RedisClient {
         if (!dbName) dbName = argv.host_redis_dbs[0];
         if (typeof message !== 'string') message = JSON.stringify(message);
         self.clients[dbName].pub.publish(msgChannel, message);
+    }
+
+    ///////////
+    // Below are random util functions to help processes use redisClient
+    encodeStringForRedisKey(str) {
+        // To make sure our redis key naming conventions are consistent, all strings which will be part of a redis keys should be passed through this function before they are saved to redis.
+        let encodedStr = `${str}`;
+        encodedStr.replaceAll(':', '፥'); // We reserve the : charachter as a redis key delimeter.
+        return encodedStr;
+    }
+    decodeStringForRedisKey(str) {
+        // the opposite of above.
+        let decodedStr = `${str}`;
+        decodedStr = str.replaceAll('፥', ':');
+        return decodedStr;
     }
 
 }

@@ -91,6 +91,7 @@ const commentObjModel = {
         }
         delete commentClone.pendingSymbols; // a temporary prop for extractWOrdsFromComments.preserveSymbolsInCommentBody
         delete commentClone.symbols; // a temporary prop for topCommentStats. is an array of full symbol objects used for rendering into UI.
+        delete commentClone.pendingWordExtractionPubSubMsgs; // a temporary prop for extractWOrdsFromComments.
         delete commentClone.wordAssocs;
 
         return commentClone;
@@ -106,6 +107,7 @@ const commentObjModel = {
             commentClone = { ...commentObj }; // this is a shallow copy so nested objects should not be altered within this function.
         }
         delete commentClone.pendingSymbols; // a temporary prop for extractWOrdsFromComments.preserveSymbolsInCommentBody
+        delete commentClone.pendingWordExtractionPubSubMsgs; // a temporary prop for extractWOrdsFromComments.
         delete commentClone.pointsRecords; // a prop for topCommentStats pointing logic. Persisted to redis as it's own object at comment:id:pointsRecords
         delete commentClone.wordsFor2dGram; // a record of all words which have already been accounted for when forming new 2dGrams. Used by topCommentStats extractNew2dGramsFromTopComment
         delete commentClone.wordAssocs;
@@ -136,7 +138,7 @@ const commentObjModel = {
         delete commentClone.topSymbolHigh;
         delete commentClone.topSymbolLow;
         commentClone = commentObjModel.ensureCommentObjectDefaults(commentClone);
-        
+
         commentClone.points['1Hr'] = {...commentObj.points['1Hr']}
         commentClone.points['12Hr'] = {...commentObj.points['12Hr']}
         commentClone.points['24Hr'] = {...commentObj.points['24Hr']}

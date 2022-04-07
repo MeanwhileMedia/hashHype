@@ -18,6 +18,7 @@ class TopCommentStats extends React.Component {
         super(props);
 
         this.state = {
+            isFirstLoad: true, // passes through to children so can set dynamic state defaults
             pageIsReady: false, // all page content will have 0 opacity until this is set to true
             freezeState: false, // set to true and all calls to receiveNewState (from our server socket) will be discarded.
             comments: [], // all the comments received from server (stats:topComments) of all symbol types
@@ -42,6 +43,10 @@ class TopCommentStats extends React.Component {
         const wheelAbsKey = 'stats:topComments';
         socketViewResponses.initViewChangeListener(wheelAbsKey, this);
         this.registerKeyboardCtrls();
+
+        if (this.state.isFirstLoad) {
+            this.setState({isFirstLoad: false})
+        }
     }
 
     receiveNewState(socketData) {
@@ -127,6 +132,7 @@ class TopCommentStats extends React.Component {
         if (!this.state.topCommentsVizType || this.state.topCommentsVizType === 'barRace') {
             commentVisEl = (
                 <BarRace
+                    isFirstLoad={this.state.isFirstLoad}
                     topComments={topComments}
                     renderTopCommentCount={this.state.renderTopCommentCount}
                     topCommentsLastUpdated={this.state.topCommentsLastUpdated}
@@ -136,11 +142,14 @@ class TopCommentStats extends React.Component {
                     setPageIsReady={this.setPageIsReady.bind(this)}
                     gNav={this.gNavRef.current}
                     getTopCommentsVizType={this.getTopCommentsVizType.bind(this)}
+                    removeActiveSymbolType={this.removeActiveSymbolType.bind(this)}
+                    addActiveSymbolType={this.addActiveSymbolType.bind(this)}
                 />
             );
         } else {
             commentVisEl = (
                 <SpinWheel
+                    isFirstLoad={this.state.isFirstLoad}
                     topComments={topComments}
                     renderTopCommentCount={this.state.renderTopCommentCount}
                     topCommentsLastUpdated={this.state.topCommentsLastUpdated}
@@ -150,6 +159,8 @@ class TopCommentStats extends React.Component {
                     setPageIsReady={this.setPageIsReady.bind(this)}
                     gNav={this.gNavRef.current}
                     getTopCommentsVizType={this.getTopCommentsVizType.bind(this)}
+                    removeActiveSymbolType={this.removeActiveSymbolType.bind(this)}
+                    addActiveSymbolType={this.addActiveSymbolType.bind(this)}
                 />
             );
         }

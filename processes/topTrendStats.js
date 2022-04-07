@@ -52,7 +52,7 @@ class TopTrendStats {
             });
         });
     }
-    
+
     initRedisClient(cback) {
         const self = this;
         this.redisClient = new RedisClient({
@@ -76,10 +76,12 @@ class TopTrendStats {
 
     initKeyspaceSubscriptions() {
         const self = this;
+        const topCommentsStatsKeyspaceChannel = `__keyspace@0__:${self.topCommentsStatsKey}`;
         self.redisClient.on('message', function (channel, message){ // If this event was sent as part of the set pattern subcribed keyspace event, then it's "patternWithKey" will be: __keyspace@0__:word:foo_!!_bar:foundAt
+            if (channel !== topCommentsStatsKeyspaceChannel) return;
             self.throttle.computeNewTopTrendsStats();
         });
-        self.redisClient.subscribe(`__keyspace@0__:${self.topCommentsStatsKey}`);
+        self.redisClient.subscribe(topCommentsStatsKeyspaceChannel);
     }
 
     newTopTrendsEntity(initial = {}) {
@@ -181,7 +183,7 @@ class TopTrendStats {
                     if (self.topTrendsMustHaveSymbol && !thisTopComment.topSymbolHigh['1Hr']) return;
 
                     const topSymbol = thisTopComment.symbols.find((symbol) => {
-                        return symbolModel.generateRedisKey(symbol) === thisTopComment.topSymbolHigh['1Hr'];
+                        return symbol.key === thisTopComment.topSymbolHigh['1Hr'];
                     });
                     if (!topSymbol) return;
 
@@ -201,7 +203,7 @@ class TopTrendStats {
                         thisTopCommentStatsSnapshot[1].comments[symbolTypeGroup].some((thisTopComment, thisTopCommentIndex) => {
                             if (self.topTrendsMustHaveSymbol && !thisTopComment.topSymbolHigh['1Hr']) return;
                             const topSymbol = thisTopComment.symbols.find((symbol) => {
-                                return symbolModel.generateRedisKey(symbol) === thisTopComment.topSymbolHigh['1Hr'];
+                                return symbol.key === thisTopComment.topSymbolHigh['1Hr'];
                             });
                             if (topSymbol && topSymbol.symbol === thisTrend.word) {
                                 thisRankHistoryRecord[1] = thisTopComment.rank;

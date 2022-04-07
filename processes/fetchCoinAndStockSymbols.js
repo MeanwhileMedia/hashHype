@@ -56,8 +56,10 @@ class FetchCoinAndStockSymbols {
                     const thisStockData = thisStock.split(',');
                     let symbol = thisStockData[0]; // Our alphavantage data will add "-this-that" to symbols. I.e: Goldman Sachs (symbol GS) is returned as "GS-P-D". We remove this extra info before saving.
                     symbol = symbol.split('-')[0];
+                    symbol = symbol.toUpperCase(); // this prop is ALWAYS uppercased for consistency
                     const stockObj = symbolModel.createSymbolObject({
-                        symbol: symbol.toUpperCase(), // this prop is ALWAYS uppercased for consistency
+                        key: `symbol:stock:${self.redisClient.encodeStringForRedisKey(symbol)}`,
+                        symbol: symbol,
                         name: thisStockData[1],
                         type: 'stock',
                         exchange: thisStockData[2]
@@ -70,8 +72,10 @@ class FetchCoinAndStockSymbols {
                     const thisCoinData = thisCoin.split(',');
                     let symbol = thisCoinData[0];
                     symbol = symbol.split('-')[0];
+                    symbol = symbol.toUpperCase(); // this prop is ALWAYS uppercased for consistency
                     const coinObj = symbolModel.createSymbolObject({
-                        symbol: symbol.toUpperCase(),
+                        key: `symbol:coin:${self.redisClient.encodeStringForRedisKey(symbol)}`,
+                        symbol: symbol,
                         name: thisCoinData[1],
                         type: 'coin'
                     })
@@ -106,13 +110,12 @@ class FetchCoinAndStockSymbols {
     storeSymbolsToRedis(symbols) {
         const self = this;
         symbols.forEach((symbol) => {
-            const symbolKey = `symbol:${symbol.type}:${symbol.symbol}`;
-            self.redisClient.get(symbolKey, (gotSymbol) => {
+            self.redisClient.get(symbol.key, (gotSymbol) => {
                 if (gotSymbol) {
                     const existingSymbol = gotSymbol;
                     symbol = symbolModel.merge(existingSymbol, symbol);
                 }
-                self.redisClient.set(symbolKey, symbolModel.minimizeForDb(symbol));
+                self.redisClient.set(symbol.key, symbolModel.minimizeForDb(symbol));
             });
         });
     }

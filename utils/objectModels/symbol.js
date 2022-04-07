@@ -9,6 +9,7 @@ const symbolObjModel = {
         }
         const symbolObj = {
             class: 'symbol',
+            key: props.key, // the redis key for this symbol object
             symbol: props.symbol, // read-only
             name: props.name || null, // full coin or company name // read-only
             type: props.type || null, // 'stock', 'coin', 'url', etc // read-only
@@ -45,6 +46,7 @@ const symbolObjModel = {
     merge: function(existingSymbol, newSymbol) { // updates existingSymbol in place. returns existingSymbol
         // For merging a just created "createSymbolObject" with an existing version of same symbol (pulled from redis)
         // There are some properties that will persist from redis, and some that will be updated to the new values.
+        if (newSymbol.key) existingSymbol.key = newSymbol.key;
         if (newSymbol.symbol) existingSymbol.symbol = newSymbol.symbol;
         if (newSymbol.name) existingSymbol.name = newSymbol.name;
         if (newSymbol.type) existingSymbol.type = newSymbol.type;
@@ -122,10 +124,6 @@ return isMatch;`,
         }; // end defaultFuncStings
 
         symbolObj[funcName] = defaultFuncStings[funcName];
-    },
-
-    generateRedisKey: function(symbolObj){
-        return `symbol:${symbolObj.type}:${symbolObj.symbol}`;
     },
 
     minimizeForDb: function(symbolObj){

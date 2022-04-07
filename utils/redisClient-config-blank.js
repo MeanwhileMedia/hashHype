@@ -15,14 +15,27 @@ module.exports = {
                     remoteAddress: null, // set this ONLY if this DB can be connected to remotely by other machines (see redisClient.initRemoteClient)
                     redisServerPath: '',
                 },
-                storeNamespaces: [
+                storeNamespaces: [  // try to keep the most frequently matched patterns first in array for increased performance. Or match logic loop returns on first match.
                     // When a .set is called for a redis key, if that key matches any of the configured 'storeNamespaces' patterns, then it is stored to this database AND any other database with matching pattern.
                     {
                         pattern: '.', // This should not be changed for "short. Everything is stored to the "short" term memory store. If our semi aggressive LRU policy nukes the wrong item, redisClient.js will automatically try to recover it from the other databases which have a matching storeNamespaces pattern.
                         ttl: null // milliseconds. set this to null and no expire will be set for objects matching this pattern. NOTE: if this is set, the pexpire command is run upon every read/write if matched key (cpu/memory overhead)
-                    }
+
+                    },
+                    // {
+                    //     pattern: '^word:.+:foundAt$',
+                    //     ttl: null,
+                    //     isMatch: (commandArgs, redisClient) => {
+                    //         let matched = true;
+                    //         // add additional logic to determine whether this key should/not be written/read from this DB
+                    //         return matched;
+                    //     },
+                    //     onComplete: (commandArgs, redisRes, redisClient) => {
+                    //         // add additional logic to determine if this DB action should trigger another event
+                    //     }
+                    // }
                 ],
-                preserveNamespaces: [], // This config is not applicable to the "short" db. See below for docs on how to use "preserveNamespaces".
+                // preserveNamespaces: [], // This config is not applicable to the "short" db. See below for docs on how to use "preserveNamespaces".
                 serverArgs: { // mapped directly to redis cli config prop names
                     port: 8170,
 
@@ -61,20 +74,6 @@ module.exports = {
                     redisServerPath: '',
                 },
                 storeNamespaces: [],
-                preserveNamespaces: [
-                    // preserveNamespaces is similar to storeNamespaces in that you define namespace patterns for dynamic DB logic. However, these patterns are for determining
-                    // when a key, just saved to ANY DB, should also be stored to THIS DB. E.g. a redis list of word foundAt tstamps reaches a certain length, we assume it's a popular
-                    // word and that it's record must be safely preserved in the event our "short" database gets nuked by redis' aggressive LRU eviction. When a read command attempts to find
-                    // that key in "short" and gets a null response, redisClient will automatically retry on this DB - then return the preserved data.
-                    // {
-                    //     pattern: '^word:.+:foundAt$',
-                    //     // "count" is a generic descriptor of the threshhold for when a matched key must be preserved.
-                    //     // In the case of redis lists, our preserve logic will compare "count" to the list length. Other redis object types may use "count" differently in preserve logic.
-                    //     // In the case of redis strings (json), our preserve logic will compare "count" the the json.saveCount property (incremented upon every call to redisClient.set).
-                    //     count: 100,
-                    //     ttl: null // milliseconds. set this to null and no expire will be set for objects matching this pattern
-                    // }
-                ],
                 serverArgs: {
                     port: 8171,
 

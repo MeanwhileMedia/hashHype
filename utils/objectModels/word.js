@@ -49,45 +49,33 @@ const wordObjModel = {
         return wordRefObj;
     },
 
-    generateWordObjectKey: function(wordObjOrString) { // can accept wordRef.word (this_!!_is_!!_word) OR a word object, and will conver word.value (arr) into an absKey
-        let wordObjectKey = '';
-
-        if (typeof wordObjOrString === 'string') {
-            wordObjectKey = `word:${wordObjOrString}`;
-            return wordObjectKey;
-        }
-        wordObjectKey = `word:${wordObjOrString.value.join('_!!_')}`; // _!!_ is the hashHype word delimeter
-
-        return wordObjectKey;
-    },
-
-    registerWordOccurance: function(wordString, comment, redisClient, cback) {
+    registerWordOccurance: function(wordRef, comment, redisClient, cback) {
         const self = wordObjModel;
         // This is the function that any process should call when it has extracted a new word (rather than manually calling addFoundAtTstampForWord themselves). Consistency in order of operations is imperative with this logic.
         // Add a foundAt tstamp for this word and save this comment to it's WordToCommentsIndex (creating one if it does not yet exist)
         // registerWordToCommentsIndex should be done before addFoundAtTstampForWord because other processes (topCommentStats) listen for keyspace changes to word:*:foundAt and the immediately
         // get the wordToCommentsIndex for that word from redis. If the process picked up the foundAt event before this function has time to save the wordToCommentsIndex, then the comment is forgotten in that pointing round.
-        self.registerWordToUsersIndex(wordString, comment, redisClient, (didAddWordToUsersIndex) => {
+        self.registerWordToUsersIndex(wordRef, comment, redisClient, (didAddWordToUsersIndex) => {
             if (!didAddWordToUsersIndex) {
                 if (cback) cback(false);
             }
-            self.registerWordToCommentsIndex(wordString, comment, redisClient, (didAddWordToCommentsIndex) => {
+            self.registerWordToCommentsIndex(wordRef, comment, redisClient, (didAddWordToCommentsIndex) => {
                 if (!didAddWordToUsersIndex) {
                     if (cback) cback(false);
                 }
-                self.addFoundAtTstampForWord(wordString, comment, redisClient, (didAddFoundAtTstampForWord) => {
+                self.addFoundAtTstampForWord(wordRef, comment, redisClient, (didAddFoundAtTstampForWord) => {
                     if (cback) cback(didAddFoundAtTstampForWord);
                 });
             });
         });
     },
 
-    registerWordToCommentsIndex: function(wordString, comment, redisClient, cback) {
+    registerWordToCommentsIndex: function(wordRef, comment, redisClient, cback) {
         const self = wordObjModel;
         // A wordToComments index (index:wordToComments:foo_bar) is a redis sorted set of comment ids (order pointed using their foundAt tstamps). Sorted sets let us later fetch ranges based on foundAt time frames.
         // This index is used by topCommentStats when it gets another redis '__keyspace@0__:word:*:foundAt' and needs to determine all of the comments that may be eligible for new points.
         // cback returns true if was added and saved. false otherwise.
-        const thisIndexKey = `index:wordToComments:${wordString}`;
+        const thisIndexKey = `index:wordToComments:${redisClient.encodeStringForRedisKey(wordRef.word)}`;
         redisClient.zadd(thisIndexKey, [comment.foundAt, comment.id], (itemsAddedCount) => {
             if (itemsAddedCount === 0) {
                 // If zadd returns 0, this implies that the item could not be added because it already existed, or the command errored.
@@ -103,12 +91,12 @@ const wordObjModel = {
         });
     },
 
-    registerWordToUsersIndex: function(wordString, comment, redisClient, cback) {
+    registerWordToUsersIndex: function(wordRef, comment, redisClient, cback) {
         const self = wordObjModel;
         // A wordToUsers index (index:wordToUsers:foo_bar:agentOOjoe) is a redis sorted set of comment ids (order pointed using their foundAt tstamps). Sorted sets let us later fetch ranges based on foundAt time frames.
         // This index is used by topCommentStats to get a list of all comments, by a user, which contained a specific word. A user can only earn points when one of their words is recommented IF they aren't the one who recommented it.
         // cback returns true if was added and saved. false otherwise.
-        const thisIndexKey = `index:wordToUsers:${wordString}:${comment.author.name}`;
+        const thisIndexKey = `index:wordToUsers:${redisClient.encodeStringForRedisKey(wordRef.word)}:${redisClient.encodeStringForRedisKey(comment.author.name)}`;
         redisClient.zadd(thisIndexKey, [comment.foundAt, comment.id], (itemsAddedCount) => {
             if (itemsAddedCount === 0) {
                 console.warn(`Could not zadd comment:${comment.id} to ${thisIndexKey}. Most likely, that comment id already existed in the sorted set.`);
@@ -122,7 +110,7 @@ const wordObjModel = {
         });
     },
 
-    addFoundAtTstampForWord: function(wordString, hostComment, redisClient, cback) { // this must be done BEFORE registerWordToCommentsIndex or the foundAt tstamp will be cancelled as dup word by same user.
+    addFoundAtTstampForWord: function(wordRef, hostComment, redisClient, cback) { // this must be done BEFORE registerWordToCommentsIndex or the foundAt tstamp will be cancelled as dup word by same user.
         const self = wordObjModel;
         // All "foundAt" tstamps are stored to their own redis list at key: word:foo_!!_bar:foundAt
 
@@ -130,18 +118,18 @@ const wordObjModel = {
         // We add the foundAt timestamp for this word, but ONLY if this is the first time this user commented it. This is to comply with the following HashHype rule:
         //   - A user can never earn points for a word because they themselves re-commented that word (or users could artificially boost their own comments)
         //   - A user can only earn points ONCE for a word recommented by another user. A user can recomment it more than once (or two users could artificially boost eachothers comment)
-        const wordToUsersIndexKey = `index:wordToUsers:${wordString}:${hostComment.author.name}`;
+        const wordToUsersIndexKey = `index:wordToUsers:${redisClient.encodeStringForRedisKey(wordRef.word)}:${redisClient.encodeStringForRedisKey(hostComment.author.name)}`;
         const now = Date.now();
         redisClient.zrange(wordToUsersIndexKey, now - self.wordUseInterval, now, (commentIdsInRange) => {
             if (commentIdsInRange && commentIdsInRange.length > 1) {
                 // Remember that addFoundAtTstampForWord is run AFTER registerWordToUsersIndex (see registerWordOccurance). So the single commentIdsInRange we just found is in
                 // fact the same occurance that we are about to save a foundAt timestamp for (NOT a dup word use by this user).
-                // console.warn(`Will not store a foundAt tstamp for word:${wordString} because this user (${hostComment.author.name}) already used it within the last ${self.wordUseInterval/3600000}hrs.`)
+                // console.warn(`Will not store a foundAt tstamp for word:${wordRef.word} because this user (${hostComment.author.name}) already used it within the last ${self.wordUseInterval/3600000}hrs.`)
                 if (cback) cback(false);
                 return;
             }
 
-            const foundAtKey = `word:${wordString}:foundAt`;
+            const foundAtKey = self.getWordFoundAtKey(wordRef, redisClient);
             redisClient.zadd(foundAtKey, [hostComment.foundAt, hostComment.foundAt], (itemsAddedCount) => { // value and score are the same (tstamp) in the case of word:foundAt sorted sets
                 if (itemsAddedCount === 0) {
                     console.warn(`Could not zadd tstamp ${hostComment.foundAt} to ${foundAtKey} for comment:${hostComment.id}. Most likely, that tstamp already existed in the sorted set.`);
@@ -161,6 +149,19 @@ const wordObjModel = {
             console.log(`Stored ${self.wordCountLastInterval} word foundAt timestamps in the last ${self.wordCountIntervalLength/1000} seconds.`);
             self.wordCountLastInterval = 0;
         }, self.wordCountIntervalLength);
+    },
+
+    getWordFoundAtKey: function(wordRef, redisClient) {
+        const wordEncodedForKey = redisClient.encodeStringForRedisKey(wordRef.word);
+        let foundAtKey = `word:${wordRef.type}:${wordEncodedForKey}:foundAt`;
+        let isSymbolType;
+        if (wordRef.type === 'word' && wordRef.hasSymbols[0]) { // remember that the only time we store single word sequences (type == word) is when they are a symbol
+            isSymbolType = wordRef.hasSymbols[0].split(':')[1];
+        }
+        if (isSymbolType) {
+            foundAtKey = `word:symbol:${isSymbolType}:${wordEncodedForKey}:foundAt`;
+        }
+        return foundAtKey;
     },
 
     initCleanupWordToCommentsIndexesInterval: function(redisClient) {

@@ -21,6 +21,8 @@ class BarRace extends React.Component {
         this.barEls = []; // We maintain the same child react components across state changes so that we can animate their style changes (rather than re-instantiation a new child (bar) component during every rerender of this parent)
         this.barElRefs = []; // so this parent can set state to it's children
 
+        this.isFirstLoad = true;
+
         this.topCommentBodyAndPointsRef = React.createRef(); // so can toggle the points explainer msgBox
     }
 
@@ -63,7 +65,7 @@ class BarRace extends React.Component {
             thisTopComment.rankRender = thisTopCommentIndex + 1;
         });
 
-        reducedTopComments = reducedTopComments.slice(0, this.props.renderTopCommentCount);
+        reducedTopComments = reducedTopComments.slice(0, this.props.renderTopCommentCount-1);
 
         return reducedTopComments;
     }
@@ -291,6 +293,14 @@ class BarRace extends React.Component {
     render() {
         const self = this;
         const css = styles.generate(self);
+
+
+        if (this.reducedTopComments.length > 0 && this.reducedTopComments.length < 7 && this.isFirstLoad) {
+            this.props.addActiveSymbolType('coin'); // not enough results on page landing, check our next cat.
+        }
+        if (this.reducedTopComments.length > 0 && this.isFirstLoad) {
+            this.isFirstLoad = false;
+        }
 
         const activeCommentInfoEl = self.createActiveCommentInfoEl();
         return (
