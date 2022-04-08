@@ -21,13 +21,6 @@ class RedisClient {
         this.clients = null;
         this.redisDbConfigs = this.getRedisDbConfigs();
 
-        self.restoredKeys = []; // For logging how many redis read/write commands resulted in data being recovered from 'long' db
-        self.restoredKeysLongRecord = []; // This is a record kept for multiple intervals so we can determine restoredKeysLooping. See restoredKeysLooping (restoredKeysLoopingIntervalMaxCount)
-        self.restoredKeysLooping = []; // these are keys that are found to be repeatedly restored within the last 2 intervals (perhaps they are being restored from long, but for some reason not persisting to short?)
-        self.restoredKeyCountIntervalLength = 5000; // ms, how long should we count comments before we log the sum and restart. Set it to same as reddit fetchLoopIntervalTime for easy volume comparison.
-        self.restoredKeyCountInterval = null;
-        self.initRestoredKeyCountInterval();
-
         self.activePreservingSortedSets = {preservedKeys: {}}; // {"word:GME:foundAt": setLength, etc..} a map of keys pointing to sorted sets which were all found to be long enough to be written to a preserve DB.
         self.activePreservingSortedSetsPubSubChannel = 'change:activePreservingSortedSets'; // our manual pubsub channel so processes can keep activePreservingSortedSets in sync with one another
         self.activePreservingSortedSetsPeristKey = 'index:redisPreserved:activePreservingSortedSets';
@@ -152,10 +145,7 @@ class RedisClient {
             }
 
             self.activePreservingSortedSets = activePreservingSortedSets;
-            if (!argv.redisDBMaster) { // All routines from here down are only run by the single redisDBMaster process
-                if (cback) cback();
-                return;
-            }
+            if (cback) cback();
         });
     }
 
@@ -225,30 +215,6 @@ class RedisClient {
         node_redis_client.on('reconnecting', function(stats) {
             console.warn(`Reconnection attempt #${stats.attempt} for node_redis ${clientType} client...`);
         });
-    }
-
-    initRestoredKeyCountInterval() {
-        const self = this;
-        if (self.restoredKeyCountInterval) return;
-
-        const restoredKeysLongRecordIntervalMaxCount = 6; // how long should we hold self.restoredKeysLongRecord in memory while trying to determine when keys are in a recovery loop.
-        let restoredKeysLongRecordIntervalCount = 0;
-        self.restoredKeyCountInterval = setInterval(() => {
-            if (self.restoredKeys.length) {
-                console.warn(`Recovered ${self.restoredKeys.length} redis objects from preserved data in the last ${self.restoredKeyCountIntervalLength/1000} seconds.`);
-                // if (self.restoredKeys.length < 100) console.warn(self.restoredKeys);
-            }
-            if (self.restoredKeysLooping.length > 100) console.warn(`WARNING: ${self.restoredKeysLooping.length} redis objects appear to be stuck in a recovery loop. Please inspect:`, self.restoredKeysLooping);
-            if (restoredKeysLongRecordIntervalCount >= restoredKeysLongRecordIntervalMaxCount) {
-                self.restoredKeysLongRecord = self.restoredKeysLongRecord.concat(self.restoredKeys);
-                ++restoredKeysLongRecordIntervalCount;
-            } else {
-                self.restoredKeysLongRecord =  [];
-                restoredKeysLongRecordIntervalCount = 0;
-                self.restoredKeysLooping = [];
-            }
-            self.restoredKeys = [];
-        }, self.restoredKeyCountIntervalLength);
     }
 
     initActivePreservingSortedSetsSyncInterval() {
@@ -325,7 +291,7 @@ class RedisClient {
             thisDbConfig.storeNamespaces.some((storeConf) => {
                 if ( new RegExp(storeConf.pattern).test(commandArgs.key) ) {
                     let isMatch = true;
-                    if (thisDbConfig.isMatch) isMatch = thisDbConfig.isMatch(commandArgs, self);
+                    if (storeConf.isMatch) isMatch = storeConf.isMatch(commandArgs, self);
                     if (isMatch) {
                         storeConf.dbName = thisDbConfig.dbName;
                         storeToDbs.push(storeConf);
@@ -338,10 +304,6 @@ class RedisClient {
         if (storeToDbs.length === 0) {
             console.warn(`Could not determine a target db name for ${commandArgs.command} command. Command args:`, commandArgs);
             return null;
-        }
-        if (storeToDbs.length === 1) { // && preserveToDbs.length === 0) {
-            // This only matched one target DB. No need for anything fancy or async, just return the db name to to command func so it can proceed.
-            return storeToDbs[0].dbName;
         }
 
         /////////////
@@ -376,12 +338,6 @@ class RedisClient {
                     // console.log(`Executed redis ${commandArgs.command} command for key ${commandArgs.key} and returned a response from DB "${storeToDbs[curCmdExecIndex].dbName}". All target DBs:`, storeToDbs);
 
                     if (storeToDbConfig.onComplete) storeToDbConfig.onComplete(commandArgs, redisRes, self);
-
-                    // log if this data was recovered from a db that was not 1st in list. // Also sync data back down for certain commands.
-                    if (curCmdExecIndex > 0) {
-                        if (self.restoredKeys.indexOf(commandArgs.key) !== -1 || self.restoredKeysLongRecord.indexOf(commandArgs.key) !== -1) self.restoredKeysLooping.push(commandArgs.key);
-                        self.restoredKeys.push(commandArgs.key);
-                    }
 
                     // Some string gets return a "keyAlias" object which is a reference to an abject at another key. Fetch the full object now, and let the cback know we followed an alias redirect.
                     if (redisRes.class === 'keyAlias' && commandArgs.command === 'get') {
@@ -892,13 +848,13 @@ class RedisClient {
     encodeStringForRedisKey(str) {
         // To make sure our redis key naming conventions are consistent, all strings which will be part of a redis keys should be passed through this function before they are saved to redis.
         let encodedStr = `${str}`;
-        encodedStr.replaceAll(':', '፥'); // We reserve the : charachter as a redis key delimeter.
+        encodedStr = encodedStr.replaceAll(':', '፥'); // We reserve the : charachter as a redis key delimeter.
         return encodedStr;
     }
-    decodeStringForRedisKey(str) {
+    decodeStringFromRedisKey(str) {
         // the opposite of above.
         let decodedStr = `${str}`;
-        decodedStr = str.replaceAll('፥', ':');
+        decodedStr = decodedStr = str.replaceAll('፥', ':');
         return decodedStr;
     }
 

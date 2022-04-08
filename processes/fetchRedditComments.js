@@ -12,8 +12,8 @@ const argv = yargs(process.argv.slice(2)).argv;
 class Reddit {
     constructor() {
         //Config options
-        this.fetchSubReddits = ['wallstreetbets', 'CryptoCurrency'];
-        this.fetchLoopIntervalTime = 5000;
+        this.fetchSubReddits = ['wallstreetbets', 'stocks', 'pennystocks', 'CryptoCurrency', 'CryptoTechnology', 'BitcoinBeginners'];
+        this.fetchLoopIntervalTime = 10000;
 
         //Spam comment rules
         this.maxCommentLength = 280; //kinda like twitter.
@@ -26,7 +26,7 @@ class Reddit {
         this.recentCommentRecordMaxLength = 1000;
         this.recentCommentRecord = [];
 
-        self.interceptSigInt();
+        this.interceptSigInt();
 
         console.log('A new fetchRedditComments process has just started...');
         const self = this;

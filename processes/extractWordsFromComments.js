@@ -933,7 +933,9 @@ class ExtractWordsFromComments {
             // If this single word matched a symbol alias, it will have a hasSymbols entry that points to a symbolStr which is not equal to own sequenceKey. We must also store a wordRef on the comment for the actual symbol (or it will not fire foundAt tstamps, or be pointed on word)
             if (wordType === 'word' && symbolsInWord && symbolsInWord.length) {
                 symbolsInWord.forEach((thisSymbolKey) => {
-                    const thisSymbolWordStr = thisSymbolKey.split(':').splice(2).join(':');
+                    let thisSymbolWordStr = thisSymbolKey.split(':');
+                    thisSymbolWordStr = thisSymbolWordStr[thisSymbolWordStr.length-1];
+                    thisSymbolWordStr = self.redisClient.decodeStringFromRedisKey(thisSymbolWordStr);
                     if (thisSymbolWordStr === sequenceKey) return;
                     const aliasSymbolWordRef = {...wordRef};
                     wordRef.isSymbolAlias = true;
@@ -962,7 +964,6 @@ class ExtractWordsFromComments {
                 if (checkedSymbols.indexOf(thisSymbolKey) !== -1) return;
                 checkedSymbols.push(thisSymbolKey);
 
-                const thisSymbolWordStr = thisSymbolKey.split(':').slice(2).join(':');
                 const foundAtListKey = wordModel.getWordFoundAtKey(thisWordRef, self.redisClient);
                 symbolsFoundAtCountPromises.push(new Promise( (resolve, reject) => {
                     const now = Date.now();

@@ -213,6 +213,11 @@ const wordObjModel = {
         const self = wordObjModel;
         let points = 0;
 
+        if (!wordRef) {
+            console.warn(`wordRef was undefined during call to getWordPointCount. Host comment:`, comment);
+            return points;
+        }
+
         if (typeof wordRef.pointVal === 'number') {
             return wordRef.pointVal; // we cache this calculation on the wordRef objects when possible
         }

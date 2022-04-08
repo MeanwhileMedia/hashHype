@@ -109,7 +109,7 @@ class TopCommentsStats {
                 ++self.lastIntervalTopWordsCount;
                 // Get all comments, less than 1hr old, which contain this word. For realtime point calculation, we only access new comments (to save on CPU).
                 let thisWordStr = patternWithKey.split(':');
-                thisWordStr = thisWordStr[thisWordStr.length-2];
+                thisWordStr = self.redisClient.decodeStringFromRedisKey(thisWordStr[thisWordStr.length-2]);
                 self.getWordToCommentsIndexForTimeRange(thisWordStr, self.trackCommentsFor, (wordToCommentsIndex) => {
                     if (!wordToCommentsIndex) return;
                     wordToCommentsIndex.forEach((thisCommentId) => {
@@ -594,12 +594,18 @@ class TopCommentsStats {
                     // other symbols are totally discarded. Instead, we enforce max points per symbol to be == points earned for topSymbolHigh / 2 / total symbols. This rewards comments that have diverse symbol usage,
                     // but prohibits them from inflating points beyond the context of their topSymbolHigh (i.e: consider how a mention symbol can be worth many times more points than a coin symbol).
                     if (thisWordRef.hasSymbols && thisWordRef.hasSymbols.length > 0 && thisComment.topSymbolHigh['1Hr']) {
-                        const highSymbolWordStr = thisComment.topSymbolHigh['1Hr'].split(':').slice(2).join(':');
+                        let highSymbolWordStr = thisComment.topSymbolHigh['1Hr'].split(':');
+                        highSymbolWordStr = highSymbolWordStr[highSymbolWordStr.length-1];
+                        highSymbolWordStr = self.redisClient.decodeStringFromRedisKey(highSymbolWordStr);
+
                         const maxPointsForNonHighSymbols = Math.floor((thisComment.points[timeBucketKey][highSymbolWordStr] / 2) / Object.keys(thisComment.symbolStartPoints).length);
                         let deductSymbolPoints = 0;
                         thisWordRef.hasSymbols.forEach((thisSymbolKey) => {
                             if ( thisSymbolKey !== thisComment.topSymbolHigh['1Hr'] && thisSymbolKey !== thisComment.topSymbolLow['1Hr'] ) {
-                                const nonHighSymbolWordStr = thisSymbolKey.split(':').slice(2).join(':');
+                                let nonHighSymbolWordStr = thisSymbolKey.split(':');
+                                nonHighSymbolWordStr = nonHighSymbolWordStr[nonHighSymbolWordStr.length-1];
+                                nonHighSymbolWordStr = self.redisClient.decodeStringFromRedisKey(nonHighSymbolWordStr);
+
                                 if (thisComment.points[timeBucketKey][nonHighSymbolWordStr]) {
                                     // console.warn(`Found invalid pointed symbol in comment:${thisComment.id} in word:${thisWordStr} that was neither topSymbolHigh nor topSymbolLow.`);
                                     if (thisComment.points[timeBucketKey][nonHighSymbolWordStr] > maxPointsForNonHighSymbols) {
@@ -676,7 +682,8 @@ class TopCommentsStats {
         for (const [thisSymbolKey, pendingTopCommentsForThisSymbol] of Object.entries(self.pendingTopComments)) {
             const thisSymbolSplit = thisSymbolKey.split(':');
             const thisSymbolType = thisSymbolSplit[1];
-            const thisSymbolWord = thisSymbolSplit.splice(2).join(':'); // NOTE: THIS WILL NOT ACCOUNT FOR symbolAlias matches (and comments that have earned based on alias usage will be wrongly discarded here). Those comments will, however, still earn points for this symbols usage (to provide for another topComment to carry the torch)
+            let thisSymbolWord = thisSymbolSplit[thisSymbolSplit.length-1]; // NOTE: THIS WILL NOT ACCOUNT FOR symbolAlias matches (and comments that have earned based on alias usage will be wrongly discarded here). Those comments will, however, still earn points for this symbols usage (to provide for another topComment to carry the torch)
+            thisSymbolWord = self.redisClient.decodeStringFromRedisKey(thisSymbolWord);
 
             // 1. HashHype rule - first we will loop through the totalPoints['1Hr'] for each comment in this symbol group, then determine if any are outliers.
             // A comment may score suspiciously high if it slips through an edge case in our algo, or users discover a vulneribility and game the points. This
@@ -1181,7 +1188,9 @@ class TopCommentsStats {
 
                     let topSymbolWord = null;
                     if (thisTopComment.topSymbolHigh['1Hr']) {
-                        topSymbolWord = thisTopComment.topSymbolHigh['1Hr'].split(':').slice(2).join(':');
+                        topSymbolWord = thisTopComment.topSymbolHigh['1Hr'].split(':');
+                        topSymbolWord = topSymbolWord[topSymbolWord.length-1];
+                        topSymbolWord = self.redisClient.decodeStringFromRedisKey(topSymbolWord);
                     }
                     if (!topSymbolWord) return;
 
