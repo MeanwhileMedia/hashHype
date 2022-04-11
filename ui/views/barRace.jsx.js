@@ -65,7 +65,7 @@ class BarRace extends React.Component {
             thisTopComment.rankRender = thisTopCommentIndex + 1;
         });
 
-        reducedTopComments = reducedTopComments.slice(0, this.props.renderTopCommentCount-1);
+        reducedTopComments = reducedTopComments.slice(0, this.props.renderTopCommentCount);
 
         return reducedTopComments;
     }
@@ -93,7 +93,7 @@ class BarRace extends React.Component {
         });
 
         // Since we instantiate and reuse these components for each topCommentStats state change, we need to make sure we have a placeholder bar el even if this initial batch of reducedTopComments is less than 10 (this.props.renderTopCommentCount)
-        for (let barCount = barEls.length; barCount <= self.props.renderTopCommentCount; barCount++) {
+        for (let barCount = barEls.length; barCount < self.props.renderTopCommentCount; ++barCount) {
             const thisBarElRef = React.createRef();
             barEls.push(
                 <BarRaceBar
