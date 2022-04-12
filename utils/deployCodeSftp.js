@@ -1,7 +1,10 @@
 import path from 'path';
 import fs from 'fs';
+import yargs from 'yargs';
 import SftpClient from 'ssh2-sftp-client';
 import deployCodeSftpConfig from './deployCodeSftp-config.js';
+
+const argv = yargs(process.argv.slice(2)).argv;
 
 // This util is part of package.json scripts to deploy code to a target dev or prod machine. It uses sftp to
 // push new files to a configured IP address. See deployCodeSftp-config-blank.js for more info.
@@ -10,9 +13,8 @@ class DeployCodeSftp {
     constructor() {
         const self = this;
         this.localProjectDir = process.cwd();
-        this.extractCliArgs();
 
-        this.deployConfig = deployCodeSftpConfig.targets[this.cliArgs.target]();
+        this.deployConfig = deployCodeSftpConfig.targets[argv.target]();
         this.initSftpClient(this.deployConfig, () => {
             self.npmRunScriptsOnTarget(self.deployConfig.firstNpmRun, () => {
                 self.deployAllToTarget(() => {
@@ -219,16 +221,6 @@ class DeployCodeSftp {
                 });
             });
         });
-    }
-
-    extractCliArgs() {
-        this.cliArgs = {
-            target: 'dev01',
-        }
-        const cliArgs = process.argv.slice(2);
-
-        const indexOfTargetNameCliArg = cliArgs.indexOf('-target');
-        if (indexOfTargetNameCliArg !== -1) this.cliArgs.target = cliArgs[indexOfTargetNameCliArg+1] || this.cliArgs.target;
     }
 
 }

@@ -2,10 +2,11 @@
 
 // This machine "commentFetcher" is for streaming data from APIs which only allow 1 connection per session (twitter). This single machine get the data then
 // saves it to a central location that other machines can access (so those other machines don't actually connect to the third party API).
-const fs = require('fs');
-const path = require('path');
-const yargs = require('yargs');
-const redisConfigs = require('../../utils/redisClient-config.js');
+import fs from 'fs';
+import path from 'path';
+import yargs from 'yargs';
+import pm2 from 'pm2';
+import redisConfigs from '../../utils/redisClient-config.js';
 
 const rdbDir = path.resolve(process.cwd(), '../hashHype_persist/db');
 const logDir = path.resolve(process.cwd(), '../hashHype_persist/logs');
@@ -17,7 +18,7 @@ const activeLogDayTstamp = '00000'; // A tstamp of zero is always used for activ
 
 const processKillTimeout = 240000; //ms. Allow processes 4 minutes to gracefully shutdown before pm2 force kills them.
 
-const argv = yargs(process.argv.slice(5)).argv;
+const argv = yargs(process.argv.slice(2)).argv;
 argv.host_redis_dbs = JSON.parse(argv.host_redis_dbs); // These dbs will be hosted by this machine
 
 const genConfigs = {
@@ -57,7 +58,6 @@ const genConfigs = {
                 name: 'fetchRedditComments',
                 script: './processes/fetchRedditComments.js',
                 args: `--envname=${argv.envname} --host_redis_dbs='${host_redis_dbsJson}'`,
-                interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('fetchReddit', 'err'),
                 out_file: genConfigs.getLogPath('fetchReddit', 'out'),
                 log_date_format: 'MM/DD HH:mm:ss',
@@ -67,7 +67,6 @@ const genConfigs = {
                 name: 'fetchTwitterComments',
                 script: './processes/fetchTwitterComments.js',
                 args: `--envname=${argv.envname} --host_redis_dbs='${host_redis_dbsJson}'`,
-                interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('fetchTwitter', 'err'),
                 out_file: genConfigs.getLogPath('fetchTwitter', 'out'),
                 log_date_format: 'MM/DD HH:mm:ss',
@@ -77,7 +76,6 @@ const genConfigs = {
                 name: 'maintainLogsAndBackups',
                 script: './processes/maintainLogsAndBackups.js',
                 args: `--envname=${argv.envname} --host_redis_dbs='${host_redis_dbsJson}'`,
-                interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('maintenance', 'err'),
                 out_file: genConfigs.getLogPath('maintenance', 'out'),
                 log_date_format: 'MM/DD HH:mm:ss',
@@ -89,11 +87,20 @@ const genConfigs = {
 
     getLogPath: (procName, logType) => {
         return `${logDir}/${argv.envname}-${activeLogDayTstamp}-${procName}-${logType}.log`;
+    },
+
+    runPm2start: () => {
+        const pm2Config = genConfigs.dbs().concat(genConfigs.apps());
+        pm2.connect(function(err) {
+            if (err) console.error(err);
+            pm2.start(pm2Config, (err, apps) => {
+                if (err) console.error(err);
+                pm2.disconnect();
+            })
+        })
     }
 
 }; // end genConfigs
 
-// Export it in pm2 config format
-module.exports = {
-    apps : genConfigs.dbs().concat(genConfigs.apps())
-};
+genConfigs.runPm2start();
+export default genConfigs;

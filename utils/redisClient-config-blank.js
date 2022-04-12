@@ -1,8 +1,8 @@
 // This config sets redis config options
 // IMPORTANT: do not change this file. It is only a template. First copy it and rename to redisClient-config.js (which is gitignored)
-const path = require('path');
+import path from 'path';
 
-module.exports = {
+const config = {
 
     // Because server configs are passed to every process as cli args, all data here must be jsonable.
     servers: {
@@ -107,3 +107,5 @@ module.exports = {
     }
 
 };
+
+export default config;

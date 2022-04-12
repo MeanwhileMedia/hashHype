@@ -1,7 +1,9 @@
 // This config sets endpoints and creds for the twitter api
 
-module.exports = twitterClientConfig = {
+const twitterClientConfig = {
 
     bearerToken: null,
 
 };
+
+export default twitterClientConfig;

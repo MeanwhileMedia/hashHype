@@ -1,9 +1,10 @@
 // A pm2 process config - https://pm2.keymetrics.io/docs/usage/application-declaration/
 // Beware: This machine "single" is for running the all app processes on a single server computer (redis, uiServer, and ALL other processes)
-const fs = require('fs');
-const path = require('path');
-const yargs = require('yargs');
-const redisConfigs = require('../../utils/redisClient-config.js');
+import fs from 'fs';
+import path from 'path';
+import yargs from 'yargs';
+import pm2 from 'pm2';
+import redisConfigs from '../../utils/redisClient-config.js';
 
 const rdbDir = path.resolve(process.cwd(), '../hashHype_persist/db');
 const logDir = path.resolve(process.cwd(), '../hashHype_persist/logs');
@@ -15,12 +16,11 @@ const activeLogDayTstamp = '00000'; // A tstamp of zero is always used for activ
 
 const processKillTimeout = 240000; //ms. Allow processes 4 minutes to gracefully shutdown before pm2 force kills them.
 
-const argv = yargs(process.argv.slice(5)).argv;
+const argv = yargs(process.argv.slice(2)).argv;
 argv.host_redis_dbs = JSON.parse(argv.host_redis_dbs); // These dbs will be hosted by this machine
 
 const genConfigs = {
 
-    // allDbClientConfigs: {}, // all configs added to this array in below dbs function are then passed to each individual app process as the "--dbs" arg (a base64 encoded JSON string)
     dbs: () => {
         const selectedConfigObjs = [];
         argv.host_redis_dbs.forEach((thisDbName) => {
@@ -43,6 +43,7 @@ const genConfigs = {
                 out_file: genConfigs.getLogPath(`redis-${thisRedisConfig.dbName}`, 'out'),
                 kill_timeout : processKillTimeout, // give redis plenty of time to shutdown when pm2 kills it so that it can save a final RDB (4 minutes)
                 listen_timeout : processKillTimeout,
+                killPriority: 1, // killPriority tells deployCodeSftp the order that "pm2 stop ${appName}" should be called when doing a full restart. Any items with an undefined killPriority will be stopped first, all at once async. Then, will increase by one until no more apps are left. Any apps with the same killPriority will be stopped together async in the same 'pm2 stop' command.
             });
         });
 
@@ -56,7 +57,6 @@ const genConfigs = {
                 name: 'archiveKeysToDisk',
                 script: './processes/archiveKeysToDisk.js',
                 args: `--envname=${argv.envname} --host_redis_dbs='${host_redis_dbsJson}' --levelDBMaster=true  --redisDBMaster=true`,
-                interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('archiveKeys', 'err'),
                 out_file: genConfigs.getLogPath('archiveKeys', 'out'),
                 log_date_format: 'MM/DD HH:mm:ss',
@@ -66,7 +66,6 @@ const genConfigs = {
                 name: 'uiServer',
                 script: './processes/uiServer.js',
                 args: `--envname=${argv.envname} --host_redis_dbs='${host_redis_dbsJson}'`,
-                interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('uiServer', 'err'),
                 out_file: genConfigs.getLogPath('uiServer', 'out'),
                 log_date_format: 'MM/DD HH:mm:ss',
@@ -77,7 +76,6 @@ const genConfigs = {
                 name: 'fetchCoinAndStockSymbols',
                 script: './processes/fetchCoinAndStockSymbols.js',
                 args: `--envname=${argv.envname} --host_redis_dbs='${host_redis_dbsJson}'`,
-                interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('stockSymbols', 'err'),
                 out_file: genConfigs.getLogPath('stockSymbols', 'out'),
                 log_date_format: 'MM/DD HH:mm:ss',
@@ -87,7 +85,6 @@ const genConfigs = {
                 name: 'extractWordsFromComments',
                 script: './processes/extractWordsFromComments.js',
                 args: `--envname=${argv.envname} --host_redis_dbs='${host_redis_dbsJson}'`,
-                interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('wordExtractor', 'err'),
                 out_file: genConfigs.getLogPath('wordExtractor', 'out'),
                 log_date_format: 'MM/DD HH:mm:ss',
@@ -97,7 +94,6 @@ const genConfigs = {
                 name: 'topCommentStats',
                 script: './processes/topCommentStats.js',
                 args: `--envname=${argv.envname} --host_redis_dbs='${host_redis_dbsJson}'`,
-                interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('topComments', 'err'),
                 out_file: genConfigs.getLogPath('topComments', 'out'),
                 log_date_format: 'MM/DD HH:mm:ss',
@@ -107,7 +103,6 @@ const genConfigs = {
                 name: 'topTrendStats',
                 script: './processes/topTrendStats.js',
                 args: `--envname=${argv.envname} --host_redis_dbs='${host_redis_dbsJson}'`,
-                interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('topTrends', 'err'),
                 out_file: genConfigs.getLogPath('topTrends', 'out'),
                 log_date_format: 'MM/DD HH:mm:ss',
@@ -117,7 +112,6 @@ const genConfigs = {
                 name: 'maintainLogsAndBackups',
                 script: './processes/maintainLogsAndBackups.js',
                 args: `--envname=${argv.envname} --host_redis_dbs='${host_redis_dbsJson}'`,
-                interpreter_args: `-r esm`,
                 error_file: genConfigs.getLogPath('maintenance', 'err'),
                 out_file: genConfigs.getLogPath('maintenance', 'out'),
                 log_date_format: 'MM/DD HH:mm:ss',
@@ -129,14 +123,23 @@ const genConfigs = {
 
     getLogPath: (procName, logType) => {
         return `${logDir}/${argv.envname}-${activeLogDayTstamp}-${procName}-${logType}.log`;
+    },
+
+    runPm2start: () => {
+        const pm2Config = genConfigs.dbs().concat(genConfigs.apps());
+        pm2.connect(function(err) {
+            if (err) console.error(err);
+            pm2.start(pm2Config, (err, apps) => {
+                if (err) console.error(err);
+                pm2.disconnect();
+            })
+        })
     }
 
 }; // end genConfigs
 
-// Export it in pm2 config format
-module.exports = {
-    apps: genConfigs.dbs().concat(genConfigs.apps())
-};
+genConfigs.runPm2start();
+export default genConfigs;
 
 // To debug a process on a remote maching run:
 // npm run debug --target=dev01 --procname=uiServer

@@ -1,7 +1,7 @@
 import RedisClient from '../utils/redisClient.js';
 
 // to call from CLI:
-// node -r esm tmp_deleteAllFoundAtListsFromRedis.js --host_redis_dbs='["short","long"]'
+// node tmp_deleteAllFoundAtListsFromRedis.js --host_redis_dbs='["short","long"]'
 
 const redisClient = new RedisClient({
     onConnect: () => {

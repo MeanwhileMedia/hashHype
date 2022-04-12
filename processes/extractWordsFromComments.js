@@ -4,7 +4,7 @@ import {parse} from 'node-html-parser';
 import urlRegex from 'url-regex';
 import urlNormalize from 'normalize-url';
 import emojiUnicodeRegex from 'emojibase-regex';
-import emojiShortcodeRegex from 'emojibase-regex/shortcode';
+import emojiShortcodeRegex from 'emojibase-regex/shortcode.js';
 import yargs from 'yargs';
 import RedisClient from '../utils/redisClient.js';
 import commentModel from '../utils/objectModels/comment.js';

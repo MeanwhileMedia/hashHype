@@ -1,6 +1,6 @@
 // This config sets endpoints and creds for the reddit api
 
-module.exports = redditClientConfig = {
+const redditClientConfig = {
 
     userAgent: '',
     clientId: '',
@@ -8,3 +8,5 @@ module.exports = redditClientConfig = {
     refreshToken: ''
 
 };
+
+export default redditClientConfig;
