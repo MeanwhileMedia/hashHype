@@ -27,6 +27,8 @@ class RedisClient {
         self.activePreservingSortedSetsMaxLength = 10000;
         self.activePreservingSortedSetsSyncInterval = null;
         self.activePreservingSortedSetsSyncIntervalLength = 5000;
+        self.activePreservingSortedSetsSaveInterval = null;
+        self.activePreservingSortedSetsSaveIntervalLength = 1000*60*30; // once every 30 minutes
 
         let didFirstOnConnect = 0;
         self.initAllClients(() => {
@@ -41,6 +43,7 @@ class RedisClient {
             });
 
             self.initActivePreservingSortedSetsSyncInterval();
+            self.initActivePreservingSortedSetsSaveInterval();
         });
     }
 
@@ -262,8 +265,23 @@ class RedisClient {
     }
     removeActivePreservingSortedSet(setKey, setLength) {
         const self = this;
+        if (!self.activePreservingSortedSets.preservedKeys[setKey]) return; // can't remove what's not there
+        console.warn(`No longer preserving sorted set ${setKey} with a length of ${setLength}`);
         self.removedActivePreservingSortedSets = self.removedActivePreservingSortedSets || [];
         self.removedActivePreservingSortedSets.push({setKey, setLength});
+    }
+    initActivePreservingSortedSetsSaveInterval() {
+        const self = this;
+        if (!argv.redisDBMaster) return;
+        // If this is redisDBMaster then we will save the self.activePreservingSortedSets to redis in a long interval. This is a massive JSON string and
+        // the save is expensive (which is why we rely primarily on the save during redis kill routine). However, if the process crashes and doesn't kill gracefully,
+        // then we would have lost activePreservingSortedSets. This interval save is a backup plan.
+        self.activePreservingSortedSetsSaveInterval = setInterval(() => {
+            console.log(`Will now save ${self.activePreservingSortedSetsPeristKey} to redis...`);
+            self.set(self.activePreservingSortedSetsPeristKey, self.activePreservingSortedSets, () => {
+                console.log(`Finished saving ${self.activePreservingSortedSetsPeristKey} to redis.`);
+            });
+        }, self.activePreservingSortedSetsSaveIntervalLength);
     }
 
 

@@ -19,6 +19,7 @@ const activeLogDayTstamp = '00000'; // A tstamp of zero is always used for activ
 const processKillTimeout = 240000; //ms. Allow processes 4 minutes to gracefully shutdown before pm2 force kills them.
 
 const argv = yargs(process.argv.slice(2)).argv;
+if (!argv.host_redis_dbs) argv.host_redis_dbs = '["commentFetcher"]';
 argv.host_redis_dbs = JSON.parse(argv.host_redis_dbs); // These dbs will be hosted by this machine
 
 const genConfigs = {
@@ -45,6 +46,7 @@ const genConfigs = {
                 out_file: genConfigs.getLogPath(`redis-${thisRedisConfig.dbName}`, 'out'),
                 kill_timeout : processKillTimeout, // give redis plenty of time to shutdown when pm2 kills it so that it can save a final RDB (4 minutes)
                 listen_timeout : processKillTimeout,
+                killPriority: 1, // killPriority tells deployCodeSftp the order that "pm2 stop ${appName}" should be called when doing a full restart. Any items with an undefined killPriority will be stopped first, all at once async. Then, will increase by one until no more apps are left. Any apps with the same killPriority will be stopped together async in the same 'pm2 stop' command.
             });
         });
 
@@ -102,5 +104,5 @@ const genConfigs = {
 
 }; // end genConfigs
 
-genConfigs.runPm2start();
+if (argv.pm2start) genConfigs.runPm2start();
 export default genConfigs;

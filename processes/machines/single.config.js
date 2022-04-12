@@ -17,6 +17,7 @@ const activeLogDayTstamp = '00000'; // A tstamp of zero is always used for activ
 const processKillTimeout = 240000; //ms. Allow processes 4 minutes to gracefully shutdown before pm2 force kills them.
 
 const argv = yargs(process.argv.slice(2)).argv;
+if (!argv.host_redis_dbs) argv.host_redis_dbs = '["short","long"]';
 argv.host_redis_dbs = JSON.parse(argv.host_redis_dbs); // These dbs will be hosted by this machine
 
 const genConfigs = {
@@ -138,7 +139,7 @@ const genConfigs = {
 
 }; // end genConfigs
 
-genConfigs.runPm2start();
+if (argv.pm2start) genConfigs.runPm2start();
 export default genConfigs;
 
 // To debug a process on a remote maching run:

@@ -22,8 +22,23 @@ const deployCodeSftpConfig = {
         },
         // prod01: () => { etc },
         // etc
-    }
+    },
 
+    genKillCommands: (machineConfig) => { // pass this function a pm2 machine config and it will send back an array of batched pm2 stop commands based on the killPriority settings
+        const allAppPM2Configs = machineConfig.dbs().concat(machineConfig.apps());
+        const machineSingleAppsKillOrder = []; // [[app1, app2, app5], [app3, app4], etc...] - each group will be sent to a single PM2 stop command for an async shutdown.
+        allAppPM2Configs.forEach((thisAppPM2Config) => {
+            let thisKillPriority = 0;
+            if (thisAppPM2Config.killPriority) thisKillPriority = thisAppPM2Config.killPriority;
+            machineSingleAppsKillOrder[thisKillPriority] = machineSingleAppsKillOrder[thisKillPriority] || [];
+            machineSingleAppsKillOrder[thisKillPriority].push(thisAppPM2Config.name);
+        });
+        const machineSinglePM2KillCommands = []; // ['pm2 kill app1 app2 app5', 'pm2 kill app3 app4', etc...] - used below in firstNpmRun args
+        machineSingleAppsKillOrder.forEach((thisKillBatch, thisKillBatchIndex) => {
+            machineSinglePM2KillCommands[thisKillBatchIndex] = `pm2 stop ${thisKillBatch.join(' ')}`;
+        });
+        return machineSinglePM2KillCommands;
+    }
 }
 
 export default deployCodeSftpConfig;

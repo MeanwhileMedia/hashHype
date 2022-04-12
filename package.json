@@ -58,8 +58,8 @@
     "genSslCerts": "mkdir -p utils/certs && openssl req -newkey rsa:4096 -x509 -sha256 -days 3650 -nodes -out utils/certs/MeanwhileMedia.crt -keyout utils/certs/MeanwhileMedia.key -subj \"/C=US/ST=Maine/L=Portland/O=MeanwhileMedia/OU=Devs/CN=$npm_config_domain\"",
     "migrateRDB": "node ./utils/migrateRDB.js --from=$npm_config_from --to=$npm_config_to --source=$npm_config_source",
     "flushCDNCache": "node ./utils/flushCDNCache.js",
-    "single": "node ./processes/machines/single.config.js --envname=$npm_config_envname --host_redis_dbs=$npm_config_host_redis_dbs",
-    "commentFetcher": "pm2 start ./processes/machines/commentFetcher.config.js -- --envname=$npm_config_envname --host_redis_dbs=$npm_config_host_redis_dbs",
+    "single": "node ./processes/machines/single.config.js --pm2start --envname=$npm_config_envname --host_redis_dbs=$npm_config_host_redis_dbs",
+    "commentFetcher": "node ./processes/machines/commentFetcher.config.js --pm2start --envname=$npm_config_envname --host_redis_dbs=$npm_config_host_redis_dbs",
     "pm2": "pm2",
     "debug": "node ./utils/debugProcessSftp.js --target=$npm_config_target --procname=$npm_config_procname",
     "debugLocal": "pm2 pid $npm_config_procname | xargs kill -SIGUSR1"
