@@ -28,7 +28,7 @@ class RedisClient {
         self.activePreservingSortedSetsSyncInterval = null;
         self.activePreservingSortedSetsSyncIntervalLength = 5000;
         self.activePreservingSortedSetsSaveInterval = null;
-        self.activePreservingSortedSetsSaveIntervalLength = 1000*60*30; // once every 30 minutes
+        self.activePreservingSortedSetsSaveIntervalLength = 1000*60*10; // once every 10 minutes
 
         let didFirstOnConnect = 0;
         self.initAllClients(() => {

@@ -230,7 +230,9 @@ class ExtractWordsFromComments {
 
         // Normalize whitespace
         // comment.normalizedBody = comment.normalizedBody.replace(/\u{2800}+/gum, ' '); // \u{2800} is the unicode for braile 0 dot symbol (looks like a space)
+        self.replaceInCommentBody(comment, /\r?\n/gm, ' '); // replace newlines with a single space.
         self.replaceInCommentBody(comment, /\u{2800}+/gum, ' '); // \u{2800} is the unicode for braile 0 dot symbol (looks like a space)
+
 
         // Convert wacky charachters
         // comment.normalizedBody = comment.normalizedBody.replace(/\u{2026}+/gum, '...'); // \u{2026} is the unicode for "…" charchter (a single charachter of 3 dots - elipses). This trips up urlNormalize and will now be converted into 3 "." chars.
@@ -597,7 +599,7 @@ class ExtractWordsFromComments {
                     const thisUrlUid = `hh__url${++idIncrement}__hh`;
                     const thisUrlEscapedForRegex = escapeUrlForRegex(tokenSymbolResult.token); // the string we are matching against needs to be escaped for regex. https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
                     const newUrlRegex = new RegExp(thisUrlEscapedForRegex, 'gm'); // remember has to be double escaped cuz it's wrapped in string concat. https://regexr.com/5q5m8
-                    self.replaceInCommentBody(comment, newUrlRegex, thisUrlUid);
+                    self.replaceInCommentBody(comment, newUrlRegex, ` ${thisUrlUid} `);
                     if (!comment.pendingSymbols) {
                         console.error('No comment.pendingSymbols? Please inspect:', thisUrlUid, tokenSymbolResult, comment);
                         return;
@@ -668,7 +670,7 @@ class ExtractWordsFromComments {
                     const thisStockUid = `hh__${symbolType}${++idIncrement}__hh`;
                     const stockSymbolRegex = new RegExp(`\\b${tokenSymbolResult.token}\\b`, 'gim'); // https://regexr.com/5rrbf
                     //comment.body = comment.body.replace(stockSymbolRegex, thisStockUid);
-                    self.replaceInCommentBody(comment, stockSymbolRegex, thisStockUid);
+                    self.replaceInCommentBody(comment, stockSymbolRegex, ` ${thisStockUid} `);
                     comment.pendingSymbols[thisStockUid] = tokenSymbolResult;
                 }
             });
