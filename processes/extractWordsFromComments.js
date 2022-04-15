@@ -249,15 +249,22 @@ class ExtractWordsFromComments {
         let bodyTokens = naturalWordTokenizerPreserveContractions.tokenize(comment.normalizedBody);
         const normalizedBodyTokens = [];
         bodyTokens.forEach((thisToken) => {
-            if (!Number.isNaN(parseInt(thisToken))) return; // don't try to expand contractions when toekn can be interpreted as a number (i.e. "it was in the 100's")
+            if (!Number.isNaN(parseInt(thisToken))) {
+                normalizedBodyTokens.push(thisToken);
+                return; // don't try to expand contractions when toekn can be interpreted as a number (i.e. "it was in the 100's")
+            }
             let thisNormalizedToken = [thisToken];
             try {
                 thisNormalizedToken = naturalNormalizer(thisToken); // NOTE that naturalNormalizer will also wrongly convert plural and possesive use of "'" into an expanded contraction. Leaving as-is for now. JWW TODO
             } catch (e) {
                 console.warn(`Error while running naturalNormalizer on token: "${thisToken}"`);
+                normalizedBodyTokens.push(thisToken);
                 return;
             }
-            normalizedBodyTokens.push(thisNormalizedToken.join(' '));
+
+            let normalizedToken = thisNormalizedToken.join(' ');
+            if (thisToken.toUpperCase() === thisToken) normalizedToken = normalizedToken.toUpperCase(); // we should preserve the same case as the original contraction
+            normalizedBodyTokens.push(normalizedToken);
         });
         normalizedBodyTokens.forEach((thisNormalizedToken, index) => {
             if (bodyTokens[index] !== thisNormalizedToken) comment.normalizedBody = comment.normalizedBody.replaceAll(bodyTokens[index], thisNormalizedToken);
@@ -272,6 +279,10 @@ class ExtractWordsFromComments {
         // now save a stemmed representation of the entire body (had we tried to stem before injecting symbolUIDs the stemmer would malform emojis, urls, caps, etc).
         // The comment.stemmedBody is to assist with determining token sequence ordering later (looking at comment.words and determining their approx index in original comment body)
         const self = this;
+
+        // Before proceeding, we will first collapse all whitespaces into a single space. This helps normalize body and normalizedBody to be more similar to stemmedBody.
+        self.replaceInCommentBody(comment, /\s\s+/gm, ' ');
+
         const bodyTokens = naturalWordTokenizer.tokenize(comment.normalizedBody);
         const stemmedBodyTokens = [];
 
@@ -390,10 +401,8 @@ class ExtractWordsFromComments {
             let idIncrement = 0;
             pendingSymbolEntities.forEach((thisPendingSymbolEntity) => {
                 if (thisPendingSymbolEntity.matchedSymbol) {
-                    const thisHashtagUid = `hh__hashtag${++idIncrement}symbol__hh`;
-                    const thisHashtagCodeEscapedForRegex = thisPendingSymbolEntity.token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // the string we are matching against needs to be escaped for regex. https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
-                    const hashtagReplaceRegex = new RegExp(thisHashtagCodeEscapedForRegex, 'gm');
-                    self.replaceInCommentBody(comment, hashtagReplaceRegex, ` ${thisHashtagUid} `); // We pad with spaces to make sure natural.js treats this as an isolated token. i.e. non-spaced hashtags like "Hey i like hashtags!hashtag1symbolhashtag2symbolhashtag1symbol" would come out as 1 token
+                    const thisHashtagUid = `hh__hashtag${++idIncrement}symbol__hh`; // We pad with spaces to make sure natural.js treats this as an isolated token. i.e. non-spaced hashtags like "Hey i like hashtags!hashtag1symbolhashtag2symbolhashtag1symbol" would come out as 1 token
+                    self.replaceBodyTokenWithUid(comment, thisPendingSymbolEntity.token, thisHashtagUid)
                     comment.pendingSymbols[thisHashtagUid] = thisPendingSymbolEntity;
                 }
             });
@@ -476,9 +485,7 @@ class ExtractWordsFromComments {
             pendingSymbolEntities.forEach((thisPendingSymbolEntity) => {
                 if (thisPendingSymbolEntity.matchedSymbol) {
                     const thisMentionUid = `hh__mention${++idIncrement}symbol__hh`;
-                    const thisMentionCodeEscapedForRegex = thisPendingSymbolEntity.token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // the string we are matching against needs to be escaped for regex. https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
-                    const mentionReplaceRegex = new RegExp(thisMentionCodeEscapedForRegex, 'gm');
-                    self.replaceInCommentBody(comment, mentionReplaceRegex, ` ${thisMentionUid} `); // We pad with spaces to make sure natural.js treats this as an isolated token. i.e. non-spaced mentions like "Hey i like mentions!mention1symbolmention2symbolmention1symbol" would come out as 1 token
+                    self.replaceBodyTokenWithUid(comment, thisPendingSymbolEntity.token, thisMentionUid);
                     comment.pendingSymbols[thisMentionUid] = thisPendingSymbolEntity;
                 }
             });
@@ -488,10 +495,6 @@ class ExtractWordsFromComments {
 
     preserveUrlsInCommentBody(comment, cback) { // alters comment in-place
         const self = this;
-        const escapeUrlForRegex = (url) => {
-            return url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Use this function when we are injecting a url string into a regex. Certain charachters within a URL need to be escaped for regex. https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
-        }
-
         // This function uses regex to locate urls within the comment body, then temporarily stores those URLs in comment.pendingSymbols (not saved to redis).
         // It then replaces the URL strings within comment.body with a "urlUid" string (which natural.js will respect as a single token - already "stemmed").
         // The comment.body can then be tokenized and stemmed in extractWordSequences without malforming the URL or misinterpreting it as multiple tokens.
@@ -518,7 +521,7 @@ class ExtractWordsFromComments {
         foundUrlsSecondPass.forEach((thisSecondPassUrl) => {
             if (/\)|\]$/.test(thisSecondPassUrl)) { // https://regexr.com/5q85i
                 // found a trailing parenth/bracket. Take it off now BUT only if we can confirm this is actually a closing parenthesis (not actually part of the URL as they are technically valid url chars)
-                const testIsClosingParenth = new RegExp(`\\([^)]*${escapeUrlForRegex(thisSecondPassUrl)}`, 'gm');
+                const testIsClosingParenth = new RegExp(`\\([^)]*${self.escapeStringForRegex(thisSecondPassUrl)}`, 'gm');
                 const isClosingParenth = testIsClosingParenth.test(commentBody);
                 if (isClosingParenth) {
                     const thisSecondPassUrlNoClosing = thisSecondPassUrl.slice(0, thisSecondPassUrl.indexOf(')'));
@@ -597,13 +600,7 @@ class ExtractWordsFromComments {
             tokenSymbolResults.forEach((tokenSymbolResult) => {
                 if (tokenSymbolResult.matchedSymbol) {
                     const thisUrlUid = `hh__url${++idIncrement}__hh`;
-                    const thisUrlEscapedForRegex = escapeUrlForRegex(tokenSymbolResult.token); // the string we are matching against needs to be escaped for regex. https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
-                    const newUrlRegex = new RegExp(thisUrlEscapedForRegex, 'gm'); // remember has to be double escaped cuz it's wrapped in string concat. https://regexr.com/5q5m8
-                    self.replaceInCommentBody(comment, newUrlRegex, ` ${thisUrlUid} `);
-                    if (!comment.pendingSymbols) {
-                        console.error('No comment.pendingSymbols? Please inspect:', thisUrlUid, tokenSymbolResult, comment);
-                        return;
-                    }
+                    self.replaceBodyTokenWithUid(comment, tokenSymbolResult.token, thisUrlUid);
                     comment.pendingSymbols[thisUrlUid] = tokenSymbolResult;
                 }
             });
@@ -668,9 +665,7 @@ class ExtractWordsFromComments {
             tokenSymbolResults.forEach((tokenSymbolResult) => {
                 if (tokenSymbolResult.matchedSymbol) {
                     const thisStockUid = `hh__${symbolType}${++idIncrement}__hh`;
-                    const stockSymbolRegex = new RegExp(`\\b${tokenSymbolResult.token}\\b`, 'gim'); // https://regexr.com/5rrbf
-                    //comment.body = comment.body.replace(stockSymbolRegex, thisStockUid);
-                    self.replaceInCommentBody(comment, stockSymbolRegex, ` ${thisStockUid} `);
+                    self.replaceBodyTokenWithUid(comment, tokenSymbolResult.token, thisStockUid);
                     comment.pendingSymbols[thisStockUid] = tokenSymbolResult;
                 }
             });
@@ -706,6 +701,7 @@ class ExtractWordsFromComments {
                     symbolKey: `symbol:emoji:${self.redisClient.encodeStringForRedisKey(thisEmojiCode)}`, // Note that we convert : chars to '፥' when generating a redis key. So emoji ":smiling-face:" will become "፥smiling-face፥". This is because we reserve the : charachter as a redis key delimeter. The same is done for url symbols, and all keys
                     assocs: emojiAssocs
                 });
+                self.replaceInCommentBody(comment, thisEmojiCode, ` ${thisEmojiCode} `); // With emojis, we must always ensure that they are paddded by spaces. Our emojiShortcodeRegex will find unspaced emojis, but our natural tokenizer will not (below in extractWordSequences).
             }
         });
 
@@ -725,7 +721,7 @@ class ExtractWordsFromComments {
             });
             // In the case of unicode emojis, we also alter the comment body to show our custom shortcode format instead
             // comment.body = comment.body.replaceAll(emojiChar, thisEmojiCode);
-            self.replaceInCommentBody(comment, emojiChar, thisEmojiCode);
+            self.replaceInCommentBody(comment, emojiChar, ` ${thisEmojiCode} `);
         });
 
         // const emojiKeys = Object.keys(foundEmojis);
@@ -775,16 +771,23 @@ class ExtractWordsFromComments {
             pendingSymbolEntities.forEach((thisPendingSymbolEntity) => {
                 if (thisPendingSymbolEntity.matchedSymbol) {
                     const thisEmojiUid = `hh__emoji${++idIncrement}symbol__hh`;
-                    const thisEmojiCodeEscapedForRegex = thisPendingSymbolEntity.token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // the string we are matching against needs to be escaped for regex. https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
-                    const emojiReplaceRegex = new RegExp(thisEmojiCodeEscapedForRegex, 'gm');
-                    self.replaceInCommentBody(comment, emojiReplaceRegex, ` ${thisEmojiUid} `); // We pad with spaces to make sure natural.js treats this as an isolated token. i.e. non-spaced emojis like "Hey i like emojis!emoji1symbolemoji2symbolemoji1symbol" would come out as 1 token
-                    //comment.body = comment.body.replace(emojiReplaceRegex, `${thisEmojiUid} `); // We add a trailing space to make sure natural.js treats this as an isolated token. i.e. non-spaced emojis like "Hey i like emojis! emoji1symbolemoji2symbolemoji1symbol" would come out as 1 token
+                    self.replaceBodyTokenWithUid(comment, thisPendingSymbolEntity.token, thisEmojiUid);
                     comment.pendingSymbols[thisEmojiUid] = thisPendingSymbolEntity;
                 }
             });
             if (cback) cback();
         });
     } // end preserveEmojisInCommentBody
+
+    escapeStringForRegex(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+    replaceBodyTokenWithUid(comment, token, uid) { // alters comment in-place
+        const self = this;
+        const tokenEscapedForRegex = self.escapeStringForRegex(token); // the string we are matching against needs to be escaped for regex. https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
+        const tokenReplaceRegex = new RegExp(tokenEscapedForRegex, 'gm');
+        self.replaceInCommentBody(comment, tokenReplaceRegex, uid);
+    }
 
     extractWordSequences(commentData, cback) {
         const self = this;
@@ -873,13 +876,10 @@ class ExtractWordsFromComments {
                 symbolUidsInStemSequence.forEach((symbolUid) => {
                     const tokenSymbolResult = commentData.pendingSymbols[symbolUid];
                     symbolsInWord.push(tokenSymbolResult.symbolKey);
-                    const symbolUidRegex = new RegExp(symbolUid, 'gm');
-                    self.replaceInCommentBody(commentData, symbolUidRegex, tokenSymbolResult.normalizedToken);
-                    //commentData.body = commentData.body.replace(symbolUidRegex, tokenSymbolResult.normalizedToken);
-                    //commentData.stemmedBody = commentData.stemmedBody.replace(symbolUidRegex, tokenSymbolResult.normalizedToken);
-                    sequenceKey = sequenceKey.replace(symbolUidRegex, tokenSymbolResult.normalizedToken);
+                    self.replaceInCommentBody(commentData, symbolUid, tokenSymbolResult.normalizedToken);
+                    sequenceKey = sequenceKey.replaceAll(symbolUid, tokenSymbolResult.normalizedToken);
                     allRawTokenSequences.forEach((thisRawSeq, thisRawSeqIndex) => {
-                        allRawTokenSequences[thisRawSeqIndex] = thisRawSeq.replace(symbolUidRegex, tokenSymbolResult.normalizedToken);
+                        allRawTokenSequences[thisRawSeqIndex] = thisRawSeq.replaceAll(symbolUid, tokenSymbolResult.normalizedToken);
                     });
                 });
             }
