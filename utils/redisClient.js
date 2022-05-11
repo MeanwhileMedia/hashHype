@@ -24,11 +24,12 @@ class RedisClient {
         self.activePreservingSortedSets = {preservedKeys: {}}; // {"word:GME:foundAt": setLength, etc..} a map of keys pointing to sorted sets which were all found to be long enough to be written to a preserve DB.
         self.activePreservingSortedSetsPubSubChannel = 'change:activePreservingSortedSets'; // our manual pubsub channel so processes can keep activePreservingSortedSets in sync with one another
         self.activePreservingSortedSetsPeristKey = 'index:redisPreserved:activePreservingSortedSets';
-        self.activePreservingSortedSetsMaxLength = 10000;
         self.activePreservingSortedSetsSyncInterval = null;
         self.activePreservingSortedSetsSyncIntervalLength = 5000;
         self.activePreservingSortedSetsSaveInterval = null;
         self.activePreservingSortedSetsSaveIntervalLength = 1000*60*10; // once every 10 minutes
+        self.addedActivePreservingSortedSets = []; // records persist through activePreservingSortedSetsSyncInterval so can emit change events to all other processes
+        self.removedActivePreservingSortedSets = [];
 
         let didFirstOnConnect = 0;
         self.initAllClients(() => {
@@ -224,16 +225,16 @@ class RedisClient {
         const self = this;
         if (self.activePreservingSortedSetsSyncInterval) return;
         self.activePreservingSortedSetsSyncInterval = setInterval(() => {
-            const activePreservingSortedSetsLength = Object.keys(self.activePreservingSortedSets.preservedKeys).length;
-            if (argv.redisDBMaster) console.log(`Currently preserving ${activePreservingSortedSetsLength} sorted sets which matched redis preserveNamespaces configs.`);
-            if (activePreservingSortedSetsLength >= self.activePreservingSortedSetsMaxLength) {
-                console.warn(`activePreservingSortedSets is too long (${activePreservingSortedSetsLength} keys)! Potential memory leak. Please inspect...`);
+            if (argv.redisDBMaster) {
+                const activePreservingSortedSetsLength = Object.keys(self.activePreservingSortedSets.preservedKeys).length; // this uses too much CPU because of how big activePreservingSortedSets is. Only use when logs below are needed for debugging.
+                console.log(`Currently preserving ${activePreservingSortedSetsLength} sorted sets which matched redis preserveNamespaces configs.`);
             }
 
             // Alert all processes (including self) of changes we made to our local activePreservingSortedSets (because all processes must keep it in sync)
+            if (self.addedActivePreservingSortedSets.length === 0 && self.removedActivePreservingSortedSets === 0) return; // no changes to report
             const changes = {
-                added: self.addedActivePreservingSortedSets || [],
-                removed: self.removedActivePreservingSortedSets || []
+                added: [...self.addedActivePreservingSortedSets],
+                removed: [...self.removedActivePreservingSortedSets]
             };
             self.publish(self.activePreservingSortedSetsPubSubChannel, changes);
             self.addedActivePreservingSortedSets = [];
@@ -255,6 +256,15 @@ class RedisClient {
             });
         });
         self.subscribe(self.activePreservingSortedSetsPubSubChannel);
+
+        if (!argv.redisDBMaster) return; // below are pubsub listeners only used by dbMaster
+        // catch evictions so we can keep self.activePreservingSortedSets synced with DB
+        const evictionChannel = '__keyevent@0__:evicted';
+        self.on('message', function (channel, evictedKey){
+            if (channel !== evictionChannel) return;
+            self.removeActivePreservingSortedSet(evictedKey);
+        }, 'long');
+        self.subscribe(evictionChannel, 'long');
     }
     addActivePreservingSortedSet(setKey, setLength) {
         const self = this;
@@ -263,10 +273,10 @@ class RedisClient {
         self.addedActivePreservingSortedSets = self.addedActivePreservingSortedSets || [];
         self.addedActivePreservingSortedSets.push({setKey, setLength});
     }
-    removeActivePreservingSortedSet(setKey, setLength) {
+    removeActivePreservingSortedSet(setKey, setLength = 0) {
         const self = this;
         if (!self.activePreservingSortedSets.preservedKeys[setKey]) return; // can't remove what's not there
-        console.warn(`No longer preserving sorted set ${setKey} with a length of ${setLength}`);
+        // console.warn(`No longer preserving sorted set ${setKey} with a length of ${setLength}`);
         self.removedActivePreservingSortedSets = self.removedActivePreservingSortedSets || [];
         self.removedActivePreservingSortedSets.push({setKey, setLength});
     }
