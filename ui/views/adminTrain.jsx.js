@@ -52,7 +52,7 @@ class AdminTrain extends React.Component {
         if (this.state.accordionCollapsed.indexOf('Username') !== -1) usernameSection = null;
 
         let wordsSection = [];
-        const sortedWords = Object.entries(this.props.topComment.pointsAdjust['1Hr']).sort((a, b) => {
+        const sortedWords = Object.entries(this.props.topComment.pointsAdjust).sort((a, b) => {
             return b[1] - a[1];
         });
         sortedWords.forEach((word) => {
@@ -125,7 +125,7 @@ class AdminTrain extends React.Component {
                 <div style={css.adminTrain_section}>
                     <div style={{position: 'relative'}}>
                         <h6 style={css.adminTrain_section_title} onClick={this.toggleAccord.bind(this)}>Comment</h6>
-                        <p style={{position: 'absolute', right: 0, top: '-1.2rem'}}>Points: <b>{thisView.props.topComment.totalPoints['1Hr']}</b></p>
+                        <p style={{position: 'absolute', right: 0, top: '-1.2rem'}}>Points: <b>{thisView.props.topComment.totalPoints}</b></p>
                     </div>
                     {commentSection}
                 </div>

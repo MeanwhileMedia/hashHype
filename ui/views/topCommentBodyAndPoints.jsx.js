@@ -114,7 +114,7 @@ class TopCommentBodyAndPoints extends React.Component {
     getOrderedPointedWordRefs() {
         const self = this;
         self.pointedWordRefs = [];
-        for (const [pointedWordStr, points] of Object.entries(self.props.topComment.pointsAdjust['1Hr'])) {
+        for (const [pointedWordStr, points] of Object.entries(self.props.topComment.pointsAdjust)) {
             if (points) {
                 const thisPointedWordRef = self.props.topComment.words[pointedWordStr];
                 thisPointedWordRef.bodyElUid = thisPointedWordRef.bodyElUid || ++self.uid; // save for later (points info msgbox)
@@ -122,8 +122,8 @@ class TopCommentBodyAndPoints extends React.Component {
             }
         }
         self.pointedWordRefs.sort((a, b) => {
-            const aTotalPoints = self.props.topComment.pointsAdjust['1Hr'][a.word] || 0;
-            const bTotalPoints = self.props.topComment.pointsAdjust['1Hr'][b.word] || 0;
+            const aTotalPoints = self.props.topComment.pointsAdjust[a.word] || 0;
+            const bTotalPoints = self.props.topComment.pointsAdjust[b.word] || 0;
             if (aTotalPoints > bTotalPoints) return -1;
             if (aTotalPoints < bTotalPoints) return 1;
             return 0;
@@ -188,7 +188,7 @@ class TopCommentBodyAndPoints extends React.Component {
         const css = styles.generate(self);
 
         const highlighted2dGramEls = [];
-        for (let [wordStr, pointsForWord] of Object.entries(comment.pointsAdjust['1Hr'])) {
+        for (let [wordStr, pointsForWord] of Object.entries(comment.pointsAdjust)) {
             if (!pointsForWord) continue;
             const thisPointedWordRef = comment.words[wordStr];
             if (thisPointedWordRef.type !== '2dGram') continue;
@@ -338,10 +338,10 @@ class TopCommentBodyAndPoints extends React.Component {
 
         let pointedWordCount = 0;
         let totalOtherUserCount = 0; // how many other users (total) commented the pointed words in this comment.
-        for (const [pointedWordStr, points] of Object.entries(self.props.topComment.pointsAdjust['1Hr'])) {
+        for (const [pointedWordStr, points] of Object.entries(self.props.topComment.pointsAdjust)) {
             if (!points) continue;
             ++pointedWordCount;
-            const unadjustedPoints = self.props.topComment.points['1Hr'][pointedWordStr];
+            const unadjustedPoints = self.props.topComment.points[pointedWordStr];
             totalOtherUserCount = totalOtherUserCount + (unadjustedPoints/self.props.topComment.words[pointedWordStr].pointVal);
         }
         totalOtherUserCount = Math.ceil(totalOtherUserCount);

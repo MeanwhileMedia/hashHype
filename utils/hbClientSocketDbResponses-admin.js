@@ -339,9 +339,7 @@ class HbClientSocketDbResponses_admin {
                 return;
             }
             // First remove points
-            for (const [pointsTimeBucketKey, pointsTimeBucket] of Object.entries(comment.points)) {
-                delete pointsTimeBucket[removeWord];
-            }
+            delete comment.points[removeWord];
 
             // then, remove it from the comment's words array);
             delete comment.words[removeWord];

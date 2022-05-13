@@ -22,8 +22,8 @@ class SpinWheelPart extends React.Component {
     }
 
     componentDidUpdate(prevProps, prevState) {
-        const topCommentMsgCount = this.props.data.totalPoints['1Hr'];
-        const prevtopCommentMsgCount = prevProps.data.totalPoints['1Hr'];
+        const topCommentMsgCount = this.props.data.totalPoints;
+        const prevtopCommentMsgCount = prevProps.data.totalPoints;
 
         if (topCommentMsgCount > prevtopCommentMsgCount && !prevState.justGrew) {
             // Strobe the wheel part once for every new point.
@@ -61,7 +61,7 @@ class SpinWheelPart extends React.Component {
         const css = styles.generate(this);
         let symbolStatsEl = null;
 
-        let topSymbol = self.props.data.topSymbolHigh['1Hr'] || self.props.data.topSymbolLow['1Hr'] || null;
+        let topSymbol = self.props.data.topSymbolHigh || self.props.data.topSymbolLow || null;
         if (topSymbol) {
             self.props.data.symbols.forEach((thisSymbol) => {
                 if (thisSymbol.key === topSymbol) topSymbol = thisSymbol;
@@ -120,7 +120,7 @@ class SpinWheelPart extends React.Component {
 
         const rankSpace = this.props.maxOuterRadius - this.props.minOuterRadius;
         const innerPadding = (rankSpace*.2);
-        const rankPercentage = 1 - (Math.max(...this.props.allMsgCounts) - this.props.data.totalPoints['1Hr']) / (Math.max(...this.props.allMsgCounts) - Math.min(...this.props.allMsgCounts));
+        const rankPercentage = 1 - (Math.max(...this.props.allMsgCounts) - this.props.data.totalPoints) / (Math.max(...this.props.allMsgCounts) - Math.min(...this.props.allMsgCounts));
         const outerRadius = (this.props.minOuterRadius+innerPadding) + ((rankSpace-innerPadding)*rankPercentage);
 
         const x = d3.scaleLinear().range([0, 2 * Math.PI]);

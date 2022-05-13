@@ -238,14 +238,14 @@ class SpinWheel extends React.Component {
                     return;
                 }
                 allMsgCounts.push(lastTriedUniqueCount);
-                topComment.totalPoints['1Hr'] = lastTriedUniqueCount;
+                topComment.totalPoints = lastTriedUniqueCount;
             };
-            getUniquePointCount(topComment.totalPoints['1Hr']);
+            getUniquePointCount(topComment.totalPoints);
         });
 
         hierarchyData = d3.hierarchy(hierarchyData).sum((d) => {
             if (!d.totalPoints) return;
-            return d.totalPoints['1Hr'] //+ allMsgCounts[0] // The largest part will be at most 2x the size of the smallest
+            return d.totalPoints; //+ allMsgCounts[0] // The largest part will be at most 2x the size of the smallest
         });
 
         const partition = d3.partition()(hierarchyData);

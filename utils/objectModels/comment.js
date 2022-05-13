@@ -27,51 +27,27 @@ const commentObjModel = {
             foundAt: props.foundAt || Date.now(), // when the comment registered to hashHype
             words: props.words || {}, // object with wordRef objects for vals { 'word_!!_1': wordRef1, 'other_!!_word_!!_GME': wordRef2, etc}
             wordAssocs: props.wordAssocs || {}, // {':happy_face:': {assoc: 'http://imgUrl.jpg', type: 'img'}, etc..} - When parsing raw comments, this offers a way to preserve a word association within comment.body to an image, url, etc greater context. When the raw comment is later processed in "extractWordsFromComments" - this data should be transferred to the individual word/symbol redis object, and this property can be deleted from comment object.
-            points: props.points || {
-                '1Hr': {}, // {foo_bar: 342, other_word: etc...}
-                '12Hr': {},
-                '24Hr': {},
-            },
-            pointsAdjust: props.pointsAdjust || { // the above point values with deductions from topCommentStats logic
-                '1Hr': {}, // {foo_bar: 342, other_word: etc...}
-                '12Hr': {},
-                '24Hr': {},
-            },
-            totalPoints: props.totalPoints || { // summed totals from the above points attr.
-                '1Hr': 0,
-                '12Hr': 0,
-                '24Hr': 0,
-            },
-            topSymbolHigh: props.topSymbolHigh || {
-                '1Hr': null, // string. a symbol redis key
-                '12Hr': null,
-                '24Hr': null,
-            },
-            topSymbolLow: props.topSymbolLow || {
-                '1Hr': null, // string. a symbol redis key
-                '12Hr': null,
-                '24Hr': null,
-            },
+            points: props.points || {}, // {foo_bar: 342, other_word: etc...}
+            pointsAdjust: props.pointsAdjust || {}, // the above point values with deductions from topCommentStats logic. {foo_bar: 332, other_word: etc...}
+            totalPoints: props.totalPoints || {}, // summed totals from the above points attr.
+            topSymbolHigh: props.topSymbolHigh || null, // string. a symbol redis key
+            topSymbolLow: props.topSymbolLow || null, // string. a symbol redis key
             symbolStartPoints: props.symbolStartPoints || {}, // {'symbol:coin:HNT': 234, 'symbol:stock:GME': 9123, etc...} - points for ONLY symbols within this comment right when the comment is created. They are the points in the 1Hr prior to comment creation. Calculated only once in extractWordsFromComments
             symbols: props.symbols || [], // array of symbol objects. Not saved to DB as part of a comment:id object (see minimizeForDb), but will remain on comments that become part of a parent stat object.
             rank: props.rank || null, // int - if this comment happens to be part of stats:topComments, this rank will be set accordingly.
             rankAdjust: props.rankAdjust || null, // int - if this comment has rank, topCommentStats.js will also attempt to apply an "adjusted rank" based on historical data computed by topTrendStats.js. Note that this will not always be defined (even if rank is defined). More than one comment within stats:topComments may share the same rankAdjust.
             wordsFor2dGram: props.wordsFor2dGram || [], // ['GME', 'foo_!!_bar', etc.] - this is a record of all words which have already been accounted for when forming new 2dGrams. Used by topCommentStats extractNew2dGramsFromTopComment
-            pointsRecords: props.pointsRecords || {
-                '1Hr': {}, // {foo_bar: [tstamp1, tstamp20], other_word: etc...} this prop is used in topCommentStats during calcTotalPointsForPendingTopComments
-                '12Hr': {},
-                '24Hr': {},
-            },
+            pointsRecords: props.pointsRecords || {}, // {foo_bar: [tstamp1, tstamp20], other_word: etc...} this prop is used in topCommentStats during calcTotalPointsForPendingTopComments
             // deleted: bool // this flag is sometimes used locally but is never saved to redis (it's set to true when a live copy must be blocked from any future saves)
         }
 
         return commentObj;
     },
 
-    getPointed2dGramCount: function(commentObj, timeBucket = '1Hr') {
+    getPointed2dGramCount: function(commentObj) {
         let pointed2dGramCount = 0;
         for (const [thisWordStr, thisWordRef] of Object.entries(commentObj.words)) {
-            if (thisWordRef.type === '2dGram' && commentObj.points[timeBucket][thisWordRef.word]) {
+            if (thisWordRef.type === '2dGram' && commentObj.points[thisWordRef.word]) {
                 ++pointed2dGramCount;
             }
         };
@@ -131,29 +107,10 @@ const commentObjModel = {
     cloneCommentForNewSymbolGroup: function(commentObj) {
         // When a comment object is being pointed by topCommentStats and it's found to have more than 1 symbol type, it must be allowed to compete with other comments within each symbol type group.
         // To allow this, we first do a shallow clone of the comment, but some properties must be deep cloned because the 2 comments will diverge and can't hold shared refs. This props are topSymbols, points, and others related to topCommentStats pointing logic.
-        // This is not the prettiest code, but it's meant to be as performant as possible (cpu)
         let commentClone = {...commentObj};
-        delete commentClone.points;
-        delete commentClone.pointsAdjust;
-        delete commentClone.topSymbolHigh;
-        delete commentClone.topSymbolLow;
         commentClone = commentObjModel.ensureCommentObjectDefaults(commentClone);
-
-        commentClone.points['1Hr'] = {...commentObj.points['1Hr']}
-        commentClone.points['12Hr'] = {...commentObj.points['12Hr']}
-        commentClone.points['24Hr'] = {...commentObj.points['24Hr']}
-
-        commentClone.pointsAdjust['1Hr'] = {...commentObj.points['1Hr']}
-        commentClone.pointsAdjust['12Hr'] = {...commentObj.points['12Hr']}
-        commentClone.pointsAdjust['24Hr'] = {...commentObj.points['24Hr']}
-
-        commentClone.topSymbolHigh['1Hr'] = commentObj.topSymbolHigh['1Hr'];
-        commentClone.topSymbolHigh['12Hr'] = commentObj.topSymbolHigh['12Hr'];
-        commentClone.topSymbolHigh['24Hr'] = commentObj.topSymbolHigh['24Hr'];
-
-        commentClone.topSymbolLow['1Hr'] = commentObj.topSymbolHigh['1Hr'];
-        commentClone.topSymbolLow['12Hr'] = commentObj.topSymbolHigh['12Hr'];
-        commentClone.topSymbolLow['24Hr'] = commentObj.topSymbolHigh['24Hr'];
+        commentClone.points = {...commentObj.points}
+        commentClone.pointsAdjust = {...commentObj.pointsAdjust}
 
         return commentClone;
     }

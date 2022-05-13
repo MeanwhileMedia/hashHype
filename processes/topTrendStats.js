@@ -180,16 +180,16 @@ class TopTrendStats {
             // topCommentsStatsObj.comments.forEach((thisTopComment) => {
             for (const [symbolTypeGroup, theseTopComments] of Object.entries(topCommentsStatsObj.comments)) {
                 theseTopComments.forEach((thisTopComment) => {
-                    if (self.topTrendsMustHaveSymbol && !thisTopComment.topSymbolHigh['1Hr']) return;
+                    if (self.topTrendsMustHaveSymbol && !thisTopComment.topSymbolHigh) return;
 
                     const topSymbol = thisTopComment.symbols.find((symbol) => {
-                        return symbol.key === thisTopComment.topSymbolHigh['1Hr'];
+                        return symbol.key === thisTopComment.topSymbolHigh;
                     });
                     if (!topSymbol) return;
 
                     const thisTrend = trendModel.createTrendObject({
                         word: topSymbol.symbol,
-                        symbolKey: thisTopComment.topSymbolHigh['1Hr'],
+                        symbolKey: thisTopComment.topSymbolHigh,
                         symbolType: symbolTypeGroup,
                         rank: thisTopComment.rank,
                         histDur: self.rankHistoryTotalDuration
@@ -201,9 +201,9 @@ class TopTrendStats {
 
                         const thisRankHistoryRecord = [thisTopCommentStatsSnapshot[0], null];
                         thisTopCommentStatsSnapshot[1].comments[symbolTypeGroup].some((thisTopComment, thisTopCommentIndex) => {
-                            if (self.topTrendsMustHaveSymbol && !thisTopComment.topSymbolHigh['1Hr']) return;
+                            if (self.topTrendsMustHaveSymbol && !thisTopComment.topSymbolHigh) return;
                             const topSymbol = thisTopComment.symbols.find((symbol) => {
-                                return symbol.key === thisTopComment.topSymbolHigh['1Hr'];
+                                return symbol.key === thisTopComment.topSymbolHigh;
                             });
                             if (topSymbol && topSymbol.symbol === thisTrend.word) {
                                 thisRankHistoryRecord[1] = thisTopComment.rank;

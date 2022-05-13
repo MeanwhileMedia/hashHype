@@ -205,14 +205,14 @@ class BarRace extends React.Component {
         // This highest count "maxPointsScale" is used to set bar widths.
         let topCommentWithHighestPoints = null;
         self.reducedTopComments.forEach((thisTopComment, thisTopCommentIndex) => {
-            if (!topCommentWithHighestPoints || thisTopComment.totalPoints['1Hr'] > topCommentWithHighestPoints.totalPoints['1Hr']) topCommentWithHighestPoints = thisTopComment;
+            if (!topCommentWithHighestPoints || thisTopComment.totalPoints > topCommentWithHighestPoints.totalPoints) topCommentWithHighestPoints = thisTopComment;
         });
         if (!topCommentWithHighestPoints) {
             self.maxPointsScale = 0;
             return;
         }
         const minSpaceUsageForRankOneBar = 0.9; // min percent of parent container the bar must fill. We let it fluctuate within this margin to allow for a more stable chart that isn't constantly scaling based on rank one point changes.
-        const newMaxPointsScale = topCommentWithHighestPoints.totalPoints['1Hr'];
+        const newMaxPointsScale = topCommentWithHighestPoints.totalPoints;
         if (self.maxPointsScale && newMaxPointsScale / self.maxPointsScale <= minSpaceUsageForRankOneBar) {
             self.maxPointsScale = newMaxPointsScale;
         } else {

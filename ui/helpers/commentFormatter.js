@@ -17,10 +17,10 @@ const commentFormatter = {
     getRenderableSymbolName: (comment) => {
         if (!comment || !comment.topSymbolHigh) return '';
         let topSymbolName = '';
-        if (comment.topSymbolHigh['1Hr']) {
+        if (comment.topSymbolHigh) {
             let wordTopSymbolObj;
             comment.symbols.forEach((thisSymbol) => {
-                if (thisSymbol.key === comment.topSymbolHigh['1Hr']) wordTopSymbolObj = thisSymbol;
+                if (thisSymbol.key === comment.topSymbolHigh) wordTopSymbolObj = thisSymbol;
             });
             if (wordTopSymbolObj && wordTopSymbolObj.type !== 'emoji') {
                 topSymbolName = wordTopSymbolObj.prettyName || wordTopSymbolObj.name;

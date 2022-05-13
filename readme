@@ -1,4 +1,1 @@
-NPM scripts:
-
-1. deployDev01: run when you need to sync your local dev code to a target for the first time. Wipes the target dir before copying (must run npm install on target after).
-2. deployDev01_watch: run during dev after deployDev01 has already been run once. Auto syncs changes to files but does not perform directory wipe (preserves target node_modules).
+HashHype summarizes internet noise.

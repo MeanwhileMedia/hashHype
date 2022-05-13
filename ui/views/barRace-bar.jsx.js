@@ -25,13 +25,13 @@ class BarRaceBar extends React.Component {
         if (!this.state.topComment) return null;
 
         const css = styles.generate(self);
-        const thisCommentPoints = this.state.topComment.totalPoints['1Hr'];
+        const thisCommentPoints = this.state.topComment.totalPoints;
         let thisCommentIsActive = false;
         if (self.state.activeTopComment && self.state.activeTopComment.id === this.state.topComment.id) thisCommentIsActive = true;
 
         self.symbolText = '';
         let hasTopSymbol = null;
-        const hasTopSymbolKey = this.state.topComment.topSymbolHigh['1Hr'] || this.state.topComment.topSymbolLow['1Hr'] || null;
+        const hasTopSymbolKey = this.state.topComment.topSymbolHigh || this.state.topComment.topSymbolLow || null;
         if (hasTopSymbolKey) {
             hasTopSymbol = this.state.topComment.symbols.find(thisSymbol => {
                 return thisSymbol.key === hasTopSymbolKey;
