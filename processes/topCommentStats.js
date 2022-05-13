@@ -30,10 +30,10 @@ class TopCommentsStats {
 
         this.topWordsCounts = []; // [['foo_bar', 35], [baz, 100], etc...] // caches counts for words found to be both top, or not.
         this.topWordsCountsIndex = {} //  {foo_bar: indexOfCountWithinTopWordsCounts, baz: 101, etc...} - this object just helps our lookup into topWordsCounts which is an ordered array
-        this.topWordsCountsMaxLength = 100000; // should be a multiple of 10
-        this.topWordsMinCount = 10; // Try to start with a reasonable number at process init. Better to slowly adjust down than have an immediate memory overflow (cuz of trying to process too many comments based on too many word occurances). However, if you set too high, no new topCommentStats data will save/render until it has time to adjust down.
+        this.topWordsCountsMaxLength = 200000; // should be a multiple of 10
+        this.topWordsMinCount = 20; // Try to start with a reasonable number at process init. Better to slowly adjust down than have an immediate memory overflow (cuz of trying to process too many comments based on too many word occurances). However, if you set too high, no new topCommentStats data will save/render until it has time to adjust down.
         this.topWordsRefreshInterval = null;
-        this.topWordsRefreshIntervalTime = 10000;
+        this.topWordsRefreshIntervalTime = 20000;
         this.lastIntervalTotalWordsCount = 0; // total new words that we reported via pubsub '__keyspace@0__:word:*:foundAt' in the last ${topWordsRefreshIntervalTime}ms
         this.lastIntervalTopWordsCount = 0; // How many words were deemed top words in the last ${topWordsRefreshIntervalTime}ms? for logging/debugging the impact of our "isTopWord" logic.
         this.lastIntervalTopWordsCached = 0; // how many isTopWord lookups had cached values in topWordsCounts
@@ -148,12 +148,16 @@ class TopCommentsStats {
                 if (cback) cback(false);
             }
             return;
-        } else {
-            // console.log(wordFoundMessage.word, ' topWordsCounts was not cached');
+        }
+
+        // If this key is known to be preserved to long (because it's a set which has a length exceeding our min count setting) then we can assume it is a topWord
+        const wordFoundAtKey = foundAtKeyspaceChannel.replace('__keyspace@0__:', '');
+        if (self.redisClient.activePreservingSortedSets.preservedKeys[wordFoundAtKey]) {
+            ++self.lastIntervalTopWordsCached;
+            if (cback) cback(true);
         }
 
         // This incoming word was not yet cached to this.topWordCounts. Fetch the "foundAt" redis list length now.
-        const wordFoundAtKey = foundAtKeyspaceChannel.replace('__keyspace@0__:', '');
         self.redisClient.zcard(wordFoundAtKey, (thisFoundAtListLength) => {
             const thisCountIndex = self.topWordsCounts.push([foundAtKeyspaceChannel, thisFoundAtListLength]) - 1;
             self.topWordsCountsIndex[foundAtKeyspaceChannel] = thisCountIndex;
@@ -171,19 +175,27 @@ class TopCommentsStats {
             // First we will update self.topWordsMinCount via self.setTopWordsMinCount(). The new value is used below as we trim self.topWordsCounts.
             self.setTopWordsMinCount();
 
-            // Now loop through topWordsCounts and only keep the words which did NOT meet the topWordsMinCount. They are the ones that need to be recounted next time they occur.
+            // Now loop through topWordsCounts and only keep the words which:
+            // 1. Did not meet topWordsMinCount, and are unlikely to meet it in the immediate future
+            // 2. Met topWordsMinCount
+            // We are removing the words which need to be recounted next time they occur because they are likely to become topWords soon.
             const newTopWordsCounts = [];
             const newTopWordsCountsIndex = {};
             self.topWordsCounts.forEach((thisTopWordCount) => {
-                if (thisTopWordCount[1] < self.topWordsMinCount * 0.5) { // we know that this word was well below our min count and won't likely jump above it in the immediate future. Keep it's cached record until it naturally overflows because of self.topWordsCountsMaxLength.
+                if (thisTopWordCount[1] < self.topWordsMinCount * 0.75) { // We know that this word was well below topWordsMinCount and won't likely jump above it in the immediate future. Keep it's cached record until it naturally overflows because of self.topWordsCountsMaxLength.
+                    newTopWordsCounts.push(thisTopWordCount);
+                } else if (thisTopWordCount[1] >= self.topWordsMinCount) { // We know that this word recently exceeded topWordsMinCount. Keep it's cached record until it naturally overflows because of self.topWordsCountsMaxLength.
                     newTopWordsCounts.push(thisTopWordCount);
                 }
             });
+
+            // We also have our topWordsCountsMaxLength which will trim off the oldest records from topWordsCounts as it overflows.
             if (newTopWordsCounts.length >= self.topWordsCountsMaxLength) {
                 // rememeber that we only ever push to topWordsCounts, so the oldest entries will always be at the beginning. We will also remove 20% more than we need to to ensure we stay below the limit through the next refreshTopComments loops.
                 const removeCount = (newTopWordsCounts.length - self.topWordsCountsMaxLength) + (self.topWordsCountsMaxLength * 0.2);
                 newTopWordsCounts.splice(0, removeCount);
             }
+
             // Now we have to build our newTopWordsCountsIndex because we are about to set a new self.topWordsCounts
             newTopWordsCounts.forEach((thisTopWordCount, newIndex) => {
                 newTopWordsCountsIndex[thisTopWordCount[0]] = newIndex;

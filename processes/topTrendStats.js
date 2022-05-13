@@ -176,6 +176,11 @@ class TopTrendStats {
     computeAllTrendHistories(topCommentStatsSnapshots, topTrends, cback) { // updates topTrends.trends in-place
         // topCommentStatsSnapshots is array of arrays [[snapshotTStamp, topCommentsStatsObj], [1644086644348, topCommentsStatsObj], etc...]
         const self = this;
+
+        if (!topCommentStatsSnapshots || !topCommentStatsSnapshots.length) { // this will occur when this process runs but not archive DB has been created yet.
+            return;
+        }
+
         self.redisClient.get(self.topCommentsStatsKey, (topCommentsStatsObj) => {
             // topCommentsStatsObj.comments.forEach((thisTopComment) => {
             for (const [symbolTypeGroup, theseTopComments] of Object.entries(topCommentsStatsObj.comments)) {
