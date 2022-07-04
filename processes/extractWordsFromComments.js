@@ -336,9 +336,25 @@ class ExtractWordsFromComments {
         hashtagMatches.forEach((thisHashtagMatch) => {
             const thisHashtag = thisHashtagMatch[0];
 
-            // hashHype rule - a hashtag cannot be a number
+            // hashHype rule - a hashtag must have at least 2 chars
             const thisHashTagNoHash = thisHashtag.slice(1);
-            if (`${parseInt(thisHashTagNoHash.slice(1))}` === thisHashTagNoHash) return;
+            if (thisHashTagNoHash.length < 2) {
+                // console.warn(`Will discard a hashtag that is too short: ${thisHashtag}`);
+                return;
+            }
+
+            // hashHype rule - a hashtag cannot be a number
+            if (`${parseInt(thisHashTagNoHash)}` === thisHashTagNoHash) {
+                // console.warn(`Will discard a hashtag that looks like a number: ${thisHashtag}`);
+                return;
+            }
+
+            // hashHype rule - a hashtag connot contain a majority of non-latin charachters
+            const nonLatCharCount = [...thisHashTagNoHash.matchAll(/[^\x00-\x7F]/g)].length;
+            if (nonLatCharCount / thisHashTagNoHash.length > 0.5) {
+                // console.warn(`Will discard non-english hashtag: ${thisHashtag}`);
+                return;
+            }
 
             if (!foundHashtags[thisHashtag]) {
                 const hashtagAssocs = [];
@@ -349,7 +365,7 @@ class ExtractWordsFromComments {
                     token: thisHashtag,
                     type: 'hashtag',
                     normalizedToken: thisHashtag,
-                    symbolKey: `symbol:hashtag:${self.redisClient.encodeStringForRedisKey(thisHashtag)}`,
+                    symbolKey: `symbol:hashtag:${self.redisClient.encodeStringForRedisKey(thisHashtag).toLowerCase()}`, // hashtags are NOT case sensitive
                     assocs: hashtagAssocs
                 });
             }
@@ -966,10 +982,11 @@ class ExtractWordsFromComments {
                 if (checkedSymbols.indexOf(thisSymbolKey) !== -1) return;
                 checkedSymbols.push(thisSymbolKey);
 
+                const wordObjNamespace = wordModel.getWordObjNamespace(thisWordRef, self.redisClient);
                 const foundAtListKey = wordModel.getWordFoundAtKey(thisWordRef, self.redisClient);
                 symbolsFoundAtCountPromises.push(new Promise( (resolve, reject) => {
                     const now = Date.now();
-                    self.redisClient.zrange(foundAtListKey, now - msIn1Hr, now, (allFoundAtTstamps) => {
+                    self.redisClient.zrange(foundAtListKey, now - msIn1Hr, now, {wordObjNamespace: wordObjNamespace}, (allFoundAtTstamps) => {
                         if (!allFoundAtTstamps || !allFoundAtTstamps.length) {
                             symbolStartPoints[thisSymbolKey] = 0;
                             resolve();

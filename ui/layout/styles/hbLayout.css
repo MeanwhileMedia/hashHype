@@ -25,11 +25,11 @@ h2, .heading2 {
     font-size: min(4rem, 8vw);
     margin: 0px;
     font-weight: 300;
-    line-height: 106%;
+    line-height: 110%;
     /* the below is used to bust text inflation algorithm - https://developer.mozilla.org/en-US/docs/Web/CSS/text-size-adjust & https://drafts.csswg.org/css-size-adjust/#default-adjustment-conditions */
     display: inline-block;
     max-height: 100%;
-    width: 100%;
+    /* width: 100%; */
     text-size-adjust: none;
     -webkit-text-size-adjust: none;
     -moz-text-size-adjust: none;
@@ -47,7 +47,7 @@ h3, .heading3 {
     /* bust text inflation algorithm */
     display: inline-block;
     max-height: 100%;
-    width: 100%;
+    /* width: 100%; */
     text-size-adjust: none;
     -webkit-text-size-adjust: none;
     -moz-text-size-adjust: none;
@@ -65,7 +65,7 @@ h4, .heading4 {
     /* bust text inflation algorithm */
     display: inline-block;
     max-height: 100%;
-    width: 100%;
+    /* width: 100%; */
     text-size-adjust: none;
     -webkit-text-size-adjust: none;
     -moz-text-size-adjust: none;
@@ -83,7 +83,7 @@ h5, .heading5 {
     /* bust text inflation algorithm */
     display: inline-block;
     max-height: 100%;
-    width: 100%;
+    /* width: 100%; */
     text-size-adjust: none;
     -webkit-text-size-adjust: none;
     -moz-text-size-adjust: none;
@@ -173,6 +173,11 @@ span[contenteditable], div[contenteditable], code[contenteditable] {
     color: #777;
     text-shadow: -0.4px 0 0 #777, 0.4px 0 0 #777, 0 -0.4px 0 #777, 0 0.4px 0 #777;
 } */
+
+.textOverScroller {
+    white-space: nowrap;
+    overflow: hidden;
+}
 
 #cf_alert_div {
     /* Hide the notif bar from cloudflare when "always-online" mode kicks in. */

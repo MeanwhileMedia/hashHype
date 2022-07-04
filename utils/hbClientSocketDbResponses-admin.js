@@ -89,7 +89,7 @@ class HbClientSocketDbResponses_admin {
 
         // get the wordToCommentsIndex and remove any points earned for this word from all host comments
         const commentIndexKey = `index:wordToComments:${self.redisClient.encodeStringForRedisKey(removeWord)}`;
-        self.redisClient.zrange(commentIndexKey, 0, Infinity, (wordToCommentsIndex) => {
+        self.redisClient.zrange(commentIndexKey, 0, Infinity, {wordObjNamespace: null}, (wordToCommentsIndex) => {
             if (!wordToCommentsIndex) return;
             // This is the last time we will use this wordToComments index since the word is being deleted. Delete index too.
             self.redisClient.del(commentIndexKey);

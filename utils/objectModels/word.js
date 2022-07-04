@@ -5,7 +5,7 @@ const wordObjModel = {
 
     // Every 10 minutes, all wordToCommentsIndex and word:foo_bar:foundAt redis objects are cleaned up. Comments and foundAt timestamps
     // which are older than this.trackWordsFor will be removed from redis.
-    trackWordsFor: 86400000, // ms (24hrs) How long should we keep tstamps stored to word:foo_bar:foundAt lists
+    trackWordsFor: 3600000, // 86400000, // ms How long should we keep tstamps stored to word:foo_bar:foundAt lists
     wordUseInterval: 3600000*2, // ms (2hr) How long until a single user can recomment the same word and have it earn points. See addFoundAtTstampForWord.
     // we are using 2hrs for wordUseInterval. If we used 1hr (our realtime timebucket), userA could comment the same word 10 minutes apart, and earn on both uses for 10 minutes (1hr after the first use, before the later use exits our 1hr timebucket)
 
@@ -119,8 +119,10 @@ const wordObjModel = {
         //   - A user can never earn points for a word because they themselves re-commented that word (or users could artificially boost their own comments)
         //   - A user can only earn points ONCE for a word recommented by another user. A user can recomment it more than once (or two users could artificially boost eachothers comment)
         const wordToUsersIndexKey = `index:wordToUsers:${redisClient.encodeStringForRedisKey(wordRef.word)}:${redisClient.encodeStringForRedisKey(hostComment.author.name)}`;
+        const foundAtKey = self.getWordFoundAtKey(wordRef, redisClient);
+        const wordObjNamespace = self.getWordObjNamespace(wordRef, redisClient);
         const now = Date.now();
-        redisClient.zrange(wordToUsersIndexKey, now - self.wordUseInterval, now, (commentIdsInRange) => {
+        redisClient.zrange(wordToUsersIndexKey, now - self.wordUseInterval, now, {wordObjNamespace: wordObjNamespace}, (commentIdsInRange) => {
             if (commentIdsInRange && commentIdsInRange.length > 1) {
                 // Remember that addFoundAtTstampForWord is run AFTER registerWordToUsersIndex (see registerWordOccurance). So the single commentIdsInRange we just found is in
                 // fact the same occurance that we are about to save a foundAt timestamp for (NOT a dup word use by this user).
@@ -129,7 +131,6 @@ const wordObjModel = {
                 return;
             }
 
-            const foundAtKey = self.getWordFoundAtKey(wordRef, redisClient);
             redisClient.zadd(foundAtKey, [hostComment.foundAt, hostComment.foundAt], (itemsAddedCount) => { // value and score are the same (tstamp) in the case of word:foundAt sorted sets
                 if (itemsAddedCount === 0) {
                     console.warn(`Could not zadd tstamp ${hostComment.foundAt} to ${foundAtKey} for comment:${hostComment.id}. Most likely, that tstamp already existed in the sorted set.`);
@@ -162,6 +163,17 @@ const wordObjModel = {
             foundAtKey = `word:symbol:${isSymbolType}:${wordEncodedForKey}:foundAt`;
         }
         return foundAtKey;
+    },
+    getWordObjNamespace: function(wordRef, redisClient) {
+        let objectNamespace = `word:${wordRef.type}`;
+        let isSymbolType;
+        if (wordRef.type === 'word' && wordRef.hasSymbols[0]) {
+            isSymbolType = wordRef.hasSymbols[0].split(':')[1];
+        }
+        if (isSymbolType) {
+            objectNamespace = `word:symbol:${isSymbolType}`;
+        }
+        return objectNamespace;
     },
 
     initCleanupWordToCommentsIndexesInterval: function(redisClient) {

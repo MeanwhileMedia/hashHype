@@ -1,3 +1,5 @@
+import Radium from '/node_modules/radium';
+
 const styles = {
 
     generate(view) {
@@ -21,6 +23,7 @@ const styles = {
                 'bottom': '0',
                 'padding-top': '7rem',
                 'overflow-y': 'scroll',
+                'overflow-x': 'hidden',
                 'text-align': 'right',
                 'box-sizing': 'border-box',
                 'width': '55%',
@@ -30,7 +33,10 @@ const styles = {
             },
             topCommentStats_barRace_activeCommentInfo_symbolTitle: {
                 'margin-bottom': '4rem',
+                'margin-right': 'auto',
+                'margin-left': 'auto',
             },
+
             topCommentStats_barRace_activeCommentInfo_bodyText: {
                 'line-height': '168%'
             },

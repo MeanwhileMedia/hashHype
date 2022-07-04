@@ -45,7 +45,8 @@ class TopCommentStats extends React.Component {
         this.registerKeyboardCtrls();
 
         if (this.state.isFirstLoad) {
-            this.setState({isFirstLoad: false})
+            this.setState({isFirstLoad: false});
+            utils.init();
         }
     }
 
@@ -84,14 +85,18 @@ class TopCommentStats extends React.Component {
     addActiveSymbolType(type) {
         const newSymbolTypes = [...this.state.activeSymbolTypes];
         if (newSymbolTypes.indexOf(type) === -1) newSymbolTypes.push(type);
-        this.setState({activeSymbolTypes: newSymbolTypes});
+        this.setState({
+            activeSymbolTypes: newSymbolTypes,
+        });
     }
     removeActiveSymbolType(type) {
         const newSymbolTypes = [...this.state.activeSymbolTypes];
         const existingSymbolTypeIndex = newSymbolTypes.indexOf(type);
         if (existingSymbolTypeIndex === -1) return;
         newSymbolTypes.splice(existingSymbolTypeIndex, 1);
-        this.setState({activeSymbolTypes: newSymbolTypes});
+        this.setState({
+            activeSymbolTypes: newSymbolTypes,
+        });
     }
 
     setTopCommentsVizType(type = 'barRace') { // 'barRace', 'spinWheel', or 'toggle'
@@ -186,7 +191,12 @@ class TopCommentStats extends React.Component {
 
         return (
             <StyleRoot>
-                <div className="topCommentStats" style={css.topCommentStats}>
+                <div
+                    className="topCommentStats"
+                    style={css.topCommentStats}
+                    lastUpdated={this.state.topCommentsLastUpdated}
+                    activeSymbolTypes={JSON.stringify(this.state.activeSymbolTypes)}
+                >
                     {commentVisEl}
                 </div>
                 {loadSpinnerEl}

@@ -11,9 +11,6 @@ import styles from './styles/barRace.css.js';
 class BarRace extends React.Component {
     constructor(props) {
         super(props);
-        this.state = {
-            topCommentsLastUpdated: this.props.topCommentsLastUpdated || Date.now(),
-        };
 
         this.reducedTopComments = []; // the comments after passing through above state filters
         this.maxPointsScale = null; // set to the highest scoring topComment, but only when that topComment points exceeds this.maxPointsScale. This makes for a more stable graph that doesn't rerender the scale of all bars based on the top scoring bar.
@@ -27,10 +24,13 @@ class BarRace extends React.Component {
     }
 
     componentDidMount() {
+        const self = this;
         this.props.setPageIsReady();
         this.reducedTopComments = this.reduceTopComments();
         this.createBarEls();
-        utils.registerWindowResizeEvent('checkBarElsForTextSpace', this.checkBarElsForTextSpace.bind(this));
+        utils.registerWindowResizeEvent('checkBarElsForTextSpace', () => {
+            self.checkBarElsForTextSpace.apply(this);
+        });
     }
 
     componentWillUnmount() {
@@ -45,7 +45,6 @@ class BarRace extends React.Component {
             this.updateBarEls();
         }
         this.restoreActiveCommentSelection();
-        if (this.state.topCommentsLastUpdated !== this.props.topCommentsLastUpdated) this.setState({topCommentsLastUpdated: this.props.topCommentsLastUpdated});
     }
 
     reduceTopComments() {
@@ -86,6 +85,7 @@ class BarRace extends React.Component {
                     maxPointsScale={self.maxPointsScale}
                     focusTopComment={self.props.focusTopComment}
                     activeTopComment={self.props.focusedTopComment}
+                    topCommentsLastUpdated={self.props.topCommentsLastUpdated}
                     ref={thisBarElRef}
                 />
             );
@@ -101,6 +101,7 @@ class BarRace extends React.Component {
                     maxPointsScale={self.maxPointsScale}
                     focusTopComment={self.props.focusTopComment}
                     activeTopComment={self.props.focusedTopComment}
+                    topCommentsLastUpdated={self.props.topCommentsLastUpdated}
                     ref={thisBarElRef}
                 />
             );
@@ -147,7 +148,9 @@ class BarRace extends React.Component {
             }
         });
 
-        self.checkBarElsForTextSpace();
+        setTimeout(() => { // Must let react execute above setStates before attempting to checkBarElsForTextSpace (which makes measurements assuming new props have rendered, then sets state on bar els again).
+            self.checkBarElsForTextSpace();
+        }, 0);
     }
 
     checkBarElsForTextSpace() {
@@ -157,35 +160,80 @@ class BarRace extends React.Component {
         self.sortBarElRefs();
         // This function checks every bar el and determines if the bar isn't wide enough to fit symbol text. If so, text will be place just to the right of the bar.
         let foundShortBar = false; // If a single bar is found to be short, then all lower bars will also put text outside (for uniformity)
+        let barLabelMaxFontSize = Infinity; // if a single bar el has symbol text which is too large to fit in AND outside the bar, then ALL bar els scale down their text uniformly so the every symbol text fits.
         self.barElRefs.forEach((thisBarElRef) => { // self.barElRefs are already sorted ascending
             const barState = thisBarElRef.current.state;
             if (!barState.topComment || !barState.topComment.rankRender) return;
+
             const barsUlEl = document.querySelector('.topCommentStats_barRace_bars');
             const barLabelEl = document.querySelector(`.topCommentStats_barRace_bar__${barState.topComment.rankRender} .topCommentStats_barRace_bar_label`);
             const textWrapperEl = document.querySelector(`.topCommentStats_barRace_bar__${barState.topComment.rankRender} .topCommentStats_barRace_bar_label_text`);
             if (!barsUlEl || !barLabelEl || !textWrapperEl) return;
 
-            if (foundShortBar) { // all bars following the first short one will get the same text treatment (if possible)
-                // Since we attempt to render text outside for all bars below the first that was short, we need to check first
-                // that this bar isn't super long (as it's outside text could overflow parent container and overlap comment text)
-                let thisBarIsTooLong = false;
-                if (textWrapperEl.getBoundingClientRect().width + barLabelEl.getBoundingClientRect().width >= barsUlEl.getBoundingClientRect().width) thisBarIsTooLong = true;
-                if (thisBarIsTooLong) {
-                    thisBarElRef.current.setState({renderTextOutside: false});
-                } else {
-                    thisBarElRef.current.setState({renderTextOutside: true});
-                }
-                return;
+            const textPadding = utils.curMagicScreenMeasure*2;
+            const barsUlElWidth = barsUlEl.getBoundingClientRect().width;
+            const barElWidth = (barState.topComment.totalPoints/barState.maxPointsScale) * barsUlElWidth; // px width
+            const textWidth = textWrapperEl.getBoundingClientRect().width + textPadding; // px width includes padding
+
+            let thisBarIsTooShort = false;
+            const maxWidthForTextInside = barElWidth - textPadding;
+            if (textWidth > maxWidthForTextInside) {
+                // bar is too small, move text and change color
+                thisBarIsTooShort = true;
+                foundShortBar = true;
             }
 
-            if (textWrapperEl.getBoundingClientRect().width + utils.curMagicScreenMeasure*3 > barLabelEl.getBoundingClientRect().width) {
-                // bar is to small, move text and change color
-                foundShortBar = true;
-                thisBarElRef.current.setState({renderTextOutside: true});
-                return;
+            let thisBarIsTooLong = false;
+            const maxWidthForTextOutside = barsUlElWidth - barElWidth - textPadding;
+            if (textWidth > maxWidthForTextOutside) {
+                // bar is too long for the text to be outside. Text will either be forced inside, or scaled down if it doesn't fit in OR out at current size.
+                thisBarIsTooLong = true;
             }
-            thisBarElRef.current.setState({renderTextOutside: false});
+
+
+            thisBarElRef.renderTextOutside = false;
+            if (thisBarIsTooShort && maxWidthForTextOutside > maxWidthForTextInside) {
+                thisBarElRef.renderTextOutside = true; // keep a temporary prop directly on the ref so can be set to state below (after for loop completes)
+            }
+            if (foundShortBar && !thisBarIsTooLong) {
+                thisBarElRef.renderTextOutside = true;
+            }
+
+            thisBarElRef.barLabelMaxWidth = maxWidthForTextInside;
+            if (thisBarElRef.renderTextOutside) thisBarElRef.barLabelMaxWidth = maxWidthForTextOutside;
+            const shrunkFontSize = self.shrinkFontSizeToFillWidth(textWrapperEl, thisBarElRef.barLabelMaxWidth, barState.barLabelDefaultFontSize);
+            barLabelMaxFontSize = Math.min(barLabelMaxFontSize, shrunkFontSize);
         });
+
+        self.barElRefs.forEach((thisBarElRef) => {
+            thisBarElRef.current.setState({
+                renderTextOutside: thisBarElRef.renderTextOutside,
+                barLabelMaxWidth: thisBarElRef.barLabelMaxWidth,
+                barLabelMaxFontSize: barLabelMaxFontSize,
+            });
+        });
+    }
+
+    shrinkFontSizeToFillWidth(targetEl, targetWidth, startingFontSize, targetElClone) {
+        // 1. Clone target el, set innerHtml as text, set startingFontSize, measure width
+        // 2. If width is still greater than targetWidth, identify current font size, incrementing down by .1 rem
+        // 3. Repeat until the measured width is less than targetWidth
+        const minFontSize = utils.curMagicScreenMeasure*2;
+        if (!targetElClone) {
+            targetElClone = targetEl.cloneNode(true);
+            targetEl.after(targetElClone);
+            targetElClone.style.opacity = 0;
+            targetElClone.style.fontSize = startingFontSize;
+        }
+        const curStyles = window.getComputedStyle(targetElClone);
+        let newFontSize = parseFloat(curStyles.fontSize) - 0.4;
+        targetElClone.style.fontSize = `${newFontSize}px`;
+        if (targetElClone.getBoundingClientRect().width > targetWidth && newFontSize > minFontSize) {
+            return this.shrinkFontSizeToFillWidth(targetEl, targetWidth, startingFontSize, targetElClone);
+        } else {
+            targetElClone.remove();
+            return newFontSize;
+        }
     }
 
     sortBarElRefs() {
@@ -263,7 +311,9 @@ class BarRace extends React.Component {
         return (
             <div className="topCommentStats_barRace_activeComment" style={css.topCommentStats_barRace_activeCommentInfo}>
                 <h6><span style={{'opacity': '0.25'}}>Rank:</span> {commentFormatter.getNumberOrdinal(self.props.focusedTopComment.rankRender)}</h6>
-                <h2 style={css.topCommentStats_barRace_activeCommentInfo_symbolTitle} dangerouslySetInnerHTML={{ __html: topSymbolName }}></h2>
+                <div className="textOverScroller">
+                    <h2 style={css.topCommentStats_barRace_activeCommentInfo_symbolTitle} dangerouslySetInnerHTML={{ __html: topSymbolName }}></h2>
+                </div>
                 <span style={{'display': 'inline-flex'}}>
                     <span style={css.topCommentStats_barRace_activeCommentInfo_infoBtn} onClick={self.togglePointsInfo.bind(self)}>
                         <Icon iconName="info" height="100%" />
@@ -293,7 +343,6 @@ class BarRace extends React.Component {
     render() {
         const self = this;
         const css = styles.generate(self);
-
 
         if (this.reducedTopComments.length > 0 && this.reducedTopComments.length < 7 && this.isFirstLoad) {
             this.props.addActiveSymbolType('coin'); // not enough results on page landing, check our next cat.

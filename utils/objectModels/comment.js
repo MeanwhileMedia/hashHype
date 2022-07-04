@@ -47,7 +47,7 @@ const commentObjModel = {
     getPointed2dGramCount: function(commentObj) {
         let pointed2dGramCount = 0;
         for (const [thisWordStr, thisWordRef] of Object.entries(commentObj.words)) {
-            if (thisWordRef.type === '2dGram' && commentObj.points[thisWordRef.word]) {
+            if (thisWordRef.type === '2dGram' && typeof commentObj.points[thisWordRef.word] === 'number' && commentObj.points[thisWordRef.word] > 0) {
                 ++pointed2dGramCount;
             }
         };

@@ -35,4 +35,9 @@ props.symbolNemesis = ['Copolla'];
 
 
 /* 1. This symbol has manually assigned symbol nemesis (case sensitive) - HashHype edit #392 */
-props.symbolNemesis = ['Coin', 'coin', 'Token', 'token', 'Crypto', 'crypto', 'BTC', 'ETH', 'DAO', 'dao', 'airdrop', 'AIRDROP', 'IDO', 'IEO', 'DEX', 'CEX', 'DeFi', 'stak', 'min', 'web3', 'Sol', 'sol'];
+props.symbolNemesis = ['Coin', 'coin', 'Token', 'token', 'Crypto', 'crypto', 'NFT', 'nft', 'BTC', 'btc', 'ETH', 'DAO', 'dao', 'airdrop', 'AIRDROP', 'IDO', 'IEO', 'DEX', 'CEX', 'DeFi', 'stak', 'min', 'web3', 'Web3', 'SOL', 'sol'];
+
+
+/* 1. This symbol is never a symbol - HashHype edit #61484 */
+isMatch = false;
+return isMatch;

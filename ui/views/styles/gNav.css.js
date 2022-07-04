@@ -50,6 +50,7 @@ const styles = {
                 'margin-right': '2rem'
             },
             GNav_bottom_right: {
+                'display': 'none', // JWW disabled topTagStats viz selection. Wheel was causing too much debt
                 'position': 'fixed',
                 'right': '0',
                 'bottom': '0',

@@ -466,19 +466,20 @@ class RedisClient {
             if (typeof cmdArgsObj.startIndex !== 'number') cmdArgsObj.startIndex = null;
             cmdArgsObj.endIndex = commandArgs[2];
             if (typeof cmdArgsObj.endIndex !== 'number') cmdArgsObj.endIndex = null;
-            cmdArgsObj.cback = commandArgs[3] || null;
-            cmdArgsObj.withScores = commandArgs[5] || null;
+            cmdArgsObj.info = commandArgs[3] || {};
+            cmdArgsObj.cback = commandArgs[4] || null;
             cmdArgsObj.reformCommandArgs = () => {
-                return [cmdArgsObj.key, cmdArgsObj.startIndex, cmdArgsObj.endIndex, cmdArgsObj.cback, cmdArgsObj.dbName];
+                return [cmdArgsObj.key, cmdArgsObj.startIndex, cmdArgsObj.endIndex, cmdArgsObj.info, cmdArgsObj.cback, cmdArgsObj.dbName];
             };
             return cmdArgsObj;
         }
         if (cmdArgsObj.command === 'zcard') {
             cmdArgsObj.isReadOp = true;
             cmdArgsObj.key = commandArgs[0];
-            cmdArgsObj.cback = commandArgs[1] || null;
+            cmdArgsObj.info = commandArgs[1] || {};
+            cmdArgsObj.cback = commandArgs[2] || null;
             cmdArgsObj.reformCommandArgs = () => {
-                return [cmdArgsObj.key, cmdArgsObj.cback, cmdArgsObj.dbName];
+                return [cmdArgsObj.key, cmdArgsObj.info, cmdArgsObj.cback, cmdArgsObj.dbName];
             };
             return cmdArgsObj;
         }
@@ -642,10 +643,10 @@ class RedisClient {
         });
     }
 
-    zrange(key, startIndex, endIndex, cback, dbName, withScores = '') {
+    zrange(key, startIndex, endIndex, info = {}, cback, dbName) {
         // Currently, hashHype zrange only supports (and defaults to) "BYSCORE" range requests. startIndex, endIndex args
-        // are the min and max score for items to be returned. withScores (disabled by default) can be sent and the return response will
-        // include values AND scores like: [item1StrValue, item1Points, item2StrValue, item2Points, etc...]
+        // are the min and max score for items to be returned. info object is catch-all for optionally passing additional flags
+        // to redisClient - for example, info.wordObjNamespace (str i.e "word:symbol:stock") which will aide in the preserveNamespaces logic.
         const self = this;
         const normalizedArgs = self.normalizeRedisCommandArgs('zrange', arguments);
         if (!dbName) dbName = self.determineTargetDb(normalizedArgs);
@@ -660,14 +661,11 @@ class RedisClient {
             }
             if (normalizedArgs.cback) normalizedArgs.cback(listItems);
         };
-        if (withScores) {
-            self.clients[dbName].db.zrange(normalizedArgs.key, normalizedArgs.startIndex, normalizedArgs.endIndex, 'BYSCORE', 'WITHSCORES', cmdCback);
-        } else {
-            self.clients[dbName].db.zrange(normalizedArgs.key, normalizedArgs.startIndex, normalizedArgs.endIndex, 'BYSCORE', cmdCback);
-        }
+        self.clients[dbName].db.zrange(normalizedArgs.key, normalizedArgs.startIndex, normalizedArgs.endIndex, 'BYSCORE', cmdCback);
     }
 
-    zcard(key, cback, dbName) {
+    zcard(key, info = {}, cback, dbName) {
+        // info object is catch-all for optionally passing additional flags to redisClient - see zrange for docs on this arg
         const self = this;
         const normalizedArgs = self.normalizeRedisCommandArgs('zcard', arguments);
         if (!dbName) dbName = self.determineTargetDb(normalizedArgs);

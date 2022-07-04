@@ -11,12 +11,12 @@ class GNavMainMenu extends React.Component {
         this.allTrendCats = [
             {label: 'Stocks', val: 'stock'},
             {label: 'Coins', val: 'coin'},
-            {label: 'Social', val: 'social'},
+            {label: 'Social', val: 'hashtag'},
             {label: 'News', val: 'news'},
         ];
         this.gatedTrendCats = [ // these are the categories that user's must sign-in to see (set to match val above)
             // 'coin',
-            'social',
+            // 'social',
             'news'
         ];
 
