@@ -37,7 +37,7 @@ var hbClientSocketViewResponses = {
     // manually request the model data, and set up a change listener (on the server)
     const socketChangeEventName = `change:${viewAbsKey}`;
     if (hbClientSocketViewResponses.activeViewChangeEvents[socketChangeEventName]) {
-      console.warn(`Blocked an attempt to subscribe to the same socket event twice: ${socketChangeEventName}`);
+      // console.warn(`Blocked an attempt to subscribe to the same socket event twice: ${socketChangeEventName}`);
       return;
     }
 

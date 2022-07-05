@@ -6,7 +6,9 @@ const styles = {
 
         const css = {
 
-            topCommentBodyAndPoints: {
+            topCommentBodyAndPoints_h5: {
+                'width': '100%',
+                'overflow-wrap': 'break-word'
             },
 
             topCommentBodyAndPoints_bodyLayers: {

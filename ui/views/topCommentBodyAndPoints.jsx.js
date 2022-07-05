@@ -456,8 +456,8 @@ class TopCommentBodyAndPoints extends React.Component {
         const authorEl = self.getAuthorEl();
 
         return (
-            <div className="topCommentBodyAndPoints" style={css.topCommentBodyAndPoints}>
-                 <h5>{commentBodyEl}</h5>
+            <div className="topCommentBodyAndPoints">
+                 <h5 style={css.topCommentBodyAndPoints_h5}>{commentBodyEl}</h5>
                  {pointsInfoEl}
                  {authorEl}
             </div>
