@@ -32,7 +32,6 @@
     "react": "^17.0.2",
     "react-dom": "^17.0.2",
     "redis": "^3.0.2",
-    "rocksdb": "^5.2.1",
     "snoowrap": "^1.22.0",
     "throttle-debounce": "^3.0.1",
     "twitter-api-v2": "^1.11.0",
