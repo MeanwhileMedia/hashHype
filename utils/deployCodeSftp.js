@@ -163,11 +163,16 @@ class DeployCodeSftp {
             return;
         }
 
-        self.npmRunScriptOnTarget(thisNpmCmd, (success) => {
+        self.npmRunScriptOnTarget(thisNpmCmd, (success, scriptOutput) => {
             if (!success) {
-                console.error(`ERR! deployCodeSftp failed while attempting to run '${thisNpmCmd}'. Deploy failure. Process will now exit.`);
-                process.exit(1);
-                return;
+                console.error(`ERR! deployCodeSftp failed while attempting to run '${thisNpmCmd}'`);
+                if (scriptOutput.search(/\[PM2]\[ERROR].+Process or Namespace [^\s]+ not found/gm) !== -1) {  // don't let deploy fail if pm2 stop command failed (does so on a cold start)
+                    console.warn('This must be a cold start. attempting to resume...');
+                } else {
+                    console.error(`ERR! Deploy failure. Process will now exit.`);
+                    process.exit(1);
+                    return;
+                }
             }
             self.npmRunScriptsOnTarget(runTheseScripts, cback, ++thisNpmCmdIndex, confirmedAppDirExists);
         });
@@ -177,17 +182,21 @@ class DeployCodeSftp {
         const self = this;
         const projectDir = `${self.deployConfig.targetDir}/${self.deployConfig.projectName}`;
         let scriptSuccess = true;
+        let scriptOutput = '';
         self.sftpClient.client.shell(function(err, stream) { // "self.sftpClient.client" is the underlying ssh2 object (https://github.com/mscdex/ssh2)
             if (err) {
                 console.error(err);
                 return;
             }
             stream.on('close', function() {
-                if (cback) cback(scriptSuccess);
+                if (cback) cback(scriptSuccess, scriptOutput);
             }).on('data', function(data) {
                 const thisOutput = data.toString();
                 console.log(thisOutput);
-                if (thisOutput.indexOf('ERR!') !== -1) scriptSuccess = false;
+                scriptOutput = `${scriptOutput} ${thisOutput}`;
+                if (thisOutput.indexOf('ERR!') !== -1) {
+                    scriptSuccess = false;
+                }
             }).stderr.on('data', function(data) {
                 console.log('npmRunScriptOnTarget STDERR: ' + data);
             });

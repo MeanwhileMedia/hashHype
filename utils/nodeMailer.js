@@ -1,5 +1,8 @@
+import yargs from 'yargs';
 import nodemailer from 'nodemailer';
 import nodeMailerConfig from './nodeMailer-config.js';
+
+const argv = yargs(process.argv.slice(2)).argv;
 
 class NodeMailer {
 
@@ -13,6 +16,7 @@ class NodeMailer {
                 text: '', // text and html are set dynamically via setEmailBody
                 html: '',
                 setEmailBody: (data, emailMsgObj) => {
+                    data.envname = argv.envname;
                     emailMsgObj.text = JSON.stringify(data);
                     emailMsgObj.html = emailMsgObj.text;
                     return emailMsgObj;
@@ -22,10 +26,11 @@ class NodeMailer {
             maintenaceStatus: {
                 from: 'joe@meanwhilemedia.com',
                 to: 'contact@meanwhilemedia.com',
-                subject: 'HashHype daily app status report - HashHype_sys_msg',
+                subject: `HashHype daily app status report (${argv.envname}) - HashHype_sys_msg`,
                 text: '',
                 html: '',
                 setEmailBody: (data, emailMsgObj) => {
+                    data.envname = argv.envname;
                     emailMsgObj.text = JSON.stringify(data);
                     emailMsgObj.html = emailMsgObj.text;
                     return emailMsgObj;
@@ -35,10 +40,14 @@ class NodeMailer {
             diskWarning: {
                 from: 'joe@meanwhilemedia.com',
                 to: 'contact@meanwhilemedia.com',
-                subject: 'WARNING! disk space low - HashHype_sys_msg',
+                subject: `WARNING! disk space low (${argv.envname}) - HashHype_sys_msg`,
                 text: '',
                 html: '',
                 setEmailBody: (data, emailMsgObj) => {
+                    data.envname = argv.envname;
+                    data.available = `${data.available/1024}mb`;
+                    data.free = `${data.free/1024}mb`;
+                    data.total = `${data.total/1024}mb`;
                     emailMsgObj.text = JSON.stringify(data);
                     emailMsgObj.html = emailMsgObj.text;
                     return emailMsgObj;

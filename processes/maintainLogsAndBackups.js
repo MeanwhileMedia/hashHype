@@ -86,7 +86,7 @@ class MaintainLogsAndBackups {
 
         console.log('A new maintainLogsAndBackups process has just started...');
         self.initRedisClient(() => {
-            self.initLevelDbClient(() => {
+            // self.initLevelDbClient(() => { // JWW stopping todo - see machines/single.config.js (archiveKeysToDisk) for details
                 self.initGoogleDriveClient(() => {
                     self.initMachineHealthLogInterval();
                     self.initDbHealthLogInterval();
@@ -103,7 +103,7 @@ class MaintainLogsAndBackups {
                         self.initCloudArchiveCleanupInterval();
                     }
                 });
-            });
+            // });
         });
     }
 

@@ -222,6 +222,7 @@ class ExtractWordsFromComments {
 
         ///////////////
         // 2. Now we will normalize to make different word variations as uniform as possible
+        comment.body = sanitizedBody;
         comment.normalizedBody = `${comment.body}`;
 
         // we only need one type of apostrophe
@@ -237,7 +238,6 @@ class ExtractWordsFromComments {
         // Convert wacky charachters
         // comment.normalizedBody = comment.normalizedBody.replace(/\u{2026}+/gum, '...'); // \u{2026} is the unicode for "…" charchter (a single charachter of 3 dots - elipses). This trips up urlNormalize and will now be converted into 3 "." chars.
         self.replaceInCommentBody(comment, /\u{2026}+/gum, '...'); // \u{2026} is the unicode for "…" charchter (a single charachter of 3 dots - elipses). This trips up urlNormalize and will now be converted into 3 "." chars.
-        self.replaceInCommentBody(comment, '&amp;', '&'); // decode the & sign
 
         // Now make adjustments that will ONLY apply to comment.normalizedBody. These changes will mutate the comment body so the words can be more easily extracted. However,
         // these changes are too invasive for comment.body (which is eventually rendered in UI).

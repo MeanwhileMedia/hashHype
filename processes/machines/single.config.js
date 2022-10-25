@@ -54,16 +54,29 @@ const genConfigs = {
     apps: () => {
         const host_redis_dbsJson = JSON.stringify(argv.host_redis_dbs);
         return [
+            // JWW stopping todo - Disabling archiveKeysToDisk (and dependent topTrendStats) because of poor memory performance, and a showstopper bug where rocksDB is unable to clear keys when 
+            // reaching disk usage limit - disk space runs out - process crashes (also creates a bunch of LOG.old.tstamp files which don't get cleared). Perhaps consider holding historical data archive on a seperate machine.
+            // { 
+            //     name: 'archiveKeysToDisk',
+            //     script: './processes/archiveKeysToDisk.js',
+            //     args: `--envname=${argv.envname} --host_redis_dbs='${host_redis_dbsJson}' --levelDBMaster=true  --redisDBMaster=true`,
+            //     error_file: genConfigs.getLogPath('archiveKeys', 'err'),
+            //     out_file: genConfigs.getLogPath('archiveKeys', 'out'),
+            //     log_date_format: 'MM/DD HH:mm:ss',
+            //     kill_timeout : processKillTimeout,
+            //     listen_timeout : processKillTimeout,
+            // },
+            // {
+            //     name: 'topTrendStats',
+            //     script: './processes/topTrendStats.js',
+            //     args: `--envname=${argv.envname} --host_redis_dbs='${host_redis_dbsJson}'`,
+            //     error_file: genConfigs.getLogPath('topTrends', 'err'),
+            //     out_file: genConfigs.getLogPath('topTrends', 'out'),
+            //     log_date_format: 'MM/DD HH:mm:ss',
+            //     kill_timeout : processKillTimeout,
+            //     listen_timeout : processKillTimeout,
+            // },
             {
-                name: 'archiveKeysToDisk',
-                script: './processes/archiveKeysToDisk.js',
-                args: `--envname=${argv.envname} --host_redis_dbs='${host_redis_dbsJson}' --levelDBMaster=true  --redisDBMaster=true`,
-                error_file: genConfigs.getLogPath('archiveKeys', 'err'),
-                out_file: genConfigs.getLogPath('archiveKeys', 'out'),
-                log_date_format: 'MM/DD HH:mm:ss',
-                kill_timeout : processKillTimeout,
-                listen_timeout : processKillTimeout,
-            }, {
                 name: 'uiServer',
                 script: './processes/uiServer.js',
                 args: `--envname=${argv.envname} --host_redis_dbs='${host_redis_dbsJson}'`,
@@ -82,7 +95,8 @@ const genConfigs = {
                 log_date_format: 'MM/DD HH:mm:ss',
                 kill_timeout : processKillTimeout,
                 listen_timeout : processKillTimeout,
-            }, {
+            }, 
+            {
                 name: 'extractWordsFromComments',
                 script: './processes/extractWordsFromComments.js',
                 args: `--envname=${argv.envname} --host_redis_dbs='${host_redis_dbsJson}'`,
@@ -91,7 +105,8 @@ const genConfigs = {
                 log_date_format: 'MM/DD HH:mm:ss',
                 kill_timeout : processKillTimeout,
                 listen_timeout : processKillTimeout,
-            }, {
+            }, 
+            {
                 name: 'topCommentStats',
                 script: './processes/topCommentStats.js',
                 args: `--envname=${argv.envname} --host_redis_dbs='${host_redis_dbsJson}'`,
@@ -100,16 +115,8 @@ const genConfigs = {
                 log_date_format: 'MM/DD HH:mm:ss',
                 kill_timeout : processKillTimeout,
                 listen_timeout : processKillTimeout,
-            }, {
-                name: 'topTrendStats',
-                script: './processes/topTrendStats.js',
-                args: `--envname=${argv.envname} --host_redis_dbs='${host_redis_dbsJson}'`,
-                error_file: genConfigs.getLogPath('topTrends', 'err'),
-                out_file: genConfigs.getLogPath('topTrends', 'out'),
-                log_date_format: 'MM/DD HH:mm:ss',
-                kill_timeout : processKillTimeout,
-                listen_timeout : processKillTimeout,
-            }, {
+            }, 
+            {
                 name: 'maintainLogsAndBackups',
                 script: './processes/maintainLogsAndBackups.js',
                 args: `--envname=${argv.envname} --host_redis_dbs='${host_redis_dbsJson}'`,

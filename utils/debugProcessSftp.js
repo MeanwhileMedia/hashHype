@@ -13,7 +13,6 @@ class DebugProcessSftp {
 
     constructor() {
         const self = this;
-        // this.extractCliArgs();
 
         this.deployConfig = deployCodeSftpConfig.targets[argv.target]();
         this.initSftpClient(this.deployConfig, () => {
